@@ -1,6 +1,6 @@
 ---
 dataset_info:
-  config_name: articles
+- config_name: articles
   features:
   - name: id
     dtype: large_string
@@ -54,9 +54,39 @@ dataset_info:
     num_examples: 54173
   download_size: 163356047
   dataset_size: 465732885
+- config_name: documents
+  features:
+  - name: doc_id
+    dtype: int64
+  - name: act_group_id
+    dtype: large_string
+  - name: doc_title
+    dtype: large_string
+  - name: doc_type
+    dtype: large_string
+  - name: language
+    dtype: large_string
+  - name: script
+    dtype: large_string
+  - name: version_date
+    dtype: large_string
+  - name: article_count
+    dtype: int64
+  - name: full_text
+    dtype: large_string
+  splits:
+  - name: train
+    num_bytes: 438441532
+    num_examples: 24267
+  download_size: 157218290
+  dataset_size: 438441532
 configs:
 - config_name: articles
   data_files:
   - split: train
     path: articles/train-*
+- config_name: documents
+  data_files:
+  - split: train
+    path: documents/train-*
 ---
