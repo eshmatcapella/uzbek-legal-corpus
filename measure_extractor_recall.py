@@ -26,6 +26,23 @@ in OTHER laws, not a restatement of what `article_text` says, so the two
 fields disagree ~99.5% of the time by design, not by extractor failure (see
 the "cross-reference disagreement" section below, kept for the record).
 
+2026-09-04 extended this to the anchor forms the first pass didn't cover
+(see DAILY_REVIEW.md Active threads): the article/chapter checks below now
+scan windows opened by ANY anchor kind (`Fuqarolik kodeksi`, the FK alias,
+and "ushbu/shu/mazkur Kodeks" self-reference), using citation_extractor's
+own `_anchors()` so window boundaries match `extract()` exactly instead of
+being recomputed against only the `Fuqarolik kodeksi` phrase. That also adds
+a qism/band ATTACHMENT check: not "was the article found" (already measured
+clean) but "when a qism/band clause follows a found article citation, does
+the extractor actually attach it to `Citation.qism`". That check exposed a
+real gap — the attachment logic only fired for the genitive "moddasining"
+suffix, silently dropping the qism/band on the far more common bare
+"moddasi ..." construction ("...moddasi uchinchi qismiga muvofiq"). Fixed in
+citation_extractor.py (RE_QISM_BLOCK-gated attachment for non-"sining"
+suffixes); see the Log entry for the measured before/after and the
+false-positive risk (list continuations like "185-moddasi, 186-moddasi
+toʻqqizinchi qismi") that the gate exists to reject.
+
 Run: python measure_extractor_recall.py
 """
 from __future__ import annotations
@@ -39,7 +56,7 @@ import citation_extractor as cx
 PARQUET = "articles/train-00000-of-00001.parquet"
 FIELDS = ("article_text", "cross_references", "amendment_note")
 
-RE_NAIVE_MODDA = re.compile(r"(\d{1,4})\s*[-–—]\s*modda", re.IGNORECASE)
+RE_NAIVE_MODDA = re.compile(r"(\d{1,5})\s*[-–—]\s*modda", re.IGNORECASE)
 RE_NAIVE_BOB = re.compile(r"(\d{1,3})\s*[-–—]\s*bob", re.IGNORECASE)
 
 
@@ -58,48 +75,82 @@ def load_rows(con):
     return rows, alias_docs
 
 
-def scoped_window(text: str, anchor_end: int) -> tuple[str, int]:
-    """The extractor's own search window, cut at its own stop boundaries."""
-    window_end = min(len(text), anchor_end + cx.WINDOW)
-    window_text = text[anchor_end:window_end]
-    stops = [m.start() for m in
-             (cx.RE_STOP.search(window_text), cx.RE_STOP_ABBR.search(window_text)) if m]
-    cutoff = min(stops) if stops else len(window_text)
-    return window_text[:cutoff], window_end
-
-
 def check_recall(rows, alias_docs, naive_re, target_kinds, number_of) -> dict:
+    """Scan windows opened by ANY anchor kind (Fuqarolik kodeksi, the FK alias,
+    and the self-reference form), using citation_extractor's own `_anchors()`
+    and the same next-anchor window limit `extract()` uses, so a naive hit
+    is always checked against the citation(s) that could actually explain it."""
     windows = naive_total = extracted_total = 0
     misses = []
+    by_anchor: dict[str, int] = {}
     for row_id, doc_id, art_text, cross_ref, amend in rows:
         texts = {"article_text": art_text, "cross_references": cross_ref, "amendment_note": amend}
         is_code = doc_id in (cx.DOC_GENERAL, cx.DOC_SPECIAL)
+        allow_alias = doc_id in alias_docs
         for field in FIELDS:
             text = texts[field]
             if not text:
                 continue
-            anchors = list(cx.RE_ANCHOR_CC.finditer(text))
+            anchors = cx._anchors(text, allow_fk_alias=allow_alias, is_the_code=is_code)
             if not anchors:
                 continue
-            citations = cx.extract(text, allow_fk_alias=doc_id in alias_docs, is_the_code=is_code)
-            cc_citations = [c for c in citations if c.anchor == "fuqarolik_kodeksi"]
-            for m in anchors:
-                scoped, window_end = scoped_window(text, m.end())
+            citations = cx.extract(text, allow_fk_alias=allow_alias, is_the_code=is_code)
+            for i, (a_start, a_end, kind) in enumerate(anchors):
+                limit = min(a_end + cx.WINDOW, anchors[i + 1][0] if i + 1 < len(anchors) else len(text))
+                window_text = text[a_end:limit]
+                stops = [m.start() for m in
+                         (cx.RE_STOP.search(window_text), cx.RE_STOP_ABBR.search(window_text)) if m]
+                cutoff = min(stops) if stops else len(window_text)
+                scoped = window_text[:cutoff]
                 naive_nums = {int(n) for n in naive_re.findall(scoped)}
                 if not naive_nums:
                     continue
                 windows += 1
+                by_anchor[kind] = by_anchor.get(kind, 0) + 1
                 naive_total += len(naive_nums)
-                ex_nums = {number_of(c) for c in cc_citations
-                           if m.start() <= c.start < window_end and c.target_kind in target_kinds}
+                ex_nums = {number_of(c) for c in citations
+                           if c.anchor == kind and a_end <= c.start < limit and c.target_kind in target_kinds}
                 extracted_total += len(ex_nums)
                 missing = naive_nums - ex_nums
                 if missing:
-                    misses.append((row_id, field, sorted(missing), scoped[:200]))
+                    misses.append((row_id, field, kind, sorted(missing), scoped[:200]))
     return {
         "windows": windows, "naive_total": naive_total,
-        "extracted_total": extracted_total, "misses": misses,
+        "extracted_total": extracted_total, "misses": misses, "windows_by_anchor": by_anchor,
     }
+
+
+def check_qism_band_attachment(rows, alias_docs) -> dict:
+    """Recall for the qism/band ATTACHMENT (not the article number itself,
+    already checked clean above): among single-article citations, whenever a
+    qism/band clause immediately follows (RE_QISM matches the tail, and
+    nothing in RE_QISM_BLOCK's sense suggests it belongs to a later citation
+    in a list), does the extractor actually set Citation.qism? This is a
+    live regression guard for the 2026-09-04 fix in citation_extractor.py:
+    the attachment used to fire only for the genitive "moddasining" suffix,
+    silently dropping the far more common bare "moddasi ..." construction."""
+    checked = 0
+    misses = []
+    for row_id, doc_id, art_text, cross_ref, amend in rows:
+        texts = {"article_text": art_text, "cross_references": cross_ref, "amendment_note": amend}
+        is_code = doc_id in (cx.DOC_GENERAL, cx.DOC_SPECIAL)
+        allow_alias = doc_id in alias_docs
+        for field in FIELDS:
+            text = texts[field]
+            if not text:
+                continue
+            citations = cx.extract(text, allow_fk_alias=allow_alias, is_the_code=is_code)
+            for c in citations:
+                if c.target_kind != "article" or c.listing != "single":
+                    continue
+                tail = text[c.end: c.end + 60]
+                m = cx.RE_QISM.search(tail)
+                if not m or cx.RE_QISM_BLOCK.search(tail[:m.start()]):
+                    continue
+                checked += 1
+                if c.qism is None:
+                    misses.append((row_id, field, c.article, tail[:70]))
+    return {"checked": checked, "misses": misses}
 
 
 def check_cross_reference_disagreement(con) -> dict:
@@ -127,22 +178,29 @@ def main() -> int:
     rows, alias_docs = load_rows(con)
     print(f"candidate rows (mention 'kodeks' or standalone FK): {len(rows)}\n")
 
-    print("=== article-level recall (naive 'N-modda' vs extractor) ===")
+    print("=== article-level recall (naive 'N-modda' vs extractor), all anchor kinds ===")
     r1 = check_recall(rows, alias_docs, RE_NAIVE_MODDA, {"article"},
                        lambda c: int(c.article.split("-")[0]))
-    print(f"  anchor windows with a naive hit: {r1['windows']}")
+    print(f"  anchor windows with a naive hit: {r1['windows']}  (by anchor kind: {r1['windows_by_anchor']})")
     print(f"  naive numbers: {r1['naive_total']}  |  extractor numbers: {r1['extracted_total']}")
     print(f"  real misses: {len(r1['misses'])}")
     for miss in r1["misses"]:
         print(f"    {miss}")
 
-    print("\n=== chapter/section-level recall (naive 'N-bob' vs extractor) ===")
+    print("\n=== chapter/section-level recall (naive 'N-bob' vs extractor), all anchor kinds ===")
     r2 = check_recall(rows, alias_docs, RE_NAIVE_BOB, {"chapter", "section"},
                        lambda c: c.struct_number)
-    print(f"  anchor windows with a naive hit: {r2['windows']}")
+    print(f"  anchor windows with a naive hit: {r2['windows']}  (by anchor kind: {r2['windows_by_anchor']})")
     print(f"  naive numbers: {r2['naive_total']}  |  extractor numbers: {r2['extracted_total']}")
     print(f"  real misses: {len(r2['misses'])}")
     for miss in r2["misses"]:
+        print(f"    {miss}")
+
+    print("\n=== qism/band attachment recall (single-article citations) ===")
+    r4 = check_qism_band_attachment(rows, alias_docs)
+    print(f"  citations checked (unambiguous qism/band tail present): {r4['checked']}")
+    print(f"  attachment misses: {len(r4['misses'])}")
+    for miss in r4["misses"][:20]:
         print(f"    {miss}")
 
     print("\n=== cross-reference disagreement (falsified hypothesis, kept for the record) ===")
@@ -155,7 +213,7 @@ def main() -> int:
     print("     provisions in OTHER acts, not a restatement of article_text.")
 
     con.close()
-    total_misses = len(r1["misses"]) + len(r2["misses"])
+    total_misses = len(r1["misses"]) + len(r2["misses"]) + len(r4["misses"])
     return 0 if total_misses == 0 else 1
 
 

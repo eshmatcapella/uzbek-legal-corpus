@@ -82,6 +82,11 @@ ROMAN_VALUES = {"I": 1, "V": 5, "X": 10, "L": 50}
 RE_QISM = re.compile(
     r"(?P<num>\d+|" + "|".join(ORDINALS) + r")\s*-?\s*(?P<unit>qism|band)", re.IGNORECASE
 )
+# A comma or another modda/bob number between a citation and a qism/band match
+# means the qism/band belongs to a later item in a list, not to this citation
+# (e.g. "185-moddasi, 186-moddasi toʻqqizinchi qismi" — the ninth part is
+# 186's, not 185's). Gates the non-"sining" qism/band attachment below.
+RE_QISM_BLOCK = re.compile(r",|\d+\s*-\s*(?:modda|bob)", re.IGNORECASE)
 
 
 @dataclass
@@ -176,7 +181,18 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
 
             if unit == "modda":
                 tail = window[m.end(): m.end() + 60]
-                qm = RE_QISM.search(tail) if m.group("suffix").lower().startswith("sining") else None
+                suffix = m.group("suffix").lower()
+                if suffix.startswith("sining"):
+                    qm = RE_QISM.search(tail)
+                elif len(nums) == 1:
+                    # Not the genitive "moddasining" form (e.g. bare "moddasi",
+                    # "moddasiga muvofiq") — still attach a qism/band if one
+                    # immediately follows, but only when nothing between here
+                    # and there suggests it belongs to a different citation.
+                    cand = RE_QISM.search(tail)
+                    qm = cand if cand and not RE_QISM_BLOCK.search(tail[:cand.start()]) else None
+                else:
+                    qm = None
                 for n in nums:
                     out.append(Citation("article", n, None, None,
                                         qm.group(0).strip() if qm else None,
@@ -272,7 +288,25 @@ def _selftest() -> int:
         if got != want:
             failures += 1
             print(f"FAIL {text[:64]!r}\n     got  {got}\n     want {want}")
-    print(f"{len(cases) - failures}/{len(cases)} extractor self-tests passed")
+
+    # qism/band attachment for non-"sining" modda suffixes (measured gap, see
+    # DAILY_REVIEW.md 2026-09-04): must still attach when unambiguous, and
+    # must NOT attach when a comma/another modda intervenes (list continuation).
+    qism_cases: list[tuple[str, dict, list[str | None]]] = [
+        ("Fuqarolik kodeksining 212-moddasi uchinchi qismiga muvofiq", {}, ["uchinchi qism"]),
+        ("Fuqarolik kodeksi 281-moddasi oltinchi qismining 4-bandida", {}, ["oltinchi qism"]),
+        ("mazkur Kodeksning 185-moddasi, 186-moddasi toʻqqizinchi qismi",
+         {"is_the_code": True}, [None, "toʻqqizinchi qism"]),
+        ("FKning 591-moddasi va FPKning 14-moddasining uchinchi qismiga koʻra",
+         {"allow_fk_alias": True}, [None]),
+    ]
+    for text, kwargs, expected in qism_cases:
+        got = [c.qism for c in extract(text, **kwargs) if c.target_kind == "article"]
+        if got != expected:
+            failures += 1
+            print(f"FAIL(qism) {text[:64]!r}\n     got  {got}\n     want {expected}")
+    total = len(cases) + len(qism_cases)
+    print(f"{total - failures}/{total} extractor self-tests passed")
     return 1 if failures else 0
 
 
