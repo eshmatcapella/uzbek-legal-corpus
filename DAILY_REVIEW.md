@@ -22,37 +22,34 @@ How to use this file each session:
 
 ## Active threads
 
-- **Precision, not recall, is now the open question.** 2026-09-04 closed out
-  the recall thread: article and chapter/section recall is 0 real misses
-  across ALL anchor kinds (Fuqarolik kodeksi, FK-alias, self-reference —
-  2340 windows, up from the 1559 the FK-alias/self-reference forms weren't
-  even being scanned for before), and the qism/band attachment gap found and
-  fixed today closes the last open recall question from 2026-09-03's Active
-  Threads entry. So: recall is empirically excellent everywhere it's been
-  measured. What's NOT measured is precision — does a correctly-found
-  citation resolve to the *right* target? Today's "Qonun" investigation
-  (see Log) found a real instance: 25 confirmed cases where a citation to
-  another named Law ("Qonun N-moddasi") gets misattributed as a Civil Code
-  citation, because `RE_STOP` only recognizes suffixed forms of "qonun"
-  (qonuni/qonuniga/qonunining) and not the bare nominative "Qonun" that
-  precedes a modda clause about as often as the suffixed forms do.
-  **Working hypothesis:** this is one instance of a general pattern — any
-  Uzbek noun that names another act (qonun, qaror, farmon, nizom, ...) has
-  the same bare-nominative gap, since RE_STOP's list is entirely suffixed
-  forms. **Not yet measured:** how many of those 25 "Qonun" edges actually
-  made it into `link_edge` (some may have been filtered by other checks;
-  need to cross-reference by src_row_id + dst_article_number), whether the
-  same bare-noun gap exists for qaror/farmon/nizom at comparable scale, and
-  what a safe fix looks like — a blanket `qonun\b` addition to RE_STOP is
-  almost certainly wrong (it would also match the extremely common generic
-  phrase "qonun hujjatlarida", stopping scans that have nothing to do with
-  a named Act). **Next step:** measure how often bare "qonun"/"qaror"/
-  "farmon"/"nizom" precede a modda/bob clause WITHOUT being part of a
-  generic phrase (a capitalized-word heuristic, since named Acts are always
-  capitalized in these citations while generic uses aren't, looks promising
-  based on the samples — "Qonun 19-moddasining" vs "qonun hujjatlarida"),
-  then propose a scoped RE_STOP addition and verify it doesn't regress the
-  now-clean recall numbers before touching citation_extractor.py again.
+- **"Qonun" precision thread: closed.** See Log — the bare-nominative
+  "Qonun" misattribution (2026-09-04) is fixed, measured, and verified: 38
+  raw edges removed (19 article_text + 19 cross_references, 15 distinct
+  citing rows), 2 correctly-weaker "act" edges added back where no real
+  provision was left to pin, net -36 (6827 -> 6791). The broader hypothesis
+  ("this generalizes to qaror/farmon/nizom") was measured and **falsified
+  as a live bug**: those three nouns' bare-nominative forms were checked
+  against every Civil-Code anchor window in the corpus and cause **zero**
+  actual misattributions today (nizom's bare form was already caught by
+  RE_STOP pre-existing; qaror/farmon's bare capitalized forms simply never
+  sit adjacent to an unstopped modda/bob clause in the current text). Left
+  those three alone rather than adding untested stop words for a gap with
+  no measured impact — see Log for the exact counts and reasoning. New
+  angle if this ever needs revisiting: re-run
+  `measure_bare_act_names.py`-style check (not committed — throwaway,
+  reproducible from citation_extractor._anchors()) after any large corpus
+  update, since new acts could introduce the gap qaror/farmon/nizom don't
+  have today.
+
+- **Precision, more broadly: still open beyond "Qonun".** The "Qonun" fix
+  was one specific, measured misattribution pattern. It does not mean
+  precision is now fully verified — no gold set exists (see Backlog), and
+  other misattribution patterns (wrong doc_id resolution, wrong qism
+  attachment beyond what's already checked, other stop-word gaps not yet
+  hypothesized) haven't been searched for. Next session: either invent
+  another falsifiable precision hypothesis the way "Qonun" was found (by
+  sampling extractor output and reading the raw text), or pivot to Data
+  currency / Cleanup per the rotation.
 
 - **Smaller, lower-priority residual: qism/band tail truncation.** The
   qism/band attachment check added today (see Log) has 10 residual misses
@@ -70,7 +67,11 @@ How to use this file each session:
   but worth a future pass: either widen the window when a modda-with-tail
   match is the last thing found before the limit, or search the raw text
   directly (bounded by the *next* anchor, not `+60` past a truncated
-  window) instead of re-slicing an already-cut window.
+  window) instead of re-slicing an already-cut window. Note: one of the 3
+  originally-sampled misses (row 2767) is now gone on its own — it was the
+  same "Qonun 19-moddasi" misattribution the 2026-09-05 fix removed, not a
+  real qism/band truncation case. Residual count after that fix: 7/640
+  (was 10/667) — still open, still small, still not touched.
 
 ---
 
@@ -79,18 +80,19 @@ How to use this file each session:
 ### Extractor recall/precision
 - **Build the gold set.** ~50 articles, hand-verified ground truth for
   citation extraction (which acts realize them, at what confidence). No gold
-  set exists yet — `citation_extractor.py`'s 22 self-tests (now 26, see Log)
-  check surface-form parsing, not corpus-wide recall/precision. Recall is now
-  measured clean across all anchor kinds (see Active threads); precision is
-  the open question, with one confirmed instance already found (the "Qonun"
-  bare-nominative misattribution — see Active threads and Log). Once that
-  thread's scope is clearer, revisit whether a hand-built gold set is still
-  the highest-value next step or whether the same measure-a-hypothesis
-  approach keeps finding real, higher-value gaps faster.
-- **Bare-nominative act-name gap in RE_STOP, beyond "Qonun".** See Active
-  threads — qaror/farmon/nizom likely have the same gap (RE_STOP only lists
-  suffixed forms: qarorining, farmonining, etc., never the bare noun), not
-  yet measured.
+  set exists yet — `citation_extractor.py`'s 28 self-tests (see Log) check
+  surface-form parsing, not corpus-wide recall/precision. Recall is measured
+  clean across all anchor kinds; the "Qonun" precision bug is fixed and
+  measured (see Log 2026-09-05). Still no gold set and no systematic search
+  for OTHER misattribution patterns beyond the two found so far by sampling
+  — revisit whether hand-annotation is now the highest-value next step or
+  whether more hypothesis-driven sampling keeps finding gaps faster.
+- ~~**Bare-nominative act-name gap in RE_STOP, beyond "Qonun".**~~ **Measured
+  2026-09-05, falsified as a live bug**: qaror/farmon/nizom's bare
+  capitalized forms cause zero actual misattributions in the current corpus
+  (nizom's bare form was already in RE_STOP; qaror/farmon never sit next to
+  an unstopped modda/bob clause). Only "Qonun" itself needed the fix. See
+  Active threads and Log.
 - ~~Measure recall against a second independent signal (`cross_references`
   vs `article_text` on the same row).~~ **Tried 2026-09-03, hypothesis
   falsified**: 4249/4272 (99.5%) of cross_references-sourced Civil Code
@@ -152,6 +154,114 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-05 — closed the "Qonun" precision thread; falsified the qaror/farmon/nizom generalization
+
+Continued the Active thread from 2026-09-04. Fresh clone again needed
+`pip install duckdb pyarrow`, `apt-get install git-lfs`, `git lfs install
+--local && git lfs pull` before any data was visible — same as every prior
+session; worth eventually baking into a setup script if this cadence
+continues, but not done today (out of scope for this thread).
+
+**Measured the capitalization heuristic across the corpus before writing
+any fix.** For each of qonun/qaror/farmon/nizom, counted every bare-word
+occurrence (capitalized vs lowercase) and how often it's immediately
+followed by an "N-modda"/"N-bob" clause:
+
+| noun | capitalized, total | capitalized + clause | lowercase, total | lowercase + clause |
+|---|---|---|---|---|
+| qonun | 12387 | 1006 | 49484 | 3 |
+| qaror | 1631 | 0 | 43314 | 1 |
+| farmon | 1087 | 1 | 150 | 0 |
+| nizom | 14146 | 10 | 10451 | 1 |
+
+Manually read samples from every non-zero cell. Capitalized+clause samples
+are, without exception, a specific named Act ("ushbu Qonun 4-moddasi",
+"mazkur Nizom 4-bobining 6-paragrafida") — the capital letter marks a proper
+reference the same way it does in English. Lowercase+clause samples are the
+opposite: "Konstitutsiyaviy qonun 4-moddasi" (a different multi-word proper
+name that happens to lowercase its second word), one stray "qaror
+1-bob."/"Vaqtincha nizom 10-bobining" — rare, and not fixable by a
+single-word capitalization rule anyway. This confirms the capitalization
+heuristic from 2026-09-04's hypothesis: it's a strong, corpus-supported
+signal, not a guess.
+
+**Then measured actual impact inside Civil-Code anchor windows specifically**
+(the number that matters — a bare "Qonun" anywhere in the corpus is not a bug
+unless it sits inside a window `extract()` is actively scanning for the
+Code). Wrote a throwaway script re-using `citation_extractor._anchors()` and
+`RE_CLAUSE`/`RE_STOP` directly: for each anchor window, does a bare
+capitalized noun sit immediately before a modda/bob clause that RE_STOP
+currently fails to stop at, and does the extractor actually emit a
+citation there? Result:
+
+    Qonun:  25 misattributed citations found (matches the manual estimate from 2026-09-04)
+    Qaror:   0
+    Farmon:  0
+    Nizom:   0
+
+Nizom's zero is explained, not surprising: bare "nizom" (case-insensitive)
+was already in `RE_STOP` before today — it's on the same line as
+"konstitutsiya", added at some earlier point for a different reason. Qaror
+and Farmon's zero is a genuine corpus fact, not a detection failure: their
+bare capitalized forms exist (1631 and 1087 times respectively) but never
+happen to land immediately before an unstopped modda/bob clause inside a
+Civil-Code anchor's scan window in the current 54,173-row corpus. So the
+2026-09-04 hypothesis ("this generalizes to qaror/farmon/nizom") is
+falsified as a *live* bug, even though the underlying gap in RE_STOP's
+design (suffixed forms only) genuinely exists for those two — it just isn't
+firing today.
+
+**Fix: added case-sensitive bare `Qonun` to `RE_STOP` only.** Restructured
+the regex from a single `re.IGNORECASE`-flagged pattern into a scoped
+`(?i:...)` group (the existing case-insensitive alternatives, unchanged)
+plus one new case-sensitive alternative, `Qonun\b`, so a bare *lowercase*
+"qonun" (the generic word, 49484 occurrences) still doesn't stop a scan,
+but bare *capitalized* "Qonun" (a named Act) now does. Added 2 new
+self-tests: the exact misattribution sample from 2026-09-04's log now
+resolves to `("act", None, "single")` instead of falsely pinning article
+19, and a generic "qonun hujjatlarida" phrase still leaves a real Civil
+Code citation intact. `citation_extractor.py`: 28/28 self-tests pass (was
+26).
+
+**Reran `build_links.py`.** Edge count: 6827 -> 6791 (-36). Diffed the two
+databases directly (by `src_row_id, source_field, ev_start, ev_end`): 38
+raw edges removed (19 from `article_text`, 19 from `cross_references` —
+symmetric because both fields get scanned separately and most of the
+affected acts cite the same "Qonun N-moddasi" phrase in both places), from
+15 distinct citing rows; 2 new edges added back, both `dst_kind='act'` —
+the weaker "Code named, no provision pinned" signal, correctly emitted now
+that the false article attribution is gone from those 2 windows. Net -36
+matches exactly. `dst_qism` population: 689 -> 665 (-24) — most of the
+removed edges had a qism/band tail attached (e.g. "Qonun 19-moddasining
+toʻrtinchi qismi"), which is why yesterday's qism/band-attachment miss
+sample (row 2767) is no longer in that residual list either (see Active
+threads) — it was never a qism-truncation bug, it was this same
+misattribution. Reran `measure_extractor_recall.py`: still **0 real misses**
+on article and chapter/section recall (2337 windows now, down 3 from 2340 —
+those 3 are exactly the newly-scoped-out "Qonun" windows, confirming the
+naive checker's own RE_STOP-based scoping moved in lockstep with the real
+fix rather than disagreeing with it). Reran `build_llc.py`: no LLC-slice
+numbers changed (expected — none of the removed edges touch the LLC Law or
+its foundation articles).
+
+**Decision:** ship the "Qonun" fix (measured before, during, and after;
+28/28 self-tests; 0 recall regression; exact edge-diff accounted for) and
+explicitly do NOT add qaror/farmon/nizom to RE_STOP — there is no measured
+bug to fix there today, and adding untested stop words "just in case" is
+exactly the kind of unmeasured change this project's methodology exists to
+avoid. If a future corpus update introduces the gap for those nouns, the
+same throwaway measurement script (not committed — trivially
+reproducible from `citation_extractor._anchors()` plus `RE_CLAUSE`) will
+catch it.
+
+`verify_transfer.py`: **VERIFICATION PASSED — all checks green.** 28/28
+extractor self-tests; 6791 edges (down from 6827, all accounted for above);
+AC7's "realization edges from superseded acts" count moved from 983 to 948
+(-35, consistent with the edge removal — most of the removed citations
+happened to be in acts already flagged superseded); 38 OKOZ mappings still
+awaiting the owner's validation (untouched); same reconciliation-detail
+list as prior sessions.
 
 ### 2026-09-04 — closed the recall thread, fixed a real qism/band gap, opened a precision thread
 

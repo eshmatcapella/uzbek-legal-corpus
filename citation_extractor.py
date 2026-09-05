@@ -60,14 +60,28 @@ RE_CLAUSE = re.compile(
     re.IGNORECASE,
 )
 # Another act starting: stop scanning, its numbers are not the Code's.
+# Case-sensitive bare "Qonun" (capital Q) is deliberately its own, case-sensitive
+# alternative rather than folded into the case-insensitive group below: a bare
+# lowercase "qonun" is overwhelmingly the generic word ("qonun hujjatlarida",
+# "in legislation" — 49484 occurrences in the corpus vs. 3 that precede a modda/bob
+# clause), while the corpus capitalizes "Qonun" only when naming a specific Act
+# ("ushbu/mazkur Qonun", "...gi Qonun N-moddasi" — 1006 of 12387 capitalized
+# occurrences precede a modda/bob clause). Measured 2026-09-05: this bare-nominative
+# gap (RE_STOP previously only had the suffixed forms qonuni/qonuniga/qonunining)
+# caused 25 real Civil-Code misattributions in the corpus (see DAILY_REVIEW.md).
+# The same gap was checked for qaror/farmon/nizom and causes zero actual
+# misattributions today — "nizom" bare is already below (case-insensitively, since
+# no generic-phrase collision was found for it), and bare Qaror/Farmon never happen
+# to sit right before an unstopped modda/bob clause in the current corpus — so they
+# are left alone rather than "fixed" against a gap with no measured impact.
 RE_STOP = re.compile(
-    r"(?:qonuni|qonuniga|qonunining|kodeksi|kodeksining|farmoni|farmonining|qarori|qarorining|"
+    r"(?i:qonuni|qonuniga|qonunining|kodeksi|kodeksining|farmoni|farmonining|qarori|qarorining|"
     r"nizom|konstitutsiya|buyrugʻi|buyrugi|reglament|"
     # Publication record of the act, e.g. "(Oliy Majlisining Axborotnomasi, 1997-yil,
     # № 2, 56-modda)".  There "56-modda" is item 56 of the gazette issue, not an
     # article of the Code — the single largest false-positive source in the corpus.
-    r"axborotnoma|vedomosti|toʻplam|toplam|№|-songa ilova)",
-    re.IGNORECASE,
+    r"axborotnoma|vedomosti|toʻplam|toplam|№|-songa ilova)"
+    r"|Qonun\b"
 )
 # Abbreviation of another code — FPK (Civil Procedure), JPK (Criminal Procedure),
 # IPK, MMK and so on.  Case-sensitive on purpose: under IGNORECASE this would match
@@ -305,7 +319,23 @@ def _selftest() -> int:
         if got != expected:
             failures += 1
             print(f"FAIL(qism) {text[:64]!r}\n     got  {got}\n     want {expected}")
-    total = len(cases) + len(qism_cases)
+
+    # bare-nominative "Qonun" must stop the scan like the suffixed forms already do
+    # (measured gap, see DAILY_REVIEW.md 2026-09-05), but the generic lowercase word
+    # ("qonun hujjatlarida") must not.
+    stop_cases: list[tuple[str, dict, list[tuple]]] = [
+        ('Fuqarolik kodeksiga muvofiq, “Davlat boji toʻgʻrisida”gi Qonun 19-moddasining '
+         "toʻrtinchi qismi", {}, [("act", None, "single")]),
+        ("Fuqarolik kodeksining 14-moddasi qonun hujjatlarida nazarda tutilgan tartibda",
+         {}, [("article", "14", "single")]),
+    ]
+    for text, kwargs, expected in stop_cases:
+        got = [(c.target_kind, c.article, c.listing) for c in extract(text, **kwargs)]
+        want = [(k, a, l) for k, a, l in expected]
+        if got != want:
+            failures += 1
+            print(f"FAIL(stop) {text[:64]!r}\n     got  {got}\n     want {want}")
+    total = len(cases) + len(qism_cases) + len(stop_cases)
     print(f"{total - failures}/{total} extractor self-tests passed")
     return 1 if failures else 0
 
