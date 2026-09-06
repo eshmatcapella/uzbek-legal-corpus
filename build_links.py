@@ -13,6 +13,7 @@ norm) while another code citing it is 'same'.
 """
 from __future__ import annotations
 
+import difflib
 import re
 import sys
 from datetime import datetime, timezone
@@ -360,11 +361,44 @@ def main() -> int:
         return re.sub(r"\s+", " ", s).strip(" .,;:\"'")
 
     by_date_title: dict[tuple[str, str], int] = {}
+    by_date: dict[str, list[tuple[int, str]]] = {}
     for d_id, d_date, d_title in con.execute(
         "SELECT doc_id, doc_date, doc_title FROM act"
     ).fetchall():
         if d_date and d_title:
-            by_date_title[(str(d_date)[:10], norm_title(d_title))] = d_id
+            iso_d = str(d_date)[:10]
+            nt_d = norm_title(d_title)
+            by_date_title[(iso_d, nt_d)] = d_id
+            by_date.setdefault(iso_d, []).append((d_id, nt_d))
+
+    # The clause item's quoted title is only ever a *substring* of the resolved
+    # act's own title when the item is really citing an amending act ("...gi
+    # Qonuniga oʻzgartishlar va qoʻshimchalar kiritish toʻgʻrisida"): the quote
+    # names the ORIGINAL law, the act being repealed is the amendment to it, and
+    # both share the item's cited date (measured 2026-09-06 against the 175
+    # items the exact (date,title) match left unresolved — see DAILY_REVIEW.md).
+    # Tier 2 exploits that: unique substring match against every act on the same
+    # date. Tier 3 catches spelling variants of the SAME title on the same date
+    # (oʻzgartish/oʻzgartirish, tashkilotlarning/tashkilotlarining, ...) via
+    # similarity ratio, only when there is a clear, unambiguous winner.
+    def resolve_fallback(iso: str, nt: str) -> tuple[int | None, str]:
+        candidates = by_date.get(iso, [])
+        if not candidates:
+            return None, "unresolved"
+        substr = [(d_id, dt) for d_id, dt in candidates if nt in dt]
+        if len(substr) == 1:
+            return substr[0][0], "date+substring"
+        if len(substr) > 1:
+            return None, "unresolved"  # ambiguous: never observed, but stay silent rather than guess
+        scored = sorted(
+            ((difflib.SequenceMatcher(None, nt, dt).ratio(), d_id) for d_id, dt in candidates),
+            reverse=True,
+        )
+        best_ratio, best_id = scored[0]
+        second_ratio = scored[1][0] if len(scored) > 1 else 0.0
+        if best_ratio >= 0.80 and (best_ratio - second_ratio) >= 0.15:
+            return best_id, f"date+fuzzy:{best_ratio:.2f}"
+        return None, "unresolved"
 
     clauses: list[list] = []
     cur2 = con.cursor().execute(f"""
@@ -372,6 +406,7 @@ def main() -> int:
         WHERE regexp_matches(lower(article_text), 'kuchini yo.?qotgan deb topilsin')
     """)
     cid = 0
+    method_counts: dict[str, int] = {}
     for row_id, doc_id, text in cur2.fetchall():
         m0 = re_clause.search(text)
         if not m0:
@@ -381,12 +416,17 @@ def main() -> int:
             mon = next((v for k, v in UZ_MONTHS.items()
                         if m.group("mon").lower().startswith(k[:4])), None)
             iso = f"{m.group('y')}-{mon:02d}-{int(m.group('d')):02d}" if mon else None
-            dst = by_date_title.get((iso, norm_title(m.group("title")))) if iso else None
+            nt = norm_title(m.group("title"))
+            dst = by_date_title.get((iso, nt)) if iso else None
+            method = "date+title" if dst else "unresolved"
+            if dst is None and iso:
+                dst, method = resolve_fallback(iso, nt)
+            method_counts[method] = method_counts.get(method, 0) + 1
             cid += 1
             clauses.append([cid, doc_id, row_id, i,
                             f"{m.group('y')}-yil {m.group('d')}-{m.group('mon')}",
                             (m.group("num") or "").strip().upper() or None,
-                            dst, "date+title" if dst else "unresolved",
+                            dst, method,
                             re.sub(r"\s+", " ",
                                    tail[max(0, m.start() - 40): m.end() + 40]).strip()])
     con.executemany("INSERT INTO repeal_clause VALUES (" + ",".join("?" * 9) + ")", clauses)
@@ -394,6 +434,7 @@ def main() -> int:
     resolved = sum(1 for c in clauses if c[6] is not None)
     log(f"\nrepeal_clause: {len(clauses)} repeal items from "
         f"{len({c[1] for c in clauses})} acts; {resolved} resolved to a corpus act")
+    log(f"  by match_method: {method_counts}")
 
     # An act is superseded if a later act repealed it by date+number.
     con.execute("""

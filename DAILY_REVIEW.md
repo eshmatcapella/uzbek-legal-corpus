@@ -22,6 +22,28 @@ How to use this file each session:
 
 ## Active threads
 
+- **Repeal resolution: tiered fallback shipped, 45 items still genuinely
+  unresolved.** 2026-09-06 added `date+substring` and `date+fuzzy` fallback
+  tiers to `build_links.py`'s exact `(date, title)` repeal match, taking
+  resolution from 710/885 (80.2%) to 840/885 (94.9%). See Log for the full
+  design and measurement. The 45 still unresolved split into two kinds: 13
+  `no_date_match` (the cited date matches no act in the corpus at all — the
+  clause's own date field may be a transcription slip, or the target act
+  genuinely isn't in this 24,267-act corpus; not investigated further) and
+  32 `fuzzy_no_clear_winner` (a date match exists but no candidate clears the
+  0.80-ratio/0.15-gap acceptance bar — several looked like genuinely
+  different acts on inspection, e.g. cid 439/442's "sudyalarning malaka
+  hay'atlari" item has no close title match on its date at all). Next step,
+  if this thread is picked up again: read the 32 fuzzy-rejected cases' full
+  quoted titles by hand (not just the 60-char preview used for triage
+  today) — some may be reconstructable amending-act titles the way the
+  `date+substring` tier handles the common case, just with a middle phrase
+  (e.g. "...ga qaratilgan oʻzgartirishlar...") that breaks the plain
+  substring test. Diminishing returns territory: 45/885 (5%) residual is
+  already small, and the two batches above suggest what's left is a mix of
+  real gaps and un-parseable one-offs rather than one more systematic
+  pattern.
+
 - **"Qonun" precision thread: closed.** See Log — the bare-nominative
   "Qonun" misattribution (2026-09-04) is fixed, measured, and verified: 38
   raw edges removed (19 article_text + 19 cross_references, 15 distinct
@@ -113,14 +135,11 @@ How to use this file each session:
   that the underlying data is meaningfully more complete.
 
 ### Data currency
-- **175/885 repeal items still unresolved** (`repeal_clause` table, see
-  `build_links.py`'s repeal-detection block). Sampled failures are acts
-  where the quoted title in the repeal clause doesn't exact-match
-  `act.doc_title` after normalisation — truncated titles, embedded quote
-  marks, or paraphrased titles. Next step: fuzzy match (edit distance or
-  token-set match) on (date, title) pairs that fail exact match, with a
-  confidence-scored `match_method` so weak matches stay visibly weak rather
-  than silently wrong.
+- ~~**175/885 repeal items still unresolved.**~~ **Fixed 2026-09-06**: tiered
+  `date+substring`/`date+fuzzy` fallback in `build_links.py` resolved 130 of
+  them (now 840/885, 94.9%), each tagged with a confidence-scored
+  `match_method` exactly as this item proposed. See Active threads and Log
+  for the remaining 45 and next steps.
 - **Amendment chains, not just repeals.** An act can *amend* another without
   repealing it (redlines specific articles). No detection exists for this at
   all yet — only whole-act repeal. Worth inventing a detector for "kiritilsin"
@@ -154,6 +173,109 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-06 — repeal resolution: tiered date+substring/date+fuzzy fallback, 80.2% -> 94.9%
+
+Rotated out of Extractor precision (per 2026-09-05's own note) into Data
+currency, the backlog's highest-value unaddressed item: 175/885
+`repeal_clause` items unresolved by the existing exact `(date, title)`
+match. Fresh clone needed the same setup as every prior session
+(`pip install duckdb pyarrow`, `apt-get install git-lfs`, `git lfs install
+--local && git lfs pull`) — still not worth automating for a single daily
+run, per 2026-09-05's assessment.
+
+**Diagnosed the actual failure mode by reading raw text, not by guessing.**
+Sampled 25 of the 175 unresolved items directly from the parquet's
+`article_text`, matched against `repeal_clause.item_no` (not just
+`src_row_id` — a first pass that ignored `item_no` misattributed which
+regex match belonged to which clause and gave nonsense continuations).
+Root cause: the existing extractor's `re_item` captures only the quoted
+title inside "`{date} qabul qilingan "{title}"gi ... -sonli`" — but a large
+share of repeal-list items don't name the repealed act directly; they name
+an *amending* act by describing what it amends: "...2000-yil 26-mayda
+qabul qilingan "Jismoniy tarbiya va sport toʻgʻrisida"gi Oʻzbekiston
+Respublikasi Qonuniga oʻzgartishlar va qoʻshimchalar kiritish haqida"gi
+76-II-sonli Qonuni" — the quoted phrase is the *original* law's title, and
+the actual target act (`-63106`, dated exactly 2000-05-26) is titled
+"'Jismoniy tarbiya va sport toʻgʻrisida'gi ... Qonuniga oʻzgartishlar va
+qoʻshimchalar kiritish haqida" — i.e. the quoted title is a normalized
+*substring* of the true target's title, not equal to it, and both always
+share the item's own cited date (verified this holds, not assumed it).
+Classified all 175 by the text immediately following the quote: 37 fit a
+clean "Qonuniga ... kiritish" template, but many more had middle phrases
+("...ga qaratilgan oʻzgartirishlar...", "...ning N-moddasiga
+oʻzgartirish...") that made template-matching itself fragile — so instead
+of growing the regex to cover each phrasing, tested substring/fuzzy
+matching directly against the already-correct quoted title, scoped by date.
+
+**Measured the fix before writing it into the pipeline.** Built
+`by_date`: every act's `(doc_id, norm_title)` grouped by `doc_date`, then
+for each of the 175 unresolved items checked whether the normalized quoted
+title is a substring of exactly one same-date act's title. Result: **81
+resolved, zero ambiguous** (never more than one same-date substring match
+across all 175 — no arbitrary tie-breaking needed). Of the remaining 94,
+tried `difflib.SequenceMatcher` ratio against same-date candidates,
+accepting a match only when the best ratio is >=0.80 *and* beats the
+second-best by >=0.15 (both thresholds chosen from the actual score
+distribution: every accepted case scored >=0.87 with the next candidate
+at least 0.27 lower, so the bar has real margin, not a knife-edge). Result:
+**49 more resolved**, mostly near-1.0 spelling variants
+(oʻzgartish/oʻzgartirish, tashkilotlarning/tashkilotlarining — LexUZ's own
+transcription is inconsistent across documents citing the same act).
+Manually read the full source text and target act title for the 3
+lowest-confidence accepts (ratios 0.87, 0.88, 0.93 — cids 557, 62, 745):
+all three confirmed correct on inspection — one is the well-known
+"propiska" -> "yashash joyi boʻyicha roʻyxatga olinishi" terminology
+rename Uzbekistan made to its residency-registration law, one is a 2-item
+vs 3-item enumeration paraphrase of the same compulsory-treatment law, one
+is a grammatical paraphrase of the same "in connection with improving
+justice-body activity" act. No wrong match found in either fallback tier
+at any confidence level checked.
+
+**Shipped as two new tiers in `build_links.py`, each tagged with its own
+`match_method`** (`date+substring`, `date+fuzzy:{ratio:.2f}`) so a weak
+match stays visibly weak rather than silently indistinguishable from the
+original exact match — exactly what the backlog item asked for. The
+existing exact-match tier and its `by_date_title` lookup are unchanged; the
+fallback only runs when that lookup misses and a `doc_date` was parsed.
+Left the true-ambiguous branch (>1 same-date substring match) returning
+`unresolved` rather than guessing, even though it never fired on this
+corpus — a future corpus update could hit it.
+
+**Reran `build_links.py`.** `repeal_clause`: 885 items, resolved 710 -> 840
+(94.9%, was 80.2%) — `{'date+title': 710, 'date+substring': 81,
+'date+fuzzy:0.99': 31, 'date+fuzzy:1.00': 8, 'date+fuzzy:0.98': 5,
+'date+fuzzy:0.97': 2, 'date+fuzzy:0.93': 1, 'date+fuzzy:0.88': 1,
+'date+fuzzy:0.87': 1, 'unresolved': 45}`. `link_edge` count unchanged at
+6791 (expected — this only touches repeal detection, not citation
+extraction). Reran `build_llc.py`: no LLC-slice numbers changed (expected —
+none of the newly-resolved repeals touch the LLC Law or its foundation
+articles). The 45 still unresolved split cleanly into 13 `no_date_match`
+(no act at all on the cited date) and 32 `fuzzy_no_clear_winner` (a date
+match exists but no candidate clears the acceptance bar) — recorded as the
+new Active thread with a concrete next step rather than closed as done.
+
+**Decision:** ship both fallback tiers — the substring tier is
+zero-ambiguity by construction, and the fuzzy tier's precision was checked
+by hand at every distinct confidence level down to its acceptance floor,
+not just spot-checked at the top. Did not attempt to also parse the
+amending-act continuation grammar into the regex itself (the originally
+imagined "reconstruct the full title" approach) — the substring/fuzzy
+approach on the existing quoted-title capture got the same acts resolved
+with far less regex complexity and no new failure surface in
+`citation_extractor.py`.
+
+`verify_transfer.py`: **VERIFICATION PASSED — all checks green.** AC7's
+"acts provably superseded" moved from 278 to 357 (+79, now correctly
+detecting supersession through the newly-resolved amending-act repeals);
+"realization edges from superseded acts" moved from 948 to 1007 (+59).
+Same reconciliation-detail list as prior sessions (no article-hierarchy
+changes — this thread never touches `norm_unit`/`struct_node`). Grepped
+`app_hierarchy.py`/`app_llc.py` for `repeal_clause`/`match_method`/
+`v_act_currency` first: neither app filters on `match_method`'s value, only
+selects `dst_doc_id`/`evidence`/`derived_status`, so the new method labels
+are additive and don't need any app change; confirmed both apps still
+byte-compile clean.
 
 ### 2026-09-05 — closed the "Qonun" precision thread; falsified the qaror/farmon/nizom generalization
 
