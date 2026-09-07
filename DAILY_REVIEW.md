@@ -70,8 +70,17 @@ How to use this file each session:
   attachment beyond what's already checked, other stop-word gaps not yet
   hypothesized) haven't been searched for. Next session: either invent
   another falsifiable precision hypothesis the way "Qonun" was found (by
-  sampling extractor output and reading the raw text), or pivot to Data
-  currency / Cleanup per the rotation.
+  sampling extractor output and reading the raw text), or continue the
+  repeal-resolution thread above. Cleanup was fully drained 2026-09-07 (all
+  four backlog items resolved) — rotation goes back to Extractor or Data
+  currency next, not Cleanup, unless a new Cleanup item gets discovered
+  first.
+
+- **Cleanup: fully drained 2026-09-07, no active thread.** All four backlog
+  items (dead prototypes, `test_transfer_e2e.py` redundancy,
+  one-off exploration scripts, `hierarchy_engine.py`'s f-string SQL) were
+  resolved in one session — see Log. Nothing left open here unless a future
+  session finds something new to add to the Backlog's Cleanup section.
 
 - **Smaller, lower-priority residual: qism/band tail truncation.** The
   qism/band attachment check added today (see Log) has 10 residual misses
@@ -152,27 +161,116 @@ How to use this file each session:
   "implements" by default.
 
 ### Cleanup
-- **Retire superseded prototypes**, once confirmed dead:
-  `hierarchy_engine.py` (f-string SQL, empty `okoz_to_fk_map`, superseded by
-  `build_okoz.py`+`app_hierarchy.py`), `app_deep.py` (superseded by
-  `app_hierarchy.py`), `app.py` (earliest Streamlit prototype, superseded).
-  Confirm nothing imports them before deleting.
-- **`test_transfer_e2e.py`** (956 lines, unittest-based, covers "AC1-AC3")
-  predates `verify_transfer.py`'s AC1-AC7 and may now be fully redundant —
-  or may cover cases verify_transfer.py dropped. Diff their actual coverage
-  before deciding: merge anything unique into verify_transfer.py, then retire
-  the rest rather than keeping two acceptance suites that can drift apart.
-- **One-off exploration scripts** (`analyze_civil_code.py`, `analyze_fk.py`,
-  `analyze_fk_deep.py`, `find_civil_code.py`) were scratch queries from the
-  original orchestrator run, not part of the maintained pipeline. Either
-  fold anything still-useful into a proper diagnostic script or delete.
-- **`hierarchy_engine.py`'s f-string SQL** is a live SQL-injection pattern if
-  anything ever calls it with user input — even if the file is slated for
-  deletion, flag/fix it first in case deletion gets deprioritized.
+- ~~**Retire superseded prototypes.**~~ **Done 2026-09-07**: deleted
+  `hierarchy_engine.py`, `app_deep.py`, `app.py` — confirmed zero references
+  anywhere else in the repo (only `app_deep.py` importing `hierarchy_engine`,
+  both removed together) before deleting. This also fully closes the
+  `hierarchy_engine.py` f-string-SQL item below (the file is gone, not just
+  patched).
+- ~~**`test_transfer_e2e.py` redundancy.**~~ **Diffed and partially retired
+  2026-09-07**: NOT fully redundant as this item assumed — Tier 1/2/3
+  (14 tests) are a genuinely independent second markdown-parser
+  implementation plus hardcoded-ground-truth checks, distinct in kind from
+  `verify_transfer.py`'s pipeline-output checks (same "naive detector"
+  philosophy as `measure_extractor_recall.py`). Only Tier 4 (its own
+  AC1-AC3, 3 tests) was actually redundant — and partly dead code, testing a
+  "post-M2" schema (english text added to the parquet) the pipeline never
+  built. Removed Tier 4 only; kept and documented the rest. See Log.
+- ~~**One-off exploration scripts.**~~ **Done 2026-09-07**: deleted
+  `analyze_civil_code.py`, `analyze_fk.py`, `analyze_fk_deep.py`,
+  `find_civil_code.py` — all four hardcoded a Windows path
+  (`c:/uzbek-legal-corpus/...`) that doesn't exist in this (or any Linux)
+  environment, so none were runnable as-is; nothing worth folding forward,
+  every query they ran is superseded by a real pipeline table or measurement
+  script.
+- ~~**`hierarchy_engine.py`'s f-string SQL.**~~ **Closed 2026-09-07** by
+  deleting the file (see above) rather than patching it, since it was
+  already confirmed dead.
 
 ---
 
 ## Log
+
+### 2026-09-07 — Cleanup rotation: retired dead prototypes, right-sized test_transfer_e2e.py
+
+Extractor threads had run three of the last four sessions (09-03, 09-04,
+09-05) and Data currency one (09-06); Cleanup had zero. Picked the whole
+Cleanup backlog section rather than one item, since each item was small and
+independently verifiable, and did real work on all four rather than
+"looked into" any of them.
+
+**Confirmed dead code before deleting anything, not assumed it.** Grepped
+the entire repo (`.py`, `.md`, and any config/entrypoint files) for
+references to `hierarchy_engine`, `app_deep`, `app.py`, and the four
+`analyze_*`/`find_civil_code.py` scripts. Found exactly one internal
+reference (`app_deep.py` importing `hierarchy_engine.py`) and nothing
+external — no README mention, no Streamlit config, no other script
+importing them. Read each file's header to sanity-check the grep:
+`hierarchy_engine.py` confirmed as the backlog described (f-string SQL via
+`conn.execute(f"...{self.parquet_path}...")`, and its `okoz_to_fk_map`
+dict literally empty with a "User will fill this later" comment — genuinely
+superseded by `build_okoz.py`'s real classification). The four
+`analyze_*`/`find_civil_code.py` scripts all hardcode
+`P = 'c:/uzbek-legal-corpus/articles/train-00000-of-00001.parquet'` — a
+Windows path that doesn't exist in this or any prior Linux session, so none
+of these have been runnable since at least the first 2026-09-03 session;
+confirmed genuinely dead rather than "unused but working." Deleted all 7
+files (`git rm`): 851 lines removed.
+
+**Diffed `test_transfer_e2e.py` against `verify_transfer.py` instead of
+assuming the backlog's "probably redundant" framing.** Read every test in
+its 4 tiers and traced what each actually checks:
+- Tier 1 (R1-R4) and Tier 2 (edge cases: duplicate article 26¹/261,
+  superscript sub-articles, titleless headings, mislabeled Section/§
+  headings, repealed articles, the article-168 gap) all run through the
+  file's own `parse_markdown_articles()` — a from-scratch regex re-parse of
+  the raw markdown, written independently of `structure_parser.py` and the
+  frozen `parsed_articles.json` the real pipeline loads at build time
+  (`build_corpus_db.load_markdown_articles` just reads that JSON, it never
+  re-parses). This is the same "naive independent detector" role
+  `measure_extractor_recall.py` plays for citation extraction, applied to
+  markdown parsing instead — genuinely non-duplicate coverage.
+- Tier 3 checks the raw parquet against hardcoded literals (54173 rows, 386
+  Civil Code rows, zero null/empty Uzbek text) rather than against a hash
+  captured at the pipeline's own last build — a meaningfully different
+  guarantee from `verify_transfer.py`'s AC3 sha256-vs-build-time check
+  (which would not catch a parquet that was tampered with and then
+  legitimately rebuilt).
+- Tier 4 (its own AC1-AC3) was the one genuinely redundant part, and worse
+  than redundant: its "post-M2" branches (`if "article_text_en" in
+  cols_query`) test a schema — English text added as a column on the raw
+  parquet — that the actual pipeline never built (English text lands in
+  `norm_unit.article_text_en` inside `corpus.duckdb`, per the immutable-raw-
+  parquet constraint this project has always followed). Confirmed by
+  reading `build_corpus_db.py` and `verify_transfer.py`'s own AC1-AC3 (lines
+  75-191): those check the *live* corpus.duckdb exhaustively — every landed
+  article byte-compared against a fresh markdown re-extraction, not
+  sampled — a strict superset of what Tier 4's sampled `test_ac2` did, and
+  Tier 4's `test_ac1`/`test_ac3` pre-M2 branches just re-checked counts
+  already covered by Tier 1's `test_r1` and Tier 3's
+  `test_integrity_uzbek_text_intact`.
+
+**Decision: removed only Tier 4** (134 lines, 3 tests) rather than the
+whole file. Rewrote the module docstring to record this reasoning
+explicitly, so a future session (or a future me) doesn't re-open the same
+question from scratch or delete the genuinely-independent parts by
+over-applying the backlog's original framing. Reran: 14/14 tests pass (was
+17/17 — exactly the 3 removed, nothing else moved).
+
+**Verified nothing else broke.** `py_compile` on both apps
+(`app_hierarchy.py`, `app_llc.py`) and all pipeline scripts: clean.
+Re-grepped for the 7 deleted files' names across all `.py` files: zero
+hits. No pipeline script touched today (no `build_*.py` changes), so
+`corpus.duckdb` is untouched — no rebuild needed. `verify_transfer.py`:
+**VERIFICATION PASSED — all checks green**, exit 0, identical
+reconciliation-detail list and INFO counts to 2026-09-06 (357 acts
+superseded, 1007 realization edges, 38 OKOZ mappings awaiting validation) —
+expected, since nothing in today's change touches extraction, links, OKOZ,
+or the LLC slice.
+
+**Net:** 8 files touched, 993 lines deleted / 27 added. All four Cleanup
+backlog items resolved (three fully, `test_transfer_e2e.py` right-sized
+rather than deleted outright — see updated Backlog entry).
 
 ### 2026-09-06 — repeal resolution: tiered date+substring/date+fuzzy fallback, 80.2% -> 94.9%
 

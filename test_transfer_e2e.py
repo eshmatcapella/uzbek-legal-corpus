@@ -1,11 +1,31 @@
 """
-E2E Test Suite for Civil Code English Translation Transfer Project.
+Independent-parser regression suite for the Civil Code English translation transfer.
 
-Target Architecture & Coverage (4 Tiers):
-1. Tier 1: Feature Coverage (R1-R4)
-2. Tier 2: Boundary & Edge Cases
-3. Tier 3: Non-Destructive & Schema Integrity
-4. Tier 4: Programmatic Acceptance Criteria Verification (AC1-AC3)
+This predates verify_transfer.py's AC1-AC7 and originally also carried its own
+AC1-AC3 (Tier 4). Diffed 2026-09-07: verify_transfer.py's AC1-AC3 are an
+exhaustive, corpus-wide check against the live corpus.duckdb (every landed
+article byte-compared, sha256 identity on the raw parquet); this file's old
+Tier 4 only sampled a handful of articles and asserted against a "post-M2"
+schema (article_text_en added directly to the parquet) that was never actually
+built — the real pipeline lands English text in norm_unit instead, so those
+branches were dead code. Removed Tier 4 as fully subsumed.
+
+What's left earns its keep by being a genuinely independent second
+implementation, not a duplicate of the pipeline under test:
+1. Tier 1 (R1-R4): `parse_markdown_articles()` below is a from-scratch
+   re-parse of the raw markdown, independent of structure_parser.py and the
+   frozen parsed_articles.json the real pipeline loads (see
+   build_corpus_db.load_markdown_articles) — the same "naive detector"
+   cross-check philosophy as measure_extractor_recall.py, applied to parsing
+   instead of citation extraction.
+2. Tier 2: boundary/edge cases (duplicate article 26-1, superscript
+   sub-articles, titleless headings, mislabeled Section/§ headings, repealed
+   articles, the article-168 gap) pinned as regressions against hardcoded
+   ground truth, not against the pipeline's own prior output.
+3. Tier 3: raw-parquet integrity checked against hardcoded literals (54173
+   rows, 386 Civil Code rows, no null/empty Uzbek text) rather than against a
+   hash captured at build time — catches a tampered-then-rebuilt parquet that
+   AC3's sha256-vs-last-build check alone would not.
 
 Runs via: `python test_transfer_e2e.py` or `python -m unittest test_transfer_e2e.py`
 """
@@ -815,141 +835,6 @@ class TestTier3NonDestructiveSchemaIntegrity(unittest.TestCase):
                 cols_query,
                 "Pre-M2 schema should not contain article_text_en column",
             )
-
-
-class TestTier4ProgrammaticAcceptanceCriteria(unittest.TestCase):
-    """Tier 4: Programmatic Acceptance Criteria Verification"""
-
-    def setUp(self):
-        self.conn = duckdb.connect()
-        self.extracted_articles = parse_markdown_articles(MARKDOWN_PATH)
-
-    def tearDown(self):
-        self.conn.close()
-
-    def test_ac1_article_count_equality(self):
-        """AC1: Test extracted markdown article count (394) vs updated non-null article_text_en rows contract (386 post-M2)."""
-        extracted_count = len(self.extracted_articles)
-        self.assertEqual(
-            extracted_count,
-            EXPECTED_TOTAL_ARTICLES,
-            f"AC1 Failure: Extracted article count is {extracted_count}, expected {EXPECTED_TOTAL_ARTICLES}",
-        )
-
-        cols_query = [
-            c[0]
-            for c in self.conn.execute(
-                f"DESCRIBE SELECT * FROM read_parquet('{PARQUET_PATH}')"
-            ).fetchall()
-        ]
-        if "article_text_en" in cols_query:
-            # Post-M2 assertions
-            updated_count = self.conn.execute(
-                f"SELECT COUNT(*) FROM read_parquet('{PARQUET_PATH}') WHERE doc_id = -111189 AND article_text_en IS NOT NULL"
-            ).fetchone()[0]
-
-            # 1. Assert that all 386 rows of doc_id = -111189 have non-null article_text_en (100% coverage)
-            self.assertEqual(
-                updated_count,
-                EXPECTED_CIVIL_CODE_ROWS,
-                f"AC1 Failure: Expected all {EXPECTED_CIVIL_CODE_ROWS} doc_id = -111189 rows to have non-null article_text_en, got {updated_count}",
-            )
-
-            # 2. Assert that all 394 extracted markdown articles are mapped and present in the dataset contract
-            active_extracted = [
-                a
-                for a in self.extracted_articles
-                if a["norm_id"] not in EXPECTED_MARKDOWN_ONLY_ARTICLES
-            ]
-            self.assertEqual(
-                len(active_extracted),
-                385,
-                f"AC1 Failure: Expected 385 active extracted articles matching DB keys, got {len(active_extracted)}",
-            )
-            # Verify 385 active extracted articles + 9 markdown-only/repealed articles = 394 total
-            self.assertEqual(
-                len(active_extracted) + len(EXPECTED_MARKDOWN_ONLY_ARTICLES),
-                EXPECTED_TOTAL_ARTICLES,
-                "AC1 Failure: Active extracted + markdown-only articles sum does not equal 394",
-            )
-
-    def test_ac2_random_sampling_char_count(self):
-        """AC2: Character count sampling for >= 10 random articles (standards, sub-articles, mislabeled sections, repealed) comparing extracted vs DB."""
-        # 17 representative sample targets covering all structural categories (>= 10)
-        sample_targets = [
-            "1",
-            "50",
-            "100",
-            "200",
-            "300",
-            "385",  # Standard articles
-            "26¹",
-            "261",
-            "173¹",
-            "173⁷",
-            "259¹",
-            "358¹",  # Sub-articles & duplicates
-            "144",
-            "255",
-            "268",
-            "309",  # Mislabeled Section/§ headings
-            "63",
-            "70",
-            "176",  # Repealed articles
-        ]
-        sample_articles = [
-            a for a in self.extracted_articles if a["raw_id"] in sample_targets
-        ]
-
-        self.assertGreaterEqual(
-            len(sample_articles),
-            10,
-            f"AC2 Failure: Expected at least 10 sampled articles, got {len(sample_articles)}",
-        )
-
-        for art in sample_articles:
-            raw_char_count = art["char_count"]
-            self.assertEqual(
-                len(art["text_en"]),
-                raw_char_count,
-                f"AC2 Failure: Character count mismatch for article {art['raw_id']}: len(text_en)={len(art['text_en'])} vs raw={raw_char_count}",
-            )
-
-        cols_query = [
-            c[0]
-            for c in self.conn.execute(
-                f"DESCRIBE SELECT * FROM read_parquet('{PARQUET_PATH}')"
-            ).fetchall()
-        ]
-        if "article_text_en" in cols_query:
-            for art in sample_articles:
-                if art["norm_id"] in EXPECTED_MARKDOWN_ONLY_ARTICLES:
-                    continue
-
-                db_text = query_db_article_text_en(
-                    self.conn, PARQUET_PATH, art["raw_id"], art["norm_id"]
-                )
-                self.assertIsNotNone(
-                    db_text,
-                    f"AC2 Failure: DB article_text_en missing for sample article {art['raw_id']}",
-                )
-                self.assertEqual(
-                    len(db_text),
-                    art["char_count"],
-                    f"AC2 Failure: Parquet char count ({len(db_text)}) != markdown char count ({art['char_count']}) for article {art['raw_id']}",
-                )
-
-    def test_ac3_uzbek_text_intactness(self):
-        """AC3: Uzbek text intactness verification."""
-        total_uzbek_rows = self.conn.execute(
-            f"SELECT COUNT(*) FROM read_parquet('{PARQUET_PATH}') WHERE article_text IS NOT NULL AND LENGTH(article_text) > 0"
-        ).fetchone()[0]
-
-        self.assertEqual(
-            total_uzbek_rows,
-            EXPECTED_TOTAL_PARQUET_ROWS,
-            f"AC3 Failure: Uzbek text lost or corrupted! Valid rows: {total_uzbek_rows}/{EXPECTED_TOTAL_PARQUET_ROWS}",
-        )
 
 
 if __name__ == "__main__":
