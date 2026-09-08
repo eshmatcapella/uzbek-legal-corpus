@@ -22,6 +22,60 @@ How to use this file each session:
 
 ## Active threads
 
+- **Superscript-article resolution: fixed and measured 2026-09-08, one small
+  residual left.** `Citation.doc_id` classified a cited article by comparing
+  its raw integer value against `CODE_LAST_ARTICLE` (1199) — but superscript
+  articles are cited with the suffix digit concatenated onto the base number
+  ("173-7" is written "1737", matching `norm_unit.article_number`), so any
+  superscript citation whose concatenated form exceeds 1199 got misclassified
+  as "outside the Code" and silently dropped by `build_links.py`'s
+  `if dst_doc is None: continue` — never even an unresolved/dangling edge, just
+  gone. Found by replicating `build_links.py`'s exact extraction loop
+  corpus-wide and filtering for `c.doc_id is None`: exactly **4** real
+  citations hit this in the whole corpus (173-7 and 259-1 via a `Fuqarolik
+  kodeksi` anchor; 626-1 and 1107-1, both Special Part, via an `FK` alias and a
+  bare anchor respectively) — all 4 manually confirmed as genuine, correctly-
+  anchored Civil Code citations, not false positives. Also discovered along
+  the way: `norm_unit` only ever populated the General Part (articles 1-385,
+  confirmed by `SELECT DISTINCT doc_id FROM norm_unit` returning only
+  `-111189`) — a scope decision already documented in `build_corpus_db.py`'s
+  M0 docstring, not a bug — so the two Special Part hits (626-1, 1107-1) were
+  never going to resolve to a `dst_norm_id` either way; the fix's job for
+  those two is only to stop dropping the edge entirely, matching how every
+  *other* Special Part citation (e.g. a plain "700-moddasi") already produces
+  an edge with `dst_norm_id = NULL` rather than no edge at all. Fixed by
+  reclassifying any concatenated value past `CODE_LAST_ARTICLE` by its base
+  article (`n //= 10`) before the General/Special Part comparison — safe
+  because no plain article number exceeds 1199, so anything past it can only
+  be this concatenation. Added 4 new self-tests exercising exactly the two
+  General Part cases, one Special Part case, and a control (plain "700" must
+  stay `DOC_SPECIAL`, unaffected). 32/32 extractor self-tests pass (was 28).
+  Reran `build_links.py`: edge count 6791 -> 6795 (+4, exactly the 4 found),
+  each new edge inspected directly — the two General Part ones resolved to
+  the correct `dst_norm_id` (`-111189-a1737`, `-111189-a2591`), the two
+  Special Part ones landed as plain unresolved-to-norm edges (`dst_norm_id
+  NULL`, `dst_dangling = false`), exactly as predicted. Reran
+  `measure_extractor_recall.py`: still 0 real misses on article/chapter
+  recall, qism/band residual unchanged at 7/640 (this fix doesn't touch qism
+  attachment). Reran `build_llc.py`: no LLC-slice numbers changed (none of
+  the 4 new edges touch the LLC Law or its foundation articles).
+  **One residual found but not fixed**: row 1390's citation is actually a
+  *range*, "173 – 1737-moddalari", meaning "article 173 through its
+  superscript children 173-1..173-7" (8 provisions) — but `_expand`'s
+  malformed-range guard (rejects any range wider than 200, to catch garbled
+  text) sees `1737 - 173 = 1564` and falls back to a 2-item list of just the
+  literal endpoints, so 173-1 through 173-6 (6 provisions) never get cited at
+  all even after today's fix, which only rescued the "1737" endpoint itself.
+  Checked corpus-wide whether this generalizes: 49 raw occurrences of a
+  range spanning more than 200 exist in the corpus, but 48 of them are in
+  *other* codes (Criminal Code, Criminal Procedure Code, etc., citing their
+  own superscript ranges) that never sit inside a `Fuqarolik kodeksi`/FK-alias/
+  self-reference anchor, so the extractor correctly never touches them — row
+  1390 is the only one that lands inside a real Civil Code anchor. Genuinely
+  a single-occurrence gap (6 missing edges from 1 citation), so left
+  undone rather than special-cased into `_expand` for one instance — recorded
+  as a Backlog item in case a future corpus update introduces more of these.
+
 - **Repeal resolution: tiered fallback shipped, 45 items still genuinely
   unresolved.** 2026-09-06 added `date+substring` and `date+fuzzy` fallback
   tiers to `build_links.py`'s exact `(date, title)` repeal match, taking
@@ -64,17 +118,20 @@ How to use this file each session:
   have today.
 
 - **Precision, more broadly: still open beyond "Qonun".** The "Qonun" fix
-  was one specific, measured misattribution pattern. It does not mean
-  precision is now fully verified — no gold set exists (see Backlog), and
-  other misattribution patterns (wrong doc_id resolution, wrong qism
-  attachment beyond what's already checked, other stop-word gaps not yet
-  hypothesized) haven't been searched for. Next session: either invent
-  another falsifiable precision hypothesis the way "Qonun" was found (by
-  sampling extractor output and reading the raw text), or continue the
-  repeal-resolution thread above. Cleanup was fully drained 2026-09-07 (all
-  four backlog items resolved) — rotation goes back to Extractor or Data
-  currency next, not Cleanup, unless a new Cleanup item gets discovered
-  first.
+  was one specific, measured misattribution pattern. **The "wrong doc_id
+  resolution" hypothesis named here was tried 2026-09-08 and paid off** — see
+  the superscript-article thread above — though it turned out to be a silent
+  recall drop (a real citation producing zero edges) rather than a precision
+  misattribution (a real citation landing on the wrong target); still no gold
+  set exists (see Backlog), and "wrong qism attachment beyond what's already
+  checked" and "other stop-word gaps not yet hypothesized" remain unsearched.
+  Next session: either invent another falsifiable hypothesis the same way (by
+  sampling extractor output and reading the raw text — this has now found a
+  real, fixable gap three sessions running: qism/band 09-04, Qonun 09-05,
+  doc_id 09-08), or continue the repeal-resolution thread above. Cleanup was
+  fully drained 2026-09-07 (all four backlog items resolved) — rotation goes
+  back to Extractor or Data currency next, not Cleanup, unless a new Cleanup
+  item gets discovered first.
 
 - **Cleanup: fully drained 2026-09-07, no active thread.** All four backlog
   items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -111,13 +168,28 @@ How to use this file each session:
 ### Extractor recall/precision
 - **Build the gold set.** ~50 articles, hand-verified ground truth for
   citation extraction (which acts realize them, at what confidence). No gold
-  set exists yet — `citation_extractor.py`'s 28 self-tests (see Log) check
+  set exists yet — `citation_extractor.py`'s 32 self-tests (see Log) check
   surface-form parsing, not corpus-wide recall/precision. Recall is measured
-  clean across all anchor kinds; the "Qonun" precision bug is fixed and
-  measured (see Log 2026-09-05). Still no gold set and no systematic search
-  for OTHER misattribution patterns beyond the two found so far by sampling
-  — revisit whether hand-annotation is now the highest-value next step or
-  whether more hypothesis-driven sampling keeps finding gaps faster.
+  clean across all anchor kinds; the "Qonun" precision bug and the
+  superscript-`doc_id` recall bug are both fixed and measured (see Log
+  2026-09-05, 2026-09-08). Still no gold set and no systematic search for
+  OTHER misattribution patterns beyond the ones found so far by sampling —
+  revisit whether hand-annotation is now the highest-value next step or
+  whether more hypothesis-driven sampling keeps finding gaps faster (it's 3
+  for 3 so far).
+- **Range citation spanning a superscript boundary loses its middle articles.**
+  Found 2026-09-08 while fixing the `doc_id` bug (see Active threads): a
+  range like "173 – 1737-moddalari" means "article 173 through its
+  superscript children 173-1..173-7" (8 provisions), but `_expand`'s
+  malformed-range guard (rejects spans over 200, meant to catch garbled text)
+  sees a raw gap of 1564 and falls back to a 2-item list of just the literal
+  endpoints — so 173-1 through 173-6 (6 provisions) never get an edge at all.
+  Confirmed corpus-wide this is a single occurrence today (48 of 49 similar
+  wide-range citations are in other codes, outside any Civil Code anchor) —
+  not fixed given the 1-occurrence scope, but worth a real fix (detect when
+  both range endpoints share the same integer division by 10, i.e. the same
+  base article, and expand to the base plus every superscript child between
+  the two suffix digits) if a future corpus update adds more of these.
 - ~~**Bare-nominative act-name gap in RE_STOP, beyond "Qonun".**~~ **Measured
   2026-09-05, falsified as a live bug**: qaror/farmon/nizom's bare
   capitalized forms cause zero actual misattributions in the current corpus
@@ -190,6 +262,119 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-08 — found and fixed a silent recall drop in superscript-article resolution
+
+Rotation: Data currency (09-06) then Cleanup (09-07) had run most recently, so
+rotated back to Extractor per the Active-threads note. Picked up the
+"Precision, more broadly" thread's own named-but-unsearched hypothesis —
+"wrong doc_id resolution" — rather than inventing a fresh one from scratch,
+since it was already sitting there unexamined. Fresh clone needed the usual
+`apt-get install git-lfs && git lfs install --local && git lfs pull` plus
+`pip install duckdb pyarrow` before any data was visible.
+
+**Read `Citation.doc_id` looking for exactly this class of bug, then verified
+by reading `norm_unit` before touching code.** The property classifies a
+cited article as General or Special Part by comparing its integer value
+against `GENERAL_PART_LAST_ARTICLE` (385) and `CODE_LAST_ARTICLE` (1199). But
+`norm_unit.article_number` encodes superscript articles by concatenating the
+suffix digit onto the base ("173-7" -> "1731".."1737", confirmed directly:
+`SELECT norm_id, article_number, article_base, superscript FROM norm_unit
+WHERE superscript IS NOT NULL` returns exactly 9 rows, all under this
+scheme). Any such citation whose concatenated value exceeds 1199 was
+therefore misclassified as "outside the Code entirely" (`doc_id = None`), and
+`build_links.py`'s resolution loop does `if dst_doc is None: continue` right
+before the norm lookup — not an unresolved or dangling edge, just silently no
+edge at all.
+
+**Also found, while checking the fix's safety, that Special Part coverage is
+narrower than the doc_id constants imply.** `SELECT DISTINCT doc_id FROM
+norm_unit` returns only `-111189` (the General Part) — the Special Part
+(`DOC_SPECIAL = -180552`, articles 386-1199) has zero norm_unit rows. This
+isn't a bug: `build_corpus_db.py`'s own M0 docstring says its scope is "the
+Civil Code General Part" and the markdown source lives under a directory
+literally named `Civil code of Uzbekistan_general part`. It does mean a
+Special Part citation can never resolve to a `dst_norm_id` (no norm exists to
+point at) — a fact the pipeline already handles correctly for plain Special
+Part citations (they get an edge with `dst_norm_id = NULL`, not dropped, not
+flagged dangling). This is the bar the fix needed to clear for the two
+Special Part superscript hits: not "resolve them to a norm" (impossible by
+design) but "don't drop the edge outright, same as every other Special Part
+citation."
+
+**Measured the actual impact before writing the fix**, by replicating
+`build_links.py`'s exact extraction loop (same candidate-row filter, same
+`alias_docs`, same `is_the_code` gating) and collecting every `article`-kind
+citation with `c.doc_id is None`. Exactly **4** in the whole corpus:
+- row 1390 (Suv kodeksi, `cross_references`): "Fuqarolik kodeksining 173 –
+  1737-moddalari" -> citation "1737" (173-7, General Part)
+- row 41737 (a Garov/Pledge Law amendment, `cross_references`): "Fuqarolik
+  kodeksining 2591-moddasi" -> citation "2591" (259-1, General Part)
+- row 6071 (a court explainer, `article_text`, via the FK alias): "FKning
+  11071-moddasiga asosan" -> citation "11071" (1107-1, Special Part)
+- row 49322 (Maʼmuriy javobgarlik kodeksi, `cross_references`): "Fuqarolik
+  kodeksining 539, 6261-moddalari" -> citation "6261" (626-1, Special Part)
+
+All 4 manually confirmed genuine: each sits inside a real `Fuqarolik
+kodeksi`/FK-alias anchor, correctly scoped by the existing anchor logic — the
+bug is purely in the post-extraction classification, not in what gets
+anchored or matched.
+
+**Fix:** reclassify by the base article when the concatenated value exceeds
+`CODE_LAST_ARTICLE` (`n //= 10` before the General/Special comparison) —
+sound because no plain article number in this Code exceeds 1199, so anything
+past it can only be this concatenation scheme, never a genuine larger article
+number. Added 4 self-tests: the two General Part hits, the Special Part hit,
+and a control (plain "700" must stay classified `DOC_SPECIAL`, confirming the
+fix doesn't touch ordinary citations). `citation_extractor.py`: 32/32
+self-tests pass (was 28).
+
+**Reran `build_links.py`.** `link_edge`: 6791 -> 6795 (+4, exactly the 4
+found). Inspected each new edge directly rather than trusting the count: the
+two General Part ones resolved `dst_norm_id` correctly (`-111189-a1737`,
+`-111189-a2591`, matching `norm_unit` exactly); the two Special Part ones
+landed as `dst_norm_id = NULL`, `dst_dangling = false` — consistent with how
+every other Special Part citation already behaves, not a new kind of gap.
+Reran `measure_extractor_recall.py`: still 0 real misses on article and
+chapter/section recall; qism/band residual unchanged at 7/640 (this fix is
+orthogonal to qism attachment). Reran `build_llc.py`: no LLC-slice numbers
+changed (expected — none of the 4 new edges touch the LLC Law or its
+foundation articles, all of which are small General Part numbers well under
+this bug's threshold).
+
+**Found one residual while checking whether the fix generalized, decided not
+to fix it today.** Row 1390's citation is actually a *range* — "173 –
+1737-moddalari" means "173 through its 7 superscript children" (8
+provisions), but `_expand`'s malformed-range guard (rejects a span over 200,
+meant to reject garbled text) sees `1737 - 173 = 1564` and falls back to a
+2-item list of just the endpoints, so today's fix rescues "1737" but 173-1
+through 173-6 (6 provisions) are still never cited. Checked whether this
+generalizes: scanned the whole corpus for range citations exceeding the
+200-guard (49 found) — 48 of the 49 are in other codes (Criminal Code,
+Criminal Procedure Code, etc.) citing their own superscript ranges, and never
+sit inside a Civil Code anchor, so the extractor correctly ignores them
+already; row 1390 is the only one that lands inside a real `Fuqarolik
+kodeksi` anchor. A single-occurrence gap (6 missing edges) — recorded in
+Backlog with a concrete fix sketch (detect matching base articles via
+integer-divide-by-10 on both range endpoints) rather than special-cased into
+`_expand` for one instance today.
+
+**Decision:** ship the `doc_id` fix — small, unambiguous, measured before and
+after, self-tested, zero regression on recall or the LLC slice. Do not chase
+the range-collapse residual in the same session; it is genuinely one
+occurrence today, and a rushed generalized fix to `_expand` risks new failure
+surface for less benefit than the properly-scoped fix already shipped.
+
+`verify_transfer.py`: **VERIFICATION PASSED — all checks green.** Same
+reconciliation-detail list as every prior session (this thread never touches
+`norm_unit`/`struct_node`, only `link_edge`); AC7's "acts provably
+superseded" / "realization edges from superseded acts" unchanged at 357/1007
+(expected — none of the 4 new edges originate from an act already flagged
+superseded). `py_compile` clean on both apps and every pipeline script;
+grepped `app_hierarchy.py`/`app_llc.py` for `dst_article_number`/`doc_id`
+usage first — neither app filters on the specific numeric value, only joins
+through `dst_norm_id`/`dst_doc_id`, so the newly-added edges are additive and
+need no app change.
 
 ### 2026-09-07 — Cleanup rotation: retired dead prototypes, right-sized test_transfer_e2e.py
 

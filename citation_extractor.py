@@ -122,6 +122,19 @@ class Citation:
         if self.target_kind == "act" or self.article is None:
             return None
         n = int(self.article)
+        # Superscript articles are cited with the suffix digit concatenated onto
+        # the base number, matching norm_unit.article_number (e.g. article 173-7
+        # is written "1737", 259-1 is "2591" — see build_links.py's norm_by_number
+        # lookup, which is keyed on this same literal string). Since no plain
+        # article number exceeds CODE_LAST_ARTICLE, anything past it can only be
+        # one of these concatenated forms: reclassify by the base article, not
+        # the inflated concatenated value. Measured 2026-09-08: without this, the
+        # base-then-suffix arithmetic below never ran, so build_links.py's
+        # `if dst_doc is None: continue` silently dropped every real citation to
+        # a superscript article past 1199 (173-7 and 259-1 in the General Part,
+        # 626-1 and 1107-1 in the unmapped Special Part) — see DAILY_REVIEW.md.
+        if n > CODE_LAST_ARTICLE:
+            n //= 10
         if n <= GENERAL_PART_LAST_ARTICLE:
             return DOC_GENERAL
         return DOC_SPECIAL if n <= CODE_LAST_ARTICLE else None
@@ -335,7 +348,25 @@ def _selftest() -> int:
         if got != want:
             failures += 1
             print(f"FAIL(stop) {text[:64]!r}\n     got  {got}\n     want {want}")
-    total = len(cases) + len(qism_cases) + len(stop_cases)
+    # doc_id must reclassify superscript articles by their base number, not the
+    # concatenated citation string (measured gap, see DAILY_REVIEW.md
+    # 2026-09-08): a General Part superscript (173-7) and a Special Part one
+    # (1107-1, base > GENERAL_PART_LAST_ARTICLE) must resolve to the right doc,
+    # not silently become unresolvable the way they did before the fix.
+    docid_cases: list[tuple[str, dict, list[tuple]]] = [
+        ("Oʻzbekiston Respublikasi Fuqarolik kodeksining 173 – 1737-moddalari.", {},
+         [("173", DOC_GENERAL), ("1737", DOC_GENERAL)]),
+        ("Fuqarolik kodeksining 2591-moddasi.", {}, [("2591", DOC_GENERAL)]),
+        ("FKning 11071-moddasiga asosan", {"allow_fk_alias": True}, [("11071", DOC_SPECIAL)]),
+        ("Fuqarolik kodeksining 700-moddasi.", {}, [("700", DOC_SPECIAL)]),
+    ]
+    for text, kwargs, expected in docid_cases:
+        got = [(c.article, c.doc_id) for c in extract(text, **kwargs) if c.target_kind == "article"]
+        if got != expected:
+            failures += 1
+            print(f"FAIL(doc_id) {text[:64]!r}\n     got  {got}\n     want {expected}")
+
+    total = len(cases) + len(qism_cases) + len(stop_cases) + len(docid_cases)
     print(f"{total - failures}/{total} extractor self-tests passed")
     return 1 if failures else 0
 
