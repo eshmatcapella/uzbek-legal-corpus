@@ -400,6 +400,27 @@ def main() -> int:
             return best_id, f"date+fuzzy:{best_ratio:.2f}"
         return None, "unresolved"
 
+    # Measured 2026-09-09 (see DAILY_REVIEW.md): every one of the 45 items no
+    # tier above resolves is a genuine corpus-coverage gap, not an extraction
+    # bug — split cleanly into two causes. (1) The repealed document is a
+    # Qaror/Farmon (a parliamentary/Cabinet resolution or presidential/Soviet
+    # decree), not a Qonun (law): `act` carries essentially none of these —
+    # corpus-wide, only 24/856 Qonuni citations vs 0/24 Qarori and 0/3 Farmon
+    # resolve at the exact (date,title) tier, and a direct search for the most
+    # common missing kind ("...amalga kiritish tartibi toʻgʻrisida" enactment
+    # resolutions for the Labor/Urban-Planning/Housing/Civil-Procedure/
+    # Economic-Procedure Codes) finds exactly one such act in the whole
+    # corpus — the 1992 Constitution's own. (2) The rest are acts of
+    # Qoraqalpogʻiston Respublikasi (Karakalpakstan) or pre-1991 Soviet-era
+    # decrees that simply have no `act` row on their cited date at all
+    # (verified directly: zero acts on 6 of 8 distinct Qoraqalpogʻiston dates
+    # cited by row 16788 alone). Tag cause (1) explicitly, since it is a
+    # cheap, unambiguous regex check on the word right after the quoted
+    # title and turns an undifferentiated "unresolved" into "we know why,
+    # verified" for 27 of 45 items — cause (2) has no comparably cheap
+    # detector and stays generic "unresolved".
+    re_repealed_kind = re.compile(r'^["”]\s*(?:g[ai]\s+)?(?:\S+\s+){0,4}?(Qonun|Qaror|Farmon)\w*', re.IGNORECASE)
+
     clauses: list[list] = []
     cur2 = con.cursor().execute(f"""
         SELECT file_row_number, doc_id, article_text FROM {raw}
@@ -421,6 +442,11 @@ def main() -> int:
             method = "date+title" if dst else "unresolved"
             if dst is None and iso:
                 dst, method = resolve_fallback(iso, nt)
+            if dst is None:
+                after = tail[m.end("title"): m.end("title") + 60]
+                km = re_repealed_kind.match(after)
+                if km and km.group(1).lower() in ("qaror", "farmon"):
+                    method = "unresolved:non-statute"
             method_counts[method] = method_counts.get(method, 0) + 1
             cid += 1
             clauses.append([cid, doc_id, row_id, i,

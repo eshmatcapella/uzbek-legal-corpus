@@ -22,6 +22,53 @@ How to use this file each session:
 
 ## Active threads
 
+- **Repeal resolution: closed 2026-09-09.** The 45/885 residual left after
+  2026-09-06's tiered fallback is now fully characterized — every single
+  one is a genuine corpus-coverage gap, not an extraction or matching bug.
+  Root-caused by reading all 45 full clause texts (not the 60-char preview
+  used in the original 09-06 triage) plus a corpus-wide type breakdown: of
+  856 `Qonuni` (law) citations, 82.8% resolve at the exact tier; of 24
+  `Qarori` (resolution) and 3 `Farmon` (decree) citations, **0%** do —
+  confirmed not incidental by searching the whole `act` table for the most
+  common missing kind ("...amalga kiritish tartibi toʻgʻrisida", the
+  enactment-procedure resolution issued alongside a new Code): exactly
+  **one** such act exists in the entire 24,267-row corpus (the 1992
+  Constitution's own), none for the Labor/Urban-Planning/Housing/Civil-
+  Procedure/Economic-Procedure Codes whose enactment resolutions are cited
+  by name. The other main cluster (13 of the 45, all from one citing act,
+  row 16788) cites Qoraqalpogʻiston Respublikasi (Karakalpakstan) statutes
+  on 8 distinct dates — verified directly that **zero** acts exist in the
+  corpus on 6 of those 8 dates, and the 2 with same-day acts have no
+  candidate anywhere near a title match; this national-legislation corpus
+  simply doesn't carry Karakalpakstan's own sub-national lawmaking. A
+  residual few (4 items, all pre-1991 Soviet-era Presidium/Cabinet
+  decrees) have zero acts at all on their cited date, same story. Shipped
+  a small, additive fix in `build_links.py`: when no tier resolves a
+  clause, check the word immediately following the quoted title, and if
+  it's `Qaror`/`Farmon` (not `Qonun`), tag `match_method =
+  'unresolved:non-statute'` instead of bare `'unresolved'` — turns
+  "unresolved, cause unknown" into "verified: target act type isn't in
+  this corpus" for 27 of the 45 (24 Qarori + 3 Farmon, cheap and
+  unambiguous by regex). The remaining 18 (13 Qoraqalpogʻiston + 4 old-era,
+  no comparably cheap detector) stay generic `unresolved` but are now
+  documented here in full instead of deferred. Reran `build_links.py`:
+  `repeal_clause` resolution count unchanged at 840/885 (this is a
+  label-only change, no new edges invented) — `by match_method` now reads
+  `{'date+title': 710, 'date+substring': 81, 'date+fuzzy:*': 48,
+  'unresolved:non-statute': 27, 'unresolved': 18}`. Reran `build_llc.py`:
+  no LLC-slice numbers changed (none of the 45 touch the LLC Law). Grepped
+  both apps for `match_method` first: neither filters on its value, only
+  counts rows and reads `dst_doc_id`/`evidence`, so the new label is safe.
+  **Decision: this thread is done, not deferred.** There is no further
+  extractor or matching work available here — the gap is that the source
+  corpus (LexUZ's national-level act index) doesn't carry these document
+  types/jurisdictions at all, which is a data-acquisition question (adding
+  Qaror/Farmon/Karakalpakstan documents to the raw parquet), not a
+  pipeline bug, and out of scope for `build_links.py` to solve. If the
+  project owner ever sources a corpus update that adds these, `unresolved:
+  non-statute`'s count is the first thing to recheck — a re-run should
+  drop it toward zero without any code change.
+
 - **Superscript-article resolution: fixed and measured 2026-09-08, one small
   residual left.** `Citation.doc_id` classified a cited article by comparing
   its raw integer value against `CODE_LAST_ARTICLE` (1199) — but superscript
@@ -125,12 +172,15 @@ How to use this file each session:
   misattribution (a real citation landing on the wrong target); still no gold
   set exists (see Backlog), and "wrong qism attachment beyond what's already
   checked" and "other stop-word gaps not yet hypothesized" remain unsearched.
-  Next session: either invent another falsifiable hypothesis the same way (by
+  Next session: invent another falsifiable hypothesis the same way (by
   sampling extractor output and reading the raw text — this has now found a
   real, fixable gap three sessions running: qism/band 09-04, Qonun 09-05,
-  doc_id 09-08), or continue the repeal-resolution thread above. Cleanup was
-  fully drained 2026-09-07 (all four backlog items resolved) — rotation goes
-  back to Extractor or Data currency next, not Cleanup, unless a new Cleanup
+  doc_id 09-08). The repeal-resolution thread this note used to point to is
+  now closed (see Active threads, 2026-09-09) — its 45-item residual turned
+  out to be corpus coverage, not extractor precision, so it's not a
+  substitute rotation target here. Cleanup was fully drained 2026-09-07 (all
+  four backlog items resolved) — rotation goes back to Extractor or Data
+  currency next, not Cleanup, unless a new Cleanup
   item gets discovered first.
 
 - **Cleanup: fully drained 2026-09-07, no active thread.** All four backlog
@@ -216,11 +266,13 @@ How to use this file each session:
   that the underlying data is meaningfully more complete.
 
 ### Data currency
-- ~~**175/885 repeal items still unresolved.**~~ **Fixed 2026-09-06**: tiered
-  `date+substring`/`date+fuzzy` fallback in `build_links.py` resolved 130 of
-  them (now 840/885, 94.9%), each tagged with a confidence-scored
-  `match_method` exactly as this item proposed. See Active threads and Log
-  for the remaining 45 and next steps.
+- ~~**175/885 repeal items still unresolved.**~~ **Fixed 2026-09-06, residual
+  fully characterized and closed 2026-09-09**: tiered `date+substring`/
+  `date+fuzzy` fallback resolved 130 of them (840/885, 94.9%); the last 45
+  are a genuine corpus-coverage gap (Qaror/Farmon document types and
+  Qoraqalpogʻiston Republic acts the source corpus barely carries), not a
+  matching bug — 27 of the 45 now tagged `unresolved:non-statute` so the
+  gap is visible in the data itself. See Log 2026-09-06 and 2026-09-09.
 - **Amendment chains, not just repeals.** An act can *amend* another without
   repealing it (redlines specific articles). No detection exists for this at
   all yet — only whole-act repeal. Worth inventing a detector for "kiritilsin"
@@ -262,6 +314,124 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-09 — closed the repeal-resolution thread: the 45-item residual is corpus coverage, not a bug
+
+Rotation: Extractor ran last (09-08); Data currency had only run once before
+(09-06) against four Extractor sessions and one Cleanup, so rotated to Data
+currency and picked up its own named Active thread rather than inventing a
+fresh angle — the repeal-resolution thread had an explicit, concrete next
+step recorded (read the 32 fuzzy-rejected full titles by hand, not the
+60-char preview used in the original triage). Fresh clone needed the usual
+`apt-get install git-lfs && git lfs install --local && git lfs pull` plus
+`pip install duckdb pyarrow`.
+
+**Rebuilt the exact 09-06 pipeline logic standalone** (not imported —
+`build_links.py`'s repeal resolution lives inline in `main()`) to dump full
+raw context for all 45 unresolved items instead of the truncated preview,
+split by the documented 13 `no_date_match` / 32 `fuzzy_no_clear_winner`
+kinds — reproduced that exact 13/32 split first, confirming the replica
+logic matches the live pipeline before trusting anything read from it.
+
+**Read all 45 in full, and a pattern was obvious almost immediately**: the
+overwhelming majority quote a *Qaror* (a Supreme Council/Oliy Majlis
+resolution — approving a statute, an enactment-procedure decision, a
+personnel list) or a *Farmon* (a Presidium/presidential decree), not a
+*Qonun* (a law). Measured this as a corpus-wide hypothesis rather than
+trusting the sample: classified all 885 repeal_clause items by the word
+immediately following the closing quote mark (`Qonun`/`Qaror`/`Farmon`/
+`Nizom`, via a small regex) and cross-tabulated against exact-tier
+resolution. Result: **709/856 (82.8%) of `Qonuni` citations resolve; 0/24
+`Qarori` and 0/3 `Farmon` do — zero, not "mostly."**
+
+**Verified this isn't an artifact of the classifier or a coincidence of
+titles**, by searching the `act` table directly for the single most common
+missing pattern seen in the sample — a Code's own "...ni amalga kiritish
+tartibi toʻgʻrisida" (procedure-for-enactment) resolution, issued alongside
+the Code itself but as a separate document. `SELECT * FROM act WHERE
+doc_title LIKE '%amalga kiritish tartib%'` returns **exactly one row in the
+whole 24,267-act corpus** — the 1992 Constitution's own enactment
+resolution — and none for the Labor Code, Urban-Planning Code, Housing
+Code, Civil-Procedure Code, or Economic-Procedure Code, even though repeal
+clauses cite all five by name and date. This is a real, corpus-wide
+document-type gap, not a title-phrasing mismatch the fuzzy tier could ever
+close.
+
+**The second cluster (13 of the 45) is entirely one citing act (row
+16788), citing Qoraqalpogʻiston Respublikasi's (Karakalpakstan's) own
+"ayrim qonunlariga oʻzgartishlar va qoʻshimchalar kiritish toʻgʻrisida"
+(amendments to certain laws) template law, by the same title, on 8
+different dates spanning 1998-2018.** Queried the `act` table directly for
+each of those 8 dates: **zero acts exist at all** on 6 of them, and the 2
+dates that do have same-day acts have no title anywhere near a match
+(best fuzzy ratio 0.10-0.65, nowhere close to the 0.80 floor). Also
+confirmed the corpus does carry *some* Qoraqalpogʻiston-titled acts (168
+of them, by a separate `LIKE '%qoraqalpo%'` query) — so this isn't "the
+corpus excludes Karakalpakstan entirely," it's specifically that this
+national-level LexUZ-sourced corpus doesn't carry Karakalpakstan's own
+sub-national statute-amendment acts. The remaining 4 items (row 44011,
+row 17741) are pre-1991 Soviet-era Presidium/Cabinet decrees with zero
+acts at all on their cited date — same root cause (document/era not in
+this corpus), just too early rather than the wrong type.
+
+**Every one of the 45 is now accounted for** — 24 Qarori + 3 Farmon + 1
+Qarori misclassified by a nested-quote artifact in the manual read (row
+181's citation embeds one quoted title inside another; both are actually
+one Qaror, "...Qonunini amalga kiritish tartibi haqida"gi 311-II-sonli
+Qarori", the regex's own quote-matching just captures the inner phrase) =
+28 Qaror/Farmon-type, + 13 Qoraqalpogʻiston + 4 pre-1991 = 45. Zero
+residual left unexplained, and zero found to be an extraction or matching
+bug — every single one traces to a document that plain doesn't exist as a
+row in this corpus's `act` table.
+
+**Shipped one small, additive fix**: in `build_links.py`, when a clause
+clears no resolution tier, check the word right after the quoted title —
+if it's `Qaror`/`Farmon` (not `Qonun`), tag `match_method =
+'unresolved:non-statute'` instead of a bare `'unresolved'`. Cheap
+(one regex, only runs on already-unresolved rows), unambiguous by
+construction (matches exactly the same word-after-quote signal the
+corpus-wide measurement above used), and purely descriptive — `dst_doc_id`
+stays `NULL`, no target is invented. Chose not to also tag the
+Qoraqalpogʻiston/pre-1991 cluster: there's no comparably cheap, reliable
+detector for "this specific title template belongs to a sub-national
+jurisdiction" the way there is for "the word after the quote is Qaror,"
+and inventing one for 13 items sharing one citing act felt like overfit
+machinery for a single-source finding — documented here in full instead,
+which is enough for a future session (or the project owner) to recognize
+these on sight if they show up again.
+
+**Reran `build_links.py`.** `repeal_clause`: 885 items, still 840/885
+resolved (94.9%, unchanged — this is a label-only change, no new target
+was invented or dropped). `by match_method`: `{'date+title': 710,
+'date+substring': 81, 'date+fuzzy:*': 48 (five sub-buckets, unchanged from
+09-06), 'unresolved:non-statute': 27, 'unresolved': 18}`. `link_edge`
+count unchanged at 6795 (expected — this thread never touches citation
+extraction). Reran `build_llc.py`: no LLC-slice numbers changed (expected
+— none of the 45 items touch the LLC Law or its foundation articles).
+Grepped `app_hierarchy.py`/`app_llc.py` for `match_method` first: neither
+app filters on its value, only reads `dst_doc_id`/`evidence`/counts, so
+the new label needed no app change; both apps `py_compile` clean.
+
+**Decision: close this thread rather than leave it "diminishing returns,
+revisit later"** as the 09-06 note left it. There is nothing left for
+`build_links.py` or `citation_extractor.py` to do here — the gap is that
+LexUZ's national act index, which this corpus is built from, doesn't
+carry Qaror/Farmon-type resolutions or Karakalpakstan's own sub-national
+lawmaking at meaningful coverage. That's a data-acquisition question (does
+a corpus update ever add these document types), not a pipeline bug, and
+solving it would mean sourcing new raw data, out of scope for this
+project's build scripts. Recorded the exact reopening signal for whoever
+does source more data: `unresolved:non-statute`'s count is the fastest way
+to check whether a corpus update actually added Qaror/Farmon coverage — a
+re-run should push it toward zero on its own, no code change needed.
+
+`verify_transfer.py`: **VERIFICATION PASSED — all checks green.** 32/32
+extractor self-tests (unchanged — no extractor code touched today); 6795
+edges unchanged; AC7's "acts provably superseded" / "realization edges
+from superseded acts" unchanged at 357/1007 (expected — no new repeal was
+resolved, only relabeled); 38 OKOZ mappings still awaiting the owner's
+validation (untouched); same reconciliation-detail list as every prior
+session. `py_compile` clean on both apps and every pipeline script.
 
 ### 2026-09-08 — found and fixed a silent recall drop in superscript-article resolution
 
