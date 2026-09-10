@@ -177,6 +177,7 @@ def main() -> int:
                 for c in cx.extract(text, allow_fk_alias=doc_id in alias_docs, is_the_code=is_code):
                     dst_norm = dst_struct = dst_doc = dst_art = None
                     ambiguous = dangling = False
+                    stored_kind = c.target_kind
 
                     if c.target_kind == "article":
                         dst_doc, dst_art = c.doc_id, c.article
@@ -198,9 +199,24 @@ def main() -> int:
                     elif c.target_kind in ("chapter", "section"):
                         node = f"C{c.struct_number}" + (f".S{c.section_number}"
                                                         if c.target_kind == "section" else "")
-                        if node not in struct_doc:
-                            continue
-                        dst_struct, dst_doc = node, struct_doc[node]
+                        if node in struct_doc:
+                            dst_struct, dst_doc = node, struct_doc[node]
+                        else:
+                            # The named sub-paragraph doesn't exist as a struct node
+                            # today (e.g. a stale cross-reference to a
+                            # pre-restructuring numbering — "2-bob, 2-paragrafi"
+                            # cited when chapter 2 currently has no sub-paragraphs
+                            # at all). Fall back to the chapter itself rather than
+                            # dropping the edge outright, same principle as the
+                            # article-level dangling fallback above — the chapter
+                            # is real even though the paragraph pin isn't.
+                            # Measured 2026-09-10: exactly 1 occurrence corpus-wide
+                            # (see DAILY_REVIEW.md).
+                            chapter_node = f"C{c.struct_number}"
+                            if chapter_node not in struct_doc:
+                                continue
+                            dst_struct, dst_doc = chapter_node, struct_doc[chapter_node]
+                            stored_kind = "chapter"
                     else:  # act-level
                         dst_doc = None
 
@@ -219,7 +235,7 @@ def main() -> int:
                     else:
                         rel, hrel = "cites", "above"
 
-                    conf = BASE_CONFIDENCE[(field, c.target_kind)]
+                    conf = BASE_CONFIDENCE[(field, stored_kind)]
                     if c.anchor == "fk_alias":
                         conf *= 0.95
                     if ambiguous:
@@ -230,7 +246,7 @@ def main() -> int:
                     edge_id += 1
                     edges.append([
                         edge_id, run_id, row_id, doc_id, doc_type, src_tier, art_no,
-                        c.target_kind, dst_doc, dst_art, dst_norm, dst_struct, c.qism, ambiguous, dangling,
+                        stored_kind, dst_doc, dst_art, dst_norm, dst_struct, c.qism, ambiguous, dangling,
                         hrel, rel, c.anchor, c.listing, field, EVIDENCE_KIND[field],
                         f"explicit_citation_uz/{c.anchor}", round(conf, 3),
                         c.evidence, clean_evidence(c.evidence), c.start, c.end, None, None,

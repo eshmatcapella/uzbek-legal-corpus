@@ -226,8 +226,16 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
                                         kind, listing, abs_start, abs_end,
                                         _evidence(text, abs_start, abs_end)))
             elif unit == "bob":
-                # "37-bobining 3-paragrafi"
-                sec = re.match(r"\s*(\d+)\s*-\s*paragraf", window[m.end(): m.end() + 30])
+                # "37-bobining 3-paragrafi", or with LexUZ's comma-separated
+                # punctuation style, "57-bobi, 4-paragrafi". The optional comma
+                # is deliberately followed only by \s* (no wildcard skip): if a
+                # second chapter number sits between the comma and "paragraf"
+                # (a real list, e.g. "57-bobi, 60-bobi, 4-paragrafi"), the match
+                # fails here and the paragraf instead attaches to *that* later
+                # bob on its own iteration — never misattributed backwards.
+                # Measured 2026-09-10: 3 occurrences corpus-wide, all comma-only
+                # (no such list case exists yet). See DAILY_REVIEW.md.
+                sec = re.match(r"\s*,?\s*(\d+)\s*-\s*paragraf", window[m.end(): m.end() + 30])
                 for n in nums:
                     out.append(Citation("section" if sec else "chapter", None, int(n),
                                         int(sec.group(1)) if sec else None, None,
@@ -366,7 +374,28 @@ def _selftest() -> int:
             failures += 1
             print(f"FAIL(doc_id) {text[:64]!r}\n     got  {got}\n     want {expected}")
 
-    total = len(cases) + len(qism_cases) + len(stop_cases) + len(docid_cases)
+    # chapter+paragraph attachment must tolerate LexUZ's comma-separated style
+    # ("57-bobi, 4-paragrafi", not just the genitive "57-bobining 4-paragrafi"),
+    # but must NOT reach across a second, distinct chapter number in a real list
+    # (measured gap, see DAILY_REVIEW.md 2026-09-10: 3 real corpus occurrences,
+    # all comma-only — no comma-separated-list case exists yet to test against
+    # real text, so the list case below is a constructed guard check).
+    section_comma_cases: list[tuple[str, dict, list[tuple]]] = [
+        ("Fuqarolik kodeksi 57-bobi, 4-paragrafi talablariga koʻra", {},
+         [(57, 4)]),
+        ("Fuqarolik kodeksining 22-bob, 2-paragrafi.", {}, [(22, 2)]),
+        ("Fuqarolik kodeksining 57-bobi, 60-bobi, 4-paragrafi", {},
+         [(57, None), (60, 4)]),
+    ]
+    for text, kwargs, expected in section_comma_cases:
+        got = [(c.struct_number, c.section_number) for c in extract(text, **kwargs)
+               if c.target_kind in ("chapter", "section")]
+        if got != expected:
+            failures += 1
+            print(f"FAIL(section_comma) {text[:64]!r}\n     got  {got}\n     want {expected}")
+
+    total = (len(cases) + len(qism_cases) + len(stop_cases) + len(docid_cases)
+             + len(section_comma_cases))
     print(f"{total - failures}/{total} extractor self-tests passed")
     return 1 if failures else 0
 

@@ -170,24 +170,39 @@ How to use this file each session:
   the superscript-article thread above — though it turned out to be a silent
   recall drop (a real citation producing zero edges) rather than a precision
   misattribution (a real citation landing on the wrong target); still no gold
-  set exists (see Backlog), and "wrong qism attachment beyond what's already
-  checked" and "other stop-word gaps not yet hypothesized" remain unsearched.
-  Next session: invent another falsifiable hypothesis the same way (by
-  sampling extractor output and reading the raw text — this has now found a
-  real, fixable gap three sessions running: qism/band 09-04, Qonun 09-05,
-  doc_id 09-08). The repeal-resolution thread this note used to point to is
-  now closed (see Active threads, 2026-09-09) — its 45-item residual turned
-  out to be corpus coverage, not extractor precision, so it's not a
-  substitute rotation target here. Cleanup was fully drained 2026-09-07 (all
-  four backlog items resolved) — rotation goes back to Extractor or Data
-  currency next, not Cleanup, unless a new Cleanup
-  item gets discovered first.
+  set exists (see Backlog). **2026-09-10 tried three more hypotheses**
+  (FK-alias definition generalizing to a non-Civil-Code meaning,
+  `RE_STOP_ABBR` false-stopping on a non-code acronym, a chapter-list
+  wrongly inheriting one paragraph tag) — all three measured corpus-wide and
+  falsified/zero-impact, see Log — **but found and fixed a real one along
+  the way**: comma-punctuated "N-bobi, M-paragrafi" wasn't recognized as a
+  chapter+paragraph attachment at all (3 occurrences), and fixing it exposed
+  a second, smaller bug (one of the 3 then resolved to a struct node that
+  doesn't exist and got silently dropped — fixed with a chapter-level
+  fallback, same principle as the article-level dangling fallback). "wrong
+  qism attachment beyond what's already checked" and "other stop-word gaps
+  not yet hypothesized" remain unsearched. Next session: invent another
+  falsifiable hypothesis the same way (by sampling extractor output and
+  reading the raw text — this has now found a real, fixable gap four
+  sessions running: qism/band 09-04, Qonun 09-05, doc_id 09-08,
+  chapter+paragraph comma-attachment 09-10). The repeal-resolution thread
+  this note used to point to is now closed (see Active threads, 2026-09-09)
+  — its 45-item residual turned out to be corpus coverage, not extractor
+  precision, so it's not a substitute rotation target here. Cleanup was
+  fully drained 2026-09-07 and re-confirmed empty 2026-09-10 — rotation goes
+  back to Extractor or Data currency next, not Cleanup, unless a new
+  Cleanup item gets discovered first.
 
-- **Cleanup: fully drained 2026-09-07, no active thread.** All four backlog
-  items (dead prototypes, `test_transfer_e2e.py` redundancy,
+- **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
+  four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
   one-off exploration scripts, `hierarchy_engine.py`'s f-string SQL) were
-  resolved in one session — see Log. Nothing left open here unless a future
-  session finds something new to add to the Backlog's Cleanup section.
+  resolved in one session — see Log. 2026-09-10 re-audited every remaining
+  `execute(f"...")` call in the repo before picking a different rotation
+  target: all of them interpolate only the same hardcoded `PARQUET` path
+  constant (the established, safe pattern this project's f-string-SQL rule
+  is actually about), none interpolate a runtime/data-derived value. Nothing
+  left open here unless a future session finds something new to add to the
+  Backlog's Cleanup section.
 
 - **Smaller, lower-priority residual: qism/band tail truncation.** The
   qism/band attachment check added today (see Log) has 10 residual misses
@@ -264,6 +279,20 @@ How to use this file each session:
   revisited: worth a measurement pass on whether citing at the qism level
   would change which stage/institution the citation should attach to, now
   that the underlying data is meaningfully more complete.
+- **One remaining chapter+paragraph-list attachment gap (single occurrence).**
+  Found 2026-09-10 while fixing the comma-punctuated case (see Log): row
+  25634's `cross_references` reads "Fuqarolik kodeksi 4-bobining 1
+  (“Umumiy qoidalar”) va 2-paragraflari" — a *list* of two paragraphs for
+  one chapter, with a parenthetical section title sitting between the first
+  paragraph number and the "va" that introduces the second. The section
+  lookahead regex only tries a single `\d+-paragraf` immediately after the
+  bob match, so this produces a bare chapter-4 citation with no paragraph
+  grain at all (not dropped, just coarser — same fallback the comma fix
+  added now applies). Confirmed corpus-wide this is exactly 1 occurrence
+  (searched for `bob\w*\s+\d+\s*\(.{0,40}\)\s*va\s*\d+\s*-\s*paragraf`-shaped
+  text), so not fixed today given the single-occurrence scope and the
+  parenthetical-skipping complexity a real fix would need — worth a look if
+  a future corpus update introduces more of these.
 
 ### Data currency
 - ~~**175/885 repeal items still unresolved.**~~ **Fixed 2026-09-06, residual
@@ -314,6 +343,170 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-10 — Cleanup re-audit (nothing found), three precision hypotheses falsified, one real chapter+paragraph attachment gap found and fixed
+
+Rotation: Data currency ran last (09-09), Extractor before that (09-08);
+Cleanup had run once (09-07) and its own Active-threads note said it was
+"fully drained." Rather than skip Cleanup on the note's word, re-audited it
+first — cheap to check, and the note is a year-old claim by 09-10's clock.
+Found nothing new (see below), so fell through to the "Precision, more
+broadly" thread's own explicit instruction: invent another falsifiable
+misattribution hypothesis by sampling extractor output against raw text.
+Fresh clone needed the usual `apt-get install git-lfs && git lfs install
+--local && git lfs pull` plus `pip install duckdb pyarrow`. One environment
+note: this session's local `main` ref started one commit *behind* origin
+(HEAD was detached at 09-09's `a822891`, `main` still pointed at 08's
+`6176a15`) — the same stale-ref shape 09-04's log flagged as something to
+watch for, this time the other direction. `git fetch origin main` confirmed
+origin already had `a822891`; fast-forwarded local `main` to it before
+starting, no work was at risk.
+
+**Re-audited Cleanup before rotating away from it.** Listed every
+`execute(f"...")` call left in the repo (grepped all `.py` files) and read
+what each interpolates: every single one is the same `raw = f"read_parquet('
+{PARQUET.as_posix()}', ...)"` module-level constant used identically across
+`build_corpus_db.py`, `build_links.py`, `build_llc.py`,
+`measure_extractor_recall.py`, and `verify_transfer.py` — a hardcoded path
+literal, not a runtime or data-derived value, so it doesn't violate this
+project's "no string-interpolated SQL with a non-constant value" rule (that
+rule is about exactly what `hierarchy_engine.py` did differently: an
+instance-level `self.parquet_path` that could vary). No new dead code, no
+new one-off scripts, no new f-string-SQL offender. Cleanup stays fully
+drained — see updated Active threads note.
+
+**Tried three new falsifiable precision hypotheses, all measured
+corpus-wide, all resulted in zero real impact:**
+
+1. *Does the FK-alias mechanism ever fire for a non-Civil-Code meaning of
+   "FK"?* `RE_FK_ALIAS_DEF` only checks that an act defines *some*
+   abbreviation as "FK" (`bundan buyon matnda FK deb`) — it never verifies
+   the abbreviation is for "Fuqarolik kodeksi" specifically, so any act
+   using "FK" as shorthand for something else would get every "FK
+   N-moddasi" in the whole document wrongly attributed to the Civil Code.
+   Pulled all 26 acts (all 26 distinct `doc_id`s) matching the definition
+   regex and read the defining sentence in each: **all 26 define FK
+   immediately after "Fuqarolik kodeksi"** — zero counter-examples.
+   Falsified.
+2. *Does `RE_STOP_ABBR` (any 2-4 uppercase letters + "K") ever truncate a
+   real Civil Code citation by falsely matching a non-code acronym (e.g.
+   "BANK" fits the character class)?* Replicated the extractor's own
+   scan loop, collected every token that actually triggered a stop inside a
+   real anchor window, corpus-wide. Result: exactly 6 distinct tokens fired
+   (`IPK`/`IPKning`, `FPK`/`FPKning`, `XPK`/`XPKning`), all genuine other
+   codes (Iqtisodiy/Fuqarolik-protsessual/Xoʻjalik protsessual kodeksi) —
+   zero false stops. Falsified.
+3. *Does a list of chapters ("N, M-bobi") followed by a single paragraf tag
+   get the paragraf wrongly applied to every chapter in the list, not just
+   the one it belongs to?* (The same class of bug the qism/band fix found
+   in 2026-09-04, one level up the grammar.) Ran `extract()` corpus-wide and
+   filtered for `target_kind == "section"` with `listing != "single"`.
+   Result: **zero** such citations exist in the corpus today — the
+   construct the bug would need never occurs. Falsified as a live bug
+   (the code path itself was never exercised, so nothing to fix).
+
+**Found a real one on the fourth pass, from the same code path (2)'s replica
+touched.** While replicating the scan loop, noticed `unit == "paragraf"`
+matches (bare paragraf, normally just an echo of a bob+paragraf pair
+already captured by the bob branch's own lookahead) that weren't actually
+covered by any section citation. Traced one down (row 25634's evidence,
+seen while investigating) and found the real pattern: LexUZ sometimes
+punctuates chapter+paragraph citations with a comma — "Fuqarolik kodeksi
+57-bobi, 4-paragrafi" — instead of the genitive "57-bobining
+4-paragrafi" the existing lookahead (`re.match(r"\s*(\d+)\s*-\s*paragraf",
+...)`) expects right after the bob match. A comma there makes the lookahead
+fail, so the citation falls through to a bare chapter citation (57), losing
+the paragraph pin — not dropped, just coarser than what the text actually
+says. Measured corpus-wide with a direct regex for
+`\d+-bob\w*\s*,\s*\d+-paragraf` inside real anchor windows: **exactly 3
+occurrences** (rows 6070, 25511, 25512).
+
+**Fix:** widened the lookahead to `re.match(r"\s*,?\s*(\d+)\s*-\s*paragraf",
+...)` — the optional comma is followed only by `\s*`, never a wildcard skip,
+so if a *second* chapter number sits between the comma and "paragraf" (a
+genuine list, e.g. "57-bobi, 60-bobi, 4-paragrafi") the match fails here and
+the paragraf instead attaches to *that* later bob on its own iteration,
+never misattributed backwards — same non-ambiguity property the qism/band
+fix's list guard relies on. No such list case exists in the corpus today to
+test against real text, so added a constructed one as a self-test guard
+alongside the two real comma cases. `citation_extractor.py`: 35/35
+self-tests pass (was 32).
+
+**Rerunning `build_links.py` surfaced a second, smaller bug in the same
+code path, caught before shipping rather than after.** One of the 3 comma
+cases (row 25511, "2-bob, 2-paragrafi") now correctly extracts a *section*
+citation (chapter 2, paragraph 2) — but chapter 2 in the current corpus
+structure has no sub-paragraphs at all (`struct_node` has no `C2.S*` rows;
+likely a stale reference to a pre-restructuring numbering, the same kind of
+edition drift `verify_transfer.py`'s reconciliation list already documents
+elsewhere). `build_links.py`'s chapter/section resolution did `if node not
+in struct_doc: continue` — silently dropping the *entire* edge when the
+precise node doesn't exist, with no fallback. Before today's regex fix this
+row was captured only as a bare chapter citation (which *does* resolve,
+since C2 exists) — so widening the regex alone would have been a **net
+regression** for this one row: trading a real, if coarse, edge for no edge
+at all. Caught this by re-querying `link_edge` for all 3 target rows right
+after the rebuild rather than trusting the edge-count delta alone (which
+was `6795 -> 6794`, off by exactly one — the silent drop).
+
+**Fixed by falling back to the chapter node when the section node doesn't
+exist** (`build_links.py`, same block): if `C{n}.S{m}` isn't in
+`struct_doc`, try `C{n}` alone, and only `continue` if even that's missing.
+When the fallback fires, store `dst_kind = 'chapter'` (not `'section'`) and
+price the edge at the chapter-level base confidence — the paragraph pin
+genuinely isn't defensible, so the edge shouldn't claim more precision than
+it has. This is the same principle 2026-09-08's article-level dangling
+fallback established (don't drop an edge outright just because the finest
+grain isn't available) applied one level up, at chapter/section instead of
+article/norm.
+
+**Reran the full pipeline.** `citation_extractor.py`: 35/35 self-tests.
+`build_links.py`: `link_edge` **6795 -> 6795** (net zero — one row moved
+`chapter` to `chapter`-via-fallback and stayed an edge throughout, two rows
+moved `chapter` to `section`; total citation count is unaffected, this
+thread only changes grain/labels): `chapter same` 58 -> 59, and the three
+target rows individually confirmed by direct query — 6070 and 25512 now
+carry precise `section` edges (`C57.S4`, `C22.S2`), 25511 correctly falls
+back to `chapter` (`C2`) instead of vanishing. Reran
+`measure_extractor_recall.py`: still 0 real misses on article and
+chapter/section recall; qism/band residual unchanged at 7/640 (this fix is
+orthogonal — different unit entirely). Reran `build_llc.py`: no LLC-slice
+numbers changed (none of the 3 touched rows cite the LLC Law or its
+foundation articles). Grepped `app_hierarchy.py`/`app_llc.py` for
+`dst_kind`/`v_realization_struct`/`struct_number` first: neither app reads
+`link_edge.dst_kind` directly or depends on which of `chapter`/`section` a
+given edge is labelled — `v_realization_struct` joins on
+`dst_struct_node_id` and reads the target's own `kind` from `struct_node`,
+unaffected by this change — so no app change needed; both apps
+`py_compile` clean.
+
+**Found, measured, and deliberately left one more residual from the same
+sampling pass.** Row 25634's "4-bobining 1 (“Umumiy qoidalar”) va
+2-paragraflari" is a *list* of two paragraphs for one chapter, with a
+parenthetical section title sitting between the first number and the "va"
+before the second — the lookahead only ever tries one `\d+-paragraf`
+immediately after the bob match, so this still produces a bare chapter-4
+citation (correctly non-dropped by today's fallback, just missing both
+paragraph pins). Confirmed single-occurrence corpus-wide; recorded in
+Backlog with the concrete shape rather than rushed into the same fix,
+since handling the parenthetical-skip and "va"-list correctly would need
+its own guard the way the comma case got one, not a quick bolt-on.
+
+**Decision:** ship the comma-attachment fix and its fallback companion
+together — they were found and fixed in the same session because the first
+literally exposed the second on rebuild, and shipping the regex fix without
+the fallback would have been worse than not fixing anything (a net edge
+loss on real data). Do not chase the parenthetical-list residual today:
+it's a single occurrence, and the three falsified hypotheses plus this
+two-part fix is a full session's worth of measured, verified work already.
+
+`verify_transfer.py`: **VERIFICATION PASSED — all checks green.** 6795
+edges (unchanged in total, as expected — see above); AC7's "acts provably
+superseded" / "realization edges from superseded acts" unchanged at
+357/1007 (expected — this thread never touches repeal resolution); 38 OKOZ
+mappings still awaiting the owner's validation (untouched); identical
+reconciliation-detail list to every prior session. `py_compile` clean on
+both apps and every pipeline script.
 
 ### 2026-09-09 — closed the repeal-resolution thread: the 45-item residual is corpus coverage, not a bug
 
