@@ -22,6 +22,24 @@ How to use this file each session:
 
 ## Active threads
 
+- **Amendment chains: built and measured 2026-09-11, closed with two small
+  documented residuals.** New `article_amendment` table + `v_article_currency`
+  view, mined from the per-article `amendment_note` field rather than the
+  backlog's originally-proposed "kiritilsin"-clause detector (see Log for why
+  that approach was rejected first). 594 events on 425/1197 Civil Code
+  articles; 8 of `verify_transfer.py`'s 9 long-standing unexplained
+  `structure_missing_articles`/`md_only` gaps now resolve to an exact voiding
+  law + date. Two residuals, both in Backlog, neither worth interrupting this
+  thread for: (1) a 2-item list clause ("65 va 66-moddalar") only registers
+  its last member — 1 known occurrence (article 65); (2) amending-act
+  resolution caps at 5.6% (33/594) because `act.doc_number` is empty
+  corpus-wide, same root cause as `repeal_clause`'s own unresolved tail — not
+  a parsing gap, a data-acquisition one. **Not done this session**: wiring
+  either new table into `app_hierarchy.py`/`app_llc.py`'s UI (grepped both
+  first — zero references today, so nothing to break, but also nothing
+  surfaced to a user yet). If picked up again: either is a reasonable next
+  step, but neither blocks closing this thread.
+
 - **Repeal resolution: closed 2026-09-09.** The 45/885 residual left after
   2026-09-06's tiered fallback is now fully characterized — every single
   one is a genuine corpus-coverage gap, not an extraction or matching bug.
@@ -189,9 +207,10 @@ How to use this file each session:
   this note used to point to is now closed (see Active threads, 2026-09-09)
   — its 45-item residual turned out to be corpus coverage, not extractor
   precision, so it's not a substitute rotation target here. Cleanup was
-  fully drained 2026-09-07 and re-confirmed empty 2026-09-10 — rotation goes
-  back to Extractor or Data currency next, not Cleanup, unless a new
-  Cleanup item gets discovered first.
+  fully drained 2026-09-07 and re-confirmed empty 2026-09-10. Data currency
+  ran 2026-09-11 (amendment chains, see Active threads/Log) — rotation
+  should land back on Extractor next (another falsifiable-hypothesis pass,
+  per above) unless a new Cleanup item surfaces first.
 
 - **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
   four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -302,12 +321,28 @@ How to use this file each session:
   Qoraqalpogʻiston Republic acts the source corpus barely carries), not a
   matching bug — 27 of the 45 now tagged `unresolved:non-statute` so the
   gap is visible in the data itself. See Log 2026-09-06 and 2026-09-09.
-- **Amendment chains, not just repeals.** An act can *amend* another without
-  repealing it (redlines specific articles). No detection exists for this at
-  all yet — only whole-act repeal. Worth inventing a detector for "kiritilsin"
-  / "oʻzgartirish kiritilsin" style amendment clauses, at least at the
-  citing-act level, so `v_act_currency` can distinguish "superseded" from
-  "amended but still partly in force."
+- ~~**Amendment chains, not just repeals.**~~ **Done differently than
+  proposed, 2026-09-11**: rather than detecting "kiritilsin"-style clauses
+  inside amending acts' own free text (noisy, would need repeal_clause's
+  numbered-list parsing all over again), mined the `amendment_note` field
+  LexUZ already attaches per Civil Code article — a new `article_amendment`
+  table (594 events, 425/1197 articles touched) and `v_article_currency`
+  view. See Log. Amending-act resolution still caps around 5.6% (33/594) for
+  the same root cause as `repeal_clause`'s — `act.doc_number` is empty
+  corpus-wide — documented as a residual, not re-litigated.
+- **Article-amendment residuals from 2026-09-11** (see Log for full detail):
+  (1) a multi-article list clause ("65 va 66-moddalar ... kiritilgan")
+  only registers its *last* member — same class of list-swallowing gap as
+  the qism/band and chapter+paragraph list bugs found on other threads;
+  article 65 is the one known miss. (2) 5/594 clauses are chapter/paragraph-
+  level (no article number at all, e.g. "42-bobning nomi ... tahririda") and
+  get no `target_article_number` — correct behavior, just worth knowing if
+  a future session wants chapter-level currency too. (3) amending-act
+  resolution (33/594) only fires when the amending act's own title names
+  "Fuqarolik kodeks" — most amendment acts are omnibus bills ("ayrim qonun
+  hujjatlariga oʻzgartirish...") that don't, and without `doc_number` there's
+  no safe way to disambiguate same-day candidates by number; not worth
+  chasing further without a corpus update that populates `doc_number`.
 - **Propagate currency into the LLC dossier's implementing-acts list** (and
   eventually the general explorer) as a first-class filter rather than a
   toggle buried in an expander — currency should probably gate what counts as
@@ -343,6 +378,138 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-11 — Amendment chains: mined `amendment_note` instead of parsing "kiritilsin" clauses, 594 events, 8 of verify_transfer's 9 "missing article" mysteries solved
+
+Rotation: Extractor ran last two sessions running (09-08 doc_id recall,
+09-10 chapter+paragraph precision); Data currency last ran 09-09 (closed the
+repeal-resolution thread). Picked Data currency's open backlog item,
+"Amendment chains, not just repeals," to keep rotation honest rather than a
+third Extractor session in a row.
+
+**Environment**: fresh clone, same two-step setup prior sessions have
+needed: `apt-get install -y git-lfs && git lfs install --local && git lfs
+pull` for the parquet (it's an LFS pointer until pulled), then `pip install
+duckdb pyarrow numpy`. `main` was already at `origin/main`'s tip this time —
+no stale-ref issue to flag.
+
+**Rejected the backlog item's own proposed approach before writing any
+code.** It suggested detecting "kiritilsin"/"oʻzgartirish kiritilsin" style
+clauses *inside amending acts' own text* — the same shape as `repeal_clause`'s
+existing numbered-list parse, one grammar up. Checked how noisy that would
+be first: `grep`-style counts on raw `article_text` for those phrases return
+thousands of hits (8395 for "kiritilsin" alone) across ordinary decrees that
+have nothing to do with the Civil Code — sampling 3 of the top matches
+confirmed they're unrelated Cabinet resolutions that happen to contain the
+word. Building a second repeal_clause-style extractor on top of that noise
+floor looked like a lot of fragile work for a shakier signal than the
+existing repeal detector has.
+
+**Found a better source already in the corpus: the `amendment_note`
+field.** Every article row carries its *own* structured legislative history
+— e.g. `(8-modda birinchi qismining oltinchi xatboshisi Oʻzbekiston
+Respublikasining 2025-yil 30-dekabrdagi OʻRQ-1109-sonli Qonuni tahririda —
+Qonunchilik maʼlumotlari milliy bazasi, ...)` — one parenthetical clause per
+amendment event, already isolated from surrounding prose. `build_links.py`
+already scans this field as a citation source (`SOURCE_FIELDS`) but nothing
+parsed its *structure* before. This is the receiving-article's side of the
+exact relationship the backlog item wanted (amending act -> affected
+article), and far cleaner to parse than scanning amending acts' free text
+for the same thing from the other direction.
+
+**Measured coverage before committing to the approach**: 174/386 (45%)
+General Part articles and 239/811 (29.5%) Special Part articles have a
+non-empty `amendment_note` — substantial enough to be worth building. Wrote
+a single clause regex (date + OʻRQ-number-or-legacy-number + law-type +
+verb phrase + optional em-dash source citation) and iterated against the
+594 raw clauses until every single one parsed: the main gaps found and
+fixed were (1) the genitive suffix "-ning" is sometimes dropped
+("Respublikasi 2006-yil..." vs "Respublikasining"), (2) the date's "-dagi"
+suffix is sometimes dropped too ("20-avgust" vs "20-avgustdagi"), (3) older
+(pre-2007) acts use a legacy "832-I-sonli"/"405-II-son" numbering instead of
+"OʻRQ-N-sonli" — widened the number alternative to catch both, (4) the
+source-citation separator regex used a bare hyphen class `[—\-]`, which
+collided with ordinary in-word hyphens like "70-moddaning" and truncated the
+verb capture to a couple of words — narrowed it to the em-dash `—` only,
+which is what LexUZ actually uses before a source citation. **Verb-phrase
+classification** (restated/supplemented/removed/inserted/replaced/voided)
+needed two stemming fixes of the same shape: "kuchini yoʻqotgan" (voided,
+past participle) also appears as "kuchini yoʻqotish sanasi" (voided,
+nominalized, in a *reversed* clause order — "Qonuniga asosan N-moddaning
+oʻz kuchini yoʻqotish sanasi — DATE" puts the law citation first and the
+effect second) and "chiqarilgan" similarly appears as "chiqarilish sanasi";
+widened both to stem matches. Result: **594/594 (100%) of Civil Code
+clauses parse**, 0 left in an "other" bucket. Sanity-checked generalization
+beyond scope: the same regex parses **23307/23919 (97.4%)** of clauses
+corpus-wide across all 12,166 rows with an `amendment_note` — strong
+evidence the grammar is real, not overfit to the Civil Code, though the
+built table stays scoped to the Civil Code (CC_DOCS) since that's what
+`norm_unit`/`struct_node` can anchor an article to today.
+
+**A second regex, scoped to the clause's own text (locator+verb, explicitly
+excluding the source-citation tail), extracts which article the clause is
+*actually* about** — not assumed to be the host row's own `article_number`.
+This mattered: 13/594 clauses (2.2%) target a *different* article than the
+row carrying the note, e.g. row 62's note includes "(...Qonuniga asosan
+63-moddaning oʻz kuchini yoʻqotish sanasi...)" — article 63 itself has no
+row in the corpus at all (it was voided outright), so its only trace is a
+clause parked on its still-living neighbor, article 62. This is exactly
+**8 of the 9** `structure_missing_articles`/`md_only` entries
+`verify_transfer.py`'s own reconciliation has carried for a while as
+unexplained gaps (63, 70, 71, 72, 176, 177, 179 from this table, plus 66 —
+see below): each now resolves to an exact voiding law and date (mostly
+OʻRQ-1025, 2025-02-07). **The 9th, article 65, is a known, narrow miss**:
+its clause is "(65 va 66-moddalar ... kiritilgan)" — a 2-item list — and the
+target-article regex only catches the *last* member directly adjacent to
+"-moddalar" (66), the same list-swallowing shape as the qism/band and
+chapter+paragraph-list bugs found on the Extractor thread on other days.
+Left as a documented residual (1 occurrence) rather than special-cased.
+
+**Shipped**: `article_amendment` table (event_id, doc_id,
+host_article_number, target_article_number, norm_id, locator, change_type,
+amend_date, amend_act_number, effective_date, amending_doc_id,
+match_method, evidence) and `v_article_currency` view (per-article
+n_amendments, last_amend_date, last_change_type, has_removed_or_voided_part)
+in `build_links.py`, right after the `repeal_clause` section it parallels.
+One bug caught before shipping: the `norm_id` lookup originally fell back to
+the *host* article's norm_id whenever the target article had none — correct
+for a chapter-level clause with no target at all, wrong for the
+voided-neighbor case (it would have mislabeled article 63's event with
+article 62's norm_id). Fixed to only fall back when `target_article_number`
+is `None` outright.
+
+**Final numbers** (`article_amendment`, Civil Code only): 594 events on
+425/1197 articles (35.5%) — 304 Special Part, 290 General Part. By
+change_type: restated 529, supplemented 29, removed 17, inserted 10, voided
+8, replaced 1. Date range 1997-08-30 to 2025-12-30 (the Code's full life).
+74 distinct amending law numbers. 65/594 (10.9%) carry a distinct
+`effective_date` separate from the amending law's own adoption date
+(delayed entry into force). **Amending-act resolution: 33/594 (5.6%)** —
+matched when exactly one act exists on the clause's date whose own title
+names "Fuqarolik kodeksi" (e.g. article 477's "2012-04-20 / OʻRQ-325" event
+resolves to doc `-2003602`, titled exactly "Fuqarolik kodeksining
+477-moddasiga oʻzgartish kiritish toʻgʻrisida" — hand-verified correct).
+The other 94.4% stay unresolved for the *same* reason `repeal_clause`
+already has an 18-item unresolved tail for: `act.doc_number` is empty for
+every one of the corpus's 24,267 acts, so there's no number to match against
+— only date, and most amending acts here are omnibus bills ("ayrim qonun
+hujjatlariga oʻzgartirish...") whose own title never names the Civil Code,
+so date-only matching is hopelessly ambiguous (median 10 acts share a date).
+Not chased further; this is a corpus-data limitation, not a parsing gap —
+recorded in Backlog.
+
+Re-ran `build_okoz.py` (unchanged OKOZ mapping output, as expected — it
+doesn't touch `amendment_note`) and `build_llc.py`: its own independent,
+pre-existing "repealed company-form articles still cited" check already
+listed 63/65/66/70/71/72 by article number with no date attached — today's
+work gives that same finding a when-and-by-which-law answer rather than
+introducing a new one, good cross-validation that both signals agree.
+Grepped both apps for `article_amendment`/`v_article_currency` first: no
+references yet (new tables, not wired into either app's UI today — a real
+next step, not done this session given the time budget). `verify_transfer.py`:
+all checks still green, unchanged from baseline (this is a pure addition,
+no existing table's content changed — `link_edge` edge count identical at
+6795 before and after).
 
 ### 2026-09-10 — Cleanup re-audit (nothing found), three precision hypotheses falsified, one real chapter+paragraph attachment gap found and fixed
 

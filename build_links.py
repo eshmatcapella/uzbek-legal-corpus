@@ -478,6 +478,165 @@ def main() -> int:
         f"{len({c[1] for c in clauses})} acts; {resolved} resolved to a corpus act")
     log(f"  by match_method: {method_counts}")
 
+    # ----------------------------------------------------------- amendments
+    # A whole-act repeal isn't the only way a law changes.  Far more common:
+    # one act edits specific articles of another without repealing it.  LexUZ
+    # already records this, per article, in `amendment_note` — e.g. "(8-modda
+    # birinchi qismining oltinchi xatboshisi Oʻzbekiston Respublikasining
+    # 2025-yil 30-dekabrdagi OʻRQ-1109-sonli Qonuni tahririda — ...)". This is
+    # a BETTER source than trying to detect "...kiritilsin"-style clauses
+    # inside amending acts' own free text the way repeal_clause does for
+    # repeals: those clauses are noisy (any decree can contain "kiritilsin"
+    # for an unrelated reason) and would need the same fragile numbered-list
+    # parsing repeal_clause uses, just one more grammar. `amendment_note` is
+    # already LexUZ's own structured annotation of the *effect*, one event
+    # per parenthetical clause, so we parse that instead.
+    #
+    # Scoped to the Civil Code's own two docs (CC_DOCS) — that's what
+    # norm_unit/struct_node can anchor an article to, and it's this corpus's
+    # subject. Measured 2026-09-11: the same grammar parses 97.4% of clauses
+    # (23307/23919) across ALL 12,166 rows with an amendment_note corpus-wide,
+    # so this generalizes well beyond the Civil Code if a future session
+    # wants to widen scope — not done here given the time budget and that
+    # norm_id/struct_node resolution only exists for the Civil Code today.
+    con.execute("""
+        CREATE OR REPLACE TABLE article_amendment (
+            event_id             INTEGER,
+            doc_id               BIGINT,   -- Civil Code part carrying the note
+            host_article_number  VARCHAR,  -- the row's own article_number
+            target_article_number VARCHAR, -- article the clause is actually about;
+                                            -- NULL for a chapter/paragraph-level clause
+            norm_id              VARCHAR,  -- norm_unit.norm_id, General Part only
+            locator              VARCHAR,  -- raw sub-unit text ("birinchi qismi", "6-bob", ...)
+            change_type          VARCHAR,  -- restated|supplemented|removed|inserted|replaced|voided
+            amend_date           VARCHAR,  -- ISO, the amending law's adoption date
+            amend_act_number     VARCHAR,  -- 'OʻRQ-1109' or legacy '832-I'
+            effective_date       VARCHAR,  -- ISO, nullable (delayed entry into force)
+            amending_doc_id      BIGINT,   -- resolved act, NULL if unresolved
+            match_method         VARCHAR,
+            evidence             VARCHAR
+        );
+    """)
+
+    re_amend_clause = re.compile(r"\((?:[^()]|\([^()]*\))*\)")
+    re_amend_event = re.compile(
+        r"(?P<locator>.*?)"
+        r"O\wzbekiston\s+Respublikasi\w*\s+"
+        r"(?P<y>\d{4})-yil\s+(?P<d>\d{1,2})-(?P<mon>[a-z]+)\w*\s+"
+        r"(?:O\wRQ-(?P<num>\d+)-sonli|(?P<num2>\d+)[-–](?:(?P<roman>[IVX]+)-)?son(?:li)?)\s+"
+        r"Qonun\w*\s+"
+        r"(?P<verb>.*?)"
+        r"(?:\s*—\s*(?P<src>.*?))?"
+        r"\)$",
+        re.IGNORECASE | re.DOTALL,
+    )
+    re_target_article = re.compile(r"(\d{1,5})\s*-?\s*modda", re.IGNORECASE)
+    re_any_date = re.compile(r"(\d{4})-yil\s+(\d{1,2})-([a-z]+)\w*", re.IGNORECASE)
+    re_verb_map = [
+        (re.compile(r"tahririda", re.IGNORECASE), "restated"),
+        (re.compile(r"to\wldirilgan", re.IGNORECASE), "supplemented"),
+        (re.compile(r"to\wldirib", re.IGNORECASE), "supplemented"),
+        (re.compile(r"chiqarib tashlangan", re.IGNORECASE), "removed"),
+        (re.compile(r"chiqaril", re.IGNORECASE), "removed"),       # chiqarilgan, chiqarilish sanasi
+        (re.compile(r"almashtirilgan", re.IGNORECASE), "replaced"),
+        (re.compile(r"kiritilgan", re.IGNORECASE), "inserted"),
+        (re.compile(r"kuchini yo\wqot", re.IGNORECASE), "voided"), # yoʻqotgan, yoʻqotish sanasi
+        (re.compile(r"kuchga ega emas", re.IGNORECASE), "voided"),
+    ]
+
+    def classify_amend(verb: str) -> str:
+        for pat, label in re_verb_map:
+            if pat.search(verb):
+                return label
+        return "other"
+
+    def amend_to_iso(y: str, d: str, mon: str) -> str | None:
+        monl = mon.lower()
+        m = next((v for k, v in UZ_MONTHS.items() if monl.startswith(k[:4])), None)
+        return f"{y}-{m:02d}-{int(d):02d}" if m else None
+
+    norm_by_article = {
+        art: nid for nid, art in con.execute(
+            f"SELECT norm_id, article_number FROM norm_unit WHERE doc_id = {cx.DOC_GENERAL}"
+        ).fetchall()
+    }
+    re_civil_title = re.compile(r"fuqarolik kodeks", re.IGNORECASE)
+
+    amend_rows: list[list] = []
+    aid = 0
+    amend_method_counts: dict[str, int] = {}
+    amend_type_counts: dict[str, int] = {}
+    for doc_id in CC_DOCS:
+        cur3 = con.cursor().execute(f"""
+            SELECT file_row_number, article_number, amendment_note FROM {raw}
+            WHERE doc_id = {doc_id} AND amendment_note IS NOT NULL AND amendment_note != ''
+        """)
+        for _row_id, host_art, note in cur3.fetchall():
+            for c in re_amend_clause.findall(note):
+                m = re_amend_event.match(c)
+                if not m:
+                    continue
+                amend_date = amend_to_iso(m.group("y"), m.group("d"), m.group("mon"))
+                num = m.group("num")
+                act_number = (f"OʻRQ-{num}" if num else
+                              (m.group("num2") or "") +
+                              (f"-{m.group('roman')}" if m.group("roman") else "") + "-son")
+                scope = (m.group("locator") or "") + " " + (m.group("verb") or "")
+                tm = re_target_article.search(scope)
+                target_art = tm.group(1) if tm else None
+                eff_date = None
+                for y2, d2, mo2 in re_any_date.findall(c):
+                    iso2 = amend_to_iso(y2, d2, mo2)
+                    if iso2 and iso2 != amend_date:
+                        eff_date = iso2
+                        break
+                ctype = classify_amend(m.group("verb") or "")
+                amend_type_counts[ctype] = amend_type_counts.get(ctype, 0) + 1
+                # Only fall back to the host article's norm_id when the clause
+                # names no target of its own (a chapter/paragraph-level note);
+                # when it names a *different*, now-gone article (the voided-
+                # neighbor case — see DAILY_REVIEW.md), that article genuinely
+                # has no norm_unit row, so norm_id must stay NULL, not borrow
+                # the host's.
+                lookup_art = target_art if target_art is not None else host_art
+                norm_id = norm_by_article.get(lookup_art) if doc_id == cx.DOC_GENERAL else None
+                amending_doc_id, method = None, "unresolved"
+                if amend_date:
+                    civil_cands = [d_id for d_id, nt_d in by_date.get(amend_date, [])
+                                   if re_civil_title.search(nt_d)]
+                    if len(civil_cands) == 1:
+                        amending_doc_id, method = civil_cands[0], "date+civil-code-title"
+                amend_method_counts[method] = amend_method_counts.get(method, 0) + 1
+                aid += 1
+                amend_rows.append([
+                    aid, doc_id, host_art, target_art, norm_id,
+                    (m.group("locator") or "").strip(" ("),
+                    ctype, amend_date, act_number, eff_date,
+                    amending_doc_id, method, c,
+                ])
+    con.executemany(
+        "INSERT INTO article_amendment VALUES (" + ",".join("?" * 13) + ")", amend_rows)
+    con.commit()
+    log(f"\narticle_amendment: {len(amend_rows)} amendment events from "
+        f"{len({(r[1], r[2]) for r in amend_rows})} host rows "
+        f"(see v_article_currency for the distinct-target-article count)")
+    log(f"  by change_type: {amend_type_counts}")
+    log(f"  by match_method: {amend_method_counts}")
+
+    con.execute("""
+        CREATE OR REPLACE VIEW v_article_currency AS
+        SELECT doc_id,
+               coalesce(target_article_number, host_article_number) AS article_number,
+               max(norm_id)                                AS norm_id,
+               count(*)                                     AS n_amendments,
+               max(amend_date)                               AS last_amend_date,
+               arg_max(change_type, amend_date)               AS last_change_type,
+               bool_or(change_type IN ('removed', 'voided')) AS has_removed_or_voided_part
+        FROM article_amendment
+        GROUP BY doc_id, coalesce(target_article_number, host_article_number)
+    """)
+    con.commit()
+
     # An act is superseded if a later act repealed it by date+number.
     con.execute("""
         CREATE OR REPLACE VIEW v_act_currency AS
