@@ -197,20 +197,33 @@ How to use this file each session:
   chapter+paragraph attachment at all (3 occurrences), and fixing it exposed
   a second, smaller bug (one of the 3 then resolved to a struct node that
   doesn't exist and got silently dropped — fixed with a chapter-level
-  fallback, same principle as the article-level dangling fallback). "wrong
-  qism attachment beyond what's already checked" and "other stop-word gaps
-  not yet hypothesized" remain unsearched. Next session: invent another
-  falsifiable hypothesis the same way (by sampling extractor output and
-  reading the raw text — this has now found a real, fixable gap four
-  sessions running: qism/band 09-04, Qonun 09-05, doc_id 09-08,
-  chapter+paragraph comma-attachment 09-10). The repeal-resolution thread
-  this note used to point to is now closed (see Active threads, 2026-09-09)
-  — its 45-item residual turned out to be corpus coverage, not extractor
-  precision, so it's not a substitute rotation target here. Cleanup was
-  fully drained 2026-09-07 and re-confirmed empty 2026-09-10. Data currency
-  ran 2026-09-11 (amendment chains, see Active threads/Log) — rotation
-  should land back on Extractor next (another falsifiable-hypothesis pass,
-  per above) unless a new Cleanup item surfaces first.
+  fallback, same principle as the article-level dangling fallback).
+  **2026-09-12 found and fixed the biggest precision bug of this whole
+  thread**: "qonunning" — the genitive of "qonun" *without* the "-i-"
+  thematic vowel (qonun+ning, as opposed to already-stopped qonuni+ning) —
+  was never added to `RE_STOP` at all, in either case. 131 real Civil-Code
+  misattributions fixed corpus-wide (118 capitalized "Qonunning" + 13
+  lowercase "qonunning" — LexUZ doesn't reliably capitalize it even for a
+  named act), more than 3x the original bare-"Qonun" fix's 25. See Log for
+  the full measurement, the collateral-damage false alarm investigation, and
+  why bare "Farmonning"/ordinal-qism/"dan...gacha" ranges were tried and
+  falsified along the way. "wrong qism attachment beyond what's already
+  checked" and "other stop-word gaps not yet hypothesized" remain
+  unsearched — the stop-word family in particular has now paid off twice
+  (Qonun 09-05, qonunning 09-12), so it's still the highest-density place to
+  keep looking. Next session: invent another falsifiable hypothesis the same
+  way (by sampling extractor output and reading the raw text — this has now
+  found a real, fixable gap five sessions running: qism/band 09-04, Qonun
+  09-05, doc_id 09-08, chapter+paragraph comma-attachment 09-10, qonunning
+  09-12). The repeal-resolution thread this note used to point to is now
+  closed (see Active threads, 2026-09-09) — its 45-item residual turned out
+  to be corpus coverage, not extractor precision, so it's not a substitute
+  rotation target here. Cleanup was fully drained 2026-09-07 and
+  re-confirmed empty 2026-09-10. Data currency ran 2026-09-11 (amendment
+  chains), so today's Extractor pick keeps the rotation alternating
+  (Extractor 09-10, Data currency 09-11, Extractor 09-12) rather than
+  draining one area — next session should land on Data currency or Cleanup
+  unless a new item surfaces that outweighs rotating.
 
 - **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
   four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -252,15 +265,29 @@ How to use this file each session:
 ### Extractor recall/precision
 - **Build the gold set.** ~50 articles, hand-verified ground truth for
   citation extraction (which acts realize them, at what confidence). No gold
-  set exists yet — `citation_extractor.py`'s 32 self-tests (see Log) check
+  set exists yet — `citation_extractor.py`'s 37 self-tests (see Log) check
   surface-form parsing, not corpus-wide recall/precision. Recall is measured
-  clean across all anchor kinds; the "Qonun" precision bug and the
-  superscript-`doc_id` recall bug are both fixed and measured (see Log
-  2026-09-05, 2026-09-08). Still no gold set and no systematic search for
-  OTHER misattribution patterns beyond the ones found so far by sampling —
-  revisit whether hand-annotation is now the highest-value next step or
-  whether more hypothesis-driven sampling keeps finding gaps faster (it's 3
-  for 3 so far).
+  clean across all anchor kinds; the "Qonun"/"qonunning" precision bugs and
+  the superscript-`doc_id` recall bug are both fixed and measured (see Log
+  2026-09-05, 2026-09-08, 2026-09-12). Still no gold set and no exhaustive
+  systematic search for OTHER misattribution patterns beyond the ones found
+  so far by sampling — revisit whether hand-annotation is now the
+  highest-value next step or whether more hypothesis-driven sampling keeps
+  finding gaps faster (it's 5 for 5 sessions now, though not every
+  hypothesis within a session pays off — 2026-09-12 alone tried 4 that
+  falsified before the 5th one that worked).
+- **`RE_STOP`'s `break`-vs-`continue` design.** Once a stop-word is found in
+  the gap before a clause, `extract()` abandons the *rest* of that anchor's
+  window, not just the one stopped clause — a deliberate, conservative
+  choice (don't guess which later numbers belong to the Code vs. the
+  just-named other act). Measured 2026-09-12: checked all 552 windows where
+  this currently fires with clauses still remaining afterward, and every
+  remaining clause genuinely belongs to whatever act triggered the stop, not
+  the Code — so it's not a live bug today. But it's a design assumption
+  that would break if a future corpus update introduced a window shaped like
+  "[Code citation A] ... [other act mention] ... [Code citation B, still
+  clearly the Code's]" — worth re-checking this same way after any large
+  corpus update, rather than assuming it still holds.
 - **Range citation spanning a superscript boundary loses its middle articles.**
   Found 2026-09-08 while fixing the `doc_id` bug (see Active threads): a
   range like "173 – 1737-moddalari" means "article 173 through its
@@ -279,7 +306,12 @@ How to use this file each session:
   capitalized forms cause zero actual misattributions in the current corpus
   (nizom's bare form was already in RE_STOP; qaror/farmon never sit next to
   an unstopped modda/bob clause). Only "Qonun" itself needed the fix. See
-  Active threads and Log.
+  Active threads and Log. **Re-checked 2026-09-12 for the "-ning"-without-"i"
+  genitive specifically** (the gap that made "qonunning" real, see Log): 0
+  raw corpus occurrences of "Qarorga/Qarorning/Farmonga" precede a clause at
+  all, and "Farmonning"/"farmonning" (15+1 occurrences) measured 0 actual
+  anchor-window impact — falsified again, same nouns, different surface
+  form.
 - ~~Measure recall against a second independent signal (`cross_references`
   vs `article_text` on the same row).~~ **Tried 2026-09-03, hypothesis
   falsified**: 4249/4272 (99.5%) of cross_references-sourced Civil Code
@@ -378,6 +410,142 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-12 — found "qonunning" missing from RE_STOP entirely: 131 misattributions fixed, biggest precision gap closed since "Qonun" itself
+
+Continued the Extractor rotation (last ran 09-10; Data currency ran 09-11 in
+between, so this keeps rotation alternating rather than draining one area —
+see Active threads). Fresh clone needed the usual `apt-get install -y
+git-lfs && git lfs install --local && git lfs pull` plus `pip install
+duckdb pyarrow numpy`; `git fetch origin main` also had to run once before
+`main` matched `origin/main` — the container's initial checkout was a
+detached HEAD 3 commits ahead of the local `main` ref (both already equal to
+`origin/main` once fetched; not a lost-push, just a stale local branch
+pointer, same category of hiccup 2026-09-04 flagged).
+
+**Four hypotheses tried before the one that paid off — all measured, not
+guessed, per this thread's own methodology:**
+
+1. **ORDINALS list caps at "oʻn ikkinchi" (12th); does a 13th+ qism/band
+   ordinal ever get missed?** Corpus has 255 raw occurrences of "oʻn
+   uchinchi/toʻrtinchi/.../yigirmanchi qism/band" combined. Monkeypatched
+   `citation_extractor.ORDINALS`+`RE_QISM` with an extended set (13th
+   through 22nd) and diffed `Citation.qism` across all 10,348 candidate
+   rows: **0 citations gained a qism/band.** Only 5 rows in the whole corpus
+   even have a higher ordinal co-occurring with the word "kodeks" at all —
+   falsified, no live bug.
+2. **"Modda A dan modda B gacha" (from...to) as an alternative range syntax
+   to the dash `_expand` already handles.** Zero occurrences anywhere in the
+   54,173-row corpus of `\d+-modda\w*dan\s+.{0,20}gacha` (or the `bob`
+   equivalent) — this construction simply isn't used; falsified before
+   writing any extraction code.
+3. **Does the FK-alias definition pattern (`bundan buyon matnda FK deb`)
+   miss any of the 26 alias-defining acts' actual "FK ..." citations?**
+   Traced every standalone "FK" token in all 26 alias docs against
+   `RE_ANCHOR_FK`; every one that precedes a modda/bob clause was already
+   correctly recognized. (An early false alarm — apparently 6 missed
+   anchors — was my own test-harness bug: I'd truncated sample strings for
+   readability and cut off the leading "Fu" of "Fuqarolik", which is not
+   what the real corpus text looks like. Re-ran against full, untruncated
+   row text and the "misses" vanished.) Falsified.
+4. **Does `RE_STOP`'s `break` (not `continue`) on a stop-word cause hidden
+   recall loss** — i.e., once a window hits a stop-word, does it silently
+   drop *later, genuine* Civil-Code clauses that would have followed in the
+   same window? Reimplemented the exact clause loop to find every window
+   where a stop triggers with `RE_CLAUSE` matches still remaining
+   afterward: 552 such windows exist, but reading every remaining clause by
+   hand (not just counting them) showed all of them correctly belong to
+   whatever act *triggered* the stop (an act's own gazette record numbers,
+   another code's own article, etc.) — the conservative "abandon the rest of
+   this window once contaminated" design is safe for the current stop-word
+   set. Falsified as a *current* bug, but flagged as a design tension worth
+   remembering: it depends on stop-words never appearing *before* a
+   genuinely-Code-bound clause in a densely-packed window, which is exactly
+   what tripped up hypothesis 5 below during measurement (not in
+   production — see the false-alarm note there).
+
+**5. The one that paid off: `RE_STOP` has `qonuni`, `qonuniga`,
+`qonunining`, and (case-sensitive) bare `Qonun\b` — but never `qonunning`
+(qonun+ning, the genitive *without* the "-i-" thematic vowel that
+`qonunining` has). Distinct surface form, not a substring of any existing
+alternative, and very common**: corpus-wide, capitalized "Qonunning"
+precedes a modda/bob/paragraf clause 1504 times, lowercase "qonunning" 28
+more. Measured actual impact the same way the 2026-09-05 "Qonun" fix did —
+reimplementing `_anchors()`+`RE_CLAUSE`+`RE_STOP` directly and diffing
+`extract()`'s output before/after adding the candidate word, keyed by
+**textual span**, not list index (first pass wrongly showed ~240
+"removed"+125 "added" because removing an early citation shifts every later
+list index — a measurement bug, not a real one; re-keyed by
+`(row, field, start, end, kind, article)` and the real signal was much
+cleaner). Result:
+
+    case-sensitive "Qonunning" alone:            118 real misattributions removed, 3 'act' fallback edges added, 0 collateral, 0 changed-in-place
+    + case-insensitive "qonunning" (lowercase):   13 more removed, 0 added, 0 collateral
+    total:                                       131 removed, 3 added
+
+Read every one of the 131 by hand (not a sample — the full list): every
+single one is a real named act's own article hiding behind "X toʻgʻrisida"gi
+Qonunning N-moddasi" or a self-referencing "mazkur/ushbu Qonunning
+N-moddasi" (a *different* act referring to itself), sitting inside a
+Civil-Code anchor's scan window. None were a genuine Civil-Code citation
+lost as collateral damage — confirmed at both the citation level (the diff
+above) and, after shipping, at the `link_edge` level (see below, exact
+match). Unlike bare "Qonun", made this one case-**insensitive**: bare lower
+"qonun" is the ambiguous generic noun ("legislation"), but "qonunning" only
+ever means "of a specific, already-named law" — the Civil Code is never
+itself called "qonun" in this corpus, so there's no generic-phrase collision
+to guard against, and the lowercase-vs-capitalized split for this
+genitive form turned out to be inconsistent in the source text (LexUZ often
+leaves it lowercase even under a quoted, unambiguous act title).
+
+**Shipped**: extended `RE_STOP`'s existing case-insensitive group with
+`qonunning`, documented the "why case-insensitive here but not for bare
+Qonun" reasoning inline. Added 5 new self-tests (capitalized and lowercase
+"qonunning" both stopping correctly; a real Code citation earlier in the
+same window surviving the stop). `citation_extractor.py`: **37/37 self-tests
+pass** (was 32).
+
+**Reran `build_links.py`.** `link_edge`: 6795 -> 6667 (**-128**). Diffed the
+two databases directly by `(src_row_id, source_field, ev_start, ev_end,
+dst_kind, dst_article_number, dst_struct_node_id)`: **131 edges removed, 3
+added** — exact match to the pre-ship citation-level measurement, from 44
+distinct citing rows (mostly Plenum/court-explanation acts that cite many
+different laws in one breath — exactly the dense-citation context that
+hypothesis 4 above worried about, confirmed here to resolve correctly).
+`dst_qism` population: 665 -> 657 (-8, qism/band tails that were attached to
+now-removed false edges). Reran `measure_extractor_recall.py`: still **0
+real misses**; anchor-window count 2340 -> 2331 (-9, the newly-scoped-out
+"qonunning" windows, same lockstep-with-the-fix pattern the original Qonun
+fix showed). Reran `build_llc.py`: **`llc_implementing_act` 132 -> 131
+(-1)** — traced the one dropped act (doc `-1063359`): its *only*
+`cites_cc_foundation` evidence was article "45", which turned out to come
+entirely from a now-removed false edge (a "mazkur Qonunning 40 — 53-moddalari"
+list wrongly attributed to the Civil Code — article 45 is a real LLC
+foundation article, 44 others in that same false list weren't, which is why
+this was the only LLC-slice number to move). This is a genuine precision
+improvement to the LLC dossier, not just the general corpus: one fewer act
+was being shown to the project owner as "implements the LLC Law's
+foundation" on the strength of a citation that was never really there.
+
+`verify_transfer.py`: **VERIFICATION PASSED — all checks green.** 37/37
+extractor self-tests; 6667 edges; AC7's "realization edges from superseded
+acts" 1007 -> 1002 (-5, consistent with the removed edges' distribution);
+39 OKOZ mappings still awaiting the owner's validation (untouched); same
+reconciliation-detail list as prior sessions, byte-for-byte.
+
+**Decision:** ship the "qonunning" fix — measured before/during/after,
+edge-level diff matches the citation-level prediction exactly, every one of
+131 removed edges hand-verified as a real bug, zero collateral loss. Did
+NOT add `Farmonning`/`farmonning` despite 15+1 raw corpus occurrences
+preceding a clause — measured actual anchor-window impact the same way and
+got **0** (falsified as a live bug, same story as bare Qaror/Farmon on
+2026-09-05): this is now the second time this exact false-alarm shape has
+shown up for the decree-type nouns specifically, worth remembering as "this
+family of nouns keeps *looking* risky by raw count but isn't, in this
+corpus" rather than re-deriving it from scratch next time. The RE_STOP
+`break`-vs-`continue` design tension (hypothesis 4) is not a bug today, but
+is now written down as a specific thing to re-check if a future corpus
+update introduces denser multi-act citation clusters.
 
 ### 2026-09-11 — Amendment chains: mined `amendment_note` instead of parsing "kiritilsin" clauses, 594 events, 8 of verify_transfer's 9 "missing article" mysteries solved
 

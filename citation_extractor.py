@@ -74,8 +74,21 @@ RE_CLAUSE = re.compile(
 # no generic-phrase collision was found for it), and bare Qaror/Farmon never happen
 # to sit right before an unstopped modda/bob clause in the current corpus — so they
 # are left alone rather than "fixed" against a gap with no measured impact.
+#
+# "qonunning" (genitive WITHOUT the "-i-" thematic vowel: qonun+ning, as opposed
+# to qonuni+ning already covered by "qonunining") is a distinct surface form
+# that isn't a substring of any alternative above, and IS folded into the
+# case-insensitive group rather than kept case-sensitive like bare "Qonun":
+# unlike bare "qonun" (ambiguous generic noun, "legislation"), "qonunning" only
+# ever means "of [a specific, previously-named] law" — the Civil Code itself is
+# never referred to as "qonun" in this corpus, so there is no generic-phrase
+# collision to guard against, and LexUZ often leaves it lowercase even when it
+# heads a genuinely specific "X toʻgʻrisida"gi qonunning N-moddasi" citation.
+# Measured 2026-09-12 (see DAILY_REVIEW.md): 131 real Civil-Code misattributions
+# (118 capitalized "Qonunning" + 13 more lowercase "qonunning") corpus-wide, 0
+# collateral loss of genuine Code citations sharing the same anchor window.
 RE_STOP = re.compile(
-    r"(?i:qonuni|qonuniga|qonunining|kodeksi|kodeksining|farmoni|farmonining|qarori|qarorining|"
+    r"(?i:qonuni|qonuniga|qonunining|qonunning|kodeksi|kodeksining|farmoni|farmonining|qarori|qarorining|"
     r"nizom|konstitutsiya|buyrugʻi|buyrugi|reglament|"
     # Publication record of the act, e.g. "(Oliy Majlisining Axborotnomasi, 1997-yil,
     # № 2, 56-modda)".  There "56-modda" is item 56 of the gazette issue, not an
@@ -349,6 +362,18 @@ def _selftest() -> int:
          "toʻrtinchi qismi", {}, [("act", None, "single")]),
         ("Fuqarolik kodeksining 14-moddasi qonun hujjatlarida nazarda tutilgan tartibda",
          {}, [("article", "14", "single")]),
+        # "qonunning" (genitive without the "-i-" vowel, e.g. "...gi Qonunning
+        # N-moddasi") is a distinct surface form from "qonunining", not caught
+        # by the bare case-sensitive "Qonun" rule above either — measured gap,
+        # see DAILY_REVIEW.md 2026-09-12 (131 real misattributions corpus-wide,
+        # both this capitalized form and the lowercase one right below).
+        ('Fuqarolik kodeksiga muvofiq, “Sudlar toʻgʻrisida”gi Qonunning 47-moddasiga asosan',
+         {}, [("act", None, "single")]),
+        # LexUZ often leaves it lowercase even for a specific, quoted act title;
+        # the real Code citation earlier in the same window must still survive.
+        ('Fuqarolik kodeksining 1048-moddasi, “Mualliflik huquqi toʻgʻrisida”gi '
+         "qonunning 13-moddasi bilan tartibga solinadi", {},
+         [("article", "1048", "single")]),
     ]
     for text, kwargs, expected in stop_cases:
         got = [(c.target_kind, c.article, c.listing) for c in extract(text, **kwargs)]
