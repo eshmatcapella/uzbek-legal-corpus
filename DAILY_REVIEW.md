@@ -22,23 +22,26 @@ How to use this file each session:
 
 ## Active threads
 
-- **Amendment chains: built and measured 2026-09-11, closed with two small
-  documented residuals.** New `article_amendment` table + `v_article_currency`
-  view, mined from the per-article `amendment_note` field rather than the
-  backlog's originally-proposed "kiritilsin"-clause detector (see Log for why
-  that approach was rejected first). 594 events on 425/1197 Civil Code
-  articles; 8 of `verify_transfer.py`'s 9 long-standing unexplained
+- **Amendment chains: built 2026-09-11, list-swallowing residual fixed
+  2026-09-13, one residual left.** New `article_amendment` table +
+  `v_article_currency` view, mined from the per-article `amendment_note`
+  field rather than the backlog's originally-proposed "kiritilsin"-clause
+  detector (see Log for why that approach was rejected first). 8 of
+  `verify_transfer.py`'s 9 long-standing unexplained
   `structure_missing_articles`/`md_only` gaps now resolve to an exact voiding
-  law + date. Two residuals, both in Backlog, neither worth interrupting this
-  thread for: (1) a 2-item list clause ("65 va 66-moddalar") only registers
-  its last member — 1 known occurrence (article 65); (2) amending-act
-  resolution caps at 5.6% (33/594) because `act.doc_number` is empty
-  corpus-wide, same root cause as `repeal_clause`'s own unresolved tail — not
-  a parsing gap, a data-acquisition one. **Not done this session**: wiring
-  either new table into `app_hierarchy.py`/`app_llc.py`'s UI (grepped both
-  first — zero references today, so nothing to break, but also nothing
-  surfaced to a user yet). If picked up again: either is a reasonable next
-  step, but neither blocks closing this thread.
+  law + date. Of the two residuals flagged 2026-09-11: (1) the list-swallowing
+  bug ("65 va 66-moddalar" only registering its last member) is **fixed and
+  measured 2026-09-13** — see Log, 10/594 clauses corpus-wide were affected
+  (28 target articles, 18 previously dropped), not just the 1 occurrence
+  originally spotted. (2) amending-act resolution still caps at 5.6%
+  (33/594 clauses) because `act.doc_number` is empty corpus-wide, same root
+  cause as `repeal_clause`'s own unresolved tail — not a parsing gap, a
+  data-acquisition one, left as-is. **Still not done**: wiring either new
+  table into `app_hierarchy.py`/`app_llc.py`'s UI (grepped both again
+  2026-09-13 — still zero references, nothing to break, but also nothing
+  surfaced to a user yet — see Backlog). If picked up again: that UI wiring
+  is the one open step; residual (2) is a data-acquisition gap, not further
+  pipeline work.
 
 - **Repeal resolution: closed 2026-09-09.** The 45/885 residual left after
   2026-09-06's tiered fallback is now fully characterized — every single
@@ -219,11 +222,11 @@ How to use this file each session:
   closed (see Active threads, 2026-09-09) — its 45-item residual turned out
   to be corpus coverage, not extractor precision, so it's not a substitute
   rotation target here. Cleanup was fully drained 2026-09-07 and
-  re-confirmed empty 2026-09-10. Data currency ran 2026-09-11 (amendment
-  chains), so today's Extractor pick keeps the rotation alternating
-  (Extractor 09-10, Data currency 09-11, Extractor 09-12) rather than
-  draining one area — next session should land on Data currency or Cleanup
-  unless a new item surfaces that outweighs rotating.
+  re-confirmed empty 2026-09-10. Rotation since: Extractor 09-10, Data
+  currency 09-11, Extractor 09-12, Data currency 09-13 (fixed the amendment-
+  chain list-swallowing residual, see Active threads and Log) — next
+  session should land on Cleanup or Extractor unless a new item surfaces
+  that outweighs rotating.
 
 - **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
   four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -362,15 +365,27 @@ How to use this file each session:
   view. See Log. Amending-act resolution still caps around 5.6% (33/594) for
   the same root cause as `repeal_clause`'s — `act.doc_number` is empty
   corpus-wide — documented as a residual, not re-litigated.
-- **Article-amendment residuals from 2026-09-11** (see Log for full detail):
-  (1) a multi-article list clause ("65 va 66-moddalar ... kiritilgan")
-  only registers its *last* member — same class of list-swallowing gap as
-  the qism/band and chapter+paragraph list bugs found on other threads;
-  article 65 is the one known miss. (2) 5/594 clauses are chapter/paragraph-
-  level (no article number at all, e.g. "42-bobning nomi ... tahririda") and
-  get no `target_article_number` — correct behavior, just worth knowing if
-  a future session wants chapter-level currency too. (3) amending-act
-  resolution (33/594) only fires when the amending act's own title names
+- ~~**Article-amendment list-swallowing residual from 2026-09-11.**~~ **Fixed
+  2026-09-13**: a multi-article list/range clause ("65 va 66-moddalar
+  ... kiritilgan") only registered its *last* member — same class of
+  list-swallowing gap as the qism/band and chapter+paragraph list bugs found
+  on other threads. Fixed by reusing `citation_extractor.RE_CLAUSE`/`_expand`
+  (the same list/range grammar the extractor itself uses, already covered by
+  32+ self-tests) instead of `build_links.py`'s own narrower
+  `(\d+)...modda` search. Measured corpus-wide: 10/594 amendment clauses are
+  actually multi-member lists or ranges (28 target articles total, not 10) —
+  594 clauses now produce 612 `article_amendment` rows, one per target
+  article. Confirmed correct on inspection: article 65's own amendment event
+  now exists (`v_article_currency` shows it `voided` on 2014-05-14, matching
+  article 66's neighboring entry); a 7-member superscript range
+  ("1731 — 1737-moddalar") now resolves all 7 to real `norm_unit` rows
+  (`-111189-a1731` .. `a1737`), not just the endpoint. See Log.
+- **Remaining article-amendment residuals from 2026-09-11** (see Log for full
+  detail): (1) 5/594 clauses are chapter/paragraph-level (no article number
+  at all, e.g. "42-bobning nomi ... tahririda") and get no
+  `target_article_number` — correct behavior, just worth knowing if a future
+  session wants chapter-level currency too. (2) amending-act resolution
+  (33/594 clauses) only fires when the amending act's own title names
   "Fuqarolik kodeks" — most amendment acts are omnibus bills ("ayrim qonun
   hujjatlariga oʻzgartirish...") that don't, and without `doc_number` there's
   no safe way to disambiguate same-day candidates by number; not worth
@@ -410,6 +425,93 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-13 — fixed amendment-chain list-swallowing bug: 18 dropped target articles recovered by reusing the extractor's own list/range grammar
+
+Continued the rotation onto Data currency (Extractor ran 09-10 and 09-12,
+Data currency 09-11; see Active threads for the running tally). Fresh clone
+needed the same setup hiccups as recent sessions: local `main` was a stale
+detached-HEAD pointer 3 commits behind `origin/main` (`git checkout -B main
+origin/main` fixed it, no lost work — matches the pattern flagged 09-04 and
+09-12), `git-lfs` wasn't installed (`apt-get install -y git-lfs && git lfs
+install --local && git lfs pull` restored the real 163MB parquet from its
+pointer file), and `duckdb`/`pyarrow`/`numpy` needed `pip install`. Baseline
+`verify_transfer.py` was green before touching anything.
+
+Picked up the amendment-chain list-swallowing residual flagged in Active
+threads/Backlog from 2026-09-11: `build_links.py`'s `article_amendment`
+parser used `re_target_article = re.compile(r"(\d{1,5})\s*-?\s*modda")` and
+took the *first* regex match in a clause's scope text to find the target
+article. For a list like "65 va 66-moddalar", "65" is never adjacent to
+"modda" (it's followed by " va 66-moddalar"), so the bare-digit-then-modda
+pattern only ever matches "66" — the list's last member. The daily review
+had only spotted this on one occurrence (article 65).
+
+**Measured the real scope first, before fixing anything**: wrote a
+standalone script replicating both the old regex and a candidate fix
+(`citation_extractor.RE_CLAUSE` + `_expand`, the same list/range grammar the
+extractor itself already uses for citations, backed by 32+ self-tests) over
+all 594 amendment clauses in `CC_DOCS`. Result: **10 of 594 clauses (1.7%)
+are genuinely multi-member lists or ranges**, not 1 — covering **28 target
+articles total**, of which only 10 (one per clause, always the last member)
+were ever captured. 18 target articles were silently dropped corpus-wide,
+including a full 7-member superscript range ("1731 — 1737-moddalar", i.e.
+articles 173-1 through 173-7 — the same superscript-numbering family fixed
+in the 2026-09-08 `doc_id` bug, though this one already worked correctly
+here because `_expand`'s integer range naturally lines up with consecutive
+superscript children when the endpoints are 6 apart, unlike the 09-08 bug's
+1564-wide malformed-range case).
+
+**Fix**: replaced the single-match regex with a small `target_articles()`
+helper that finds a clause's modda-unit match via `cx.RE_CLAUSE` and expands
+it with `cx._expand()` — reusing the extractor's own tested list/range
+grammar instead of maintaining a second, narrower one. The per-clause loop
+now iterates over every expanded target article (previously just one),
+emitting one `article_amendment` row per target while keeping the event's
+other fields (locator, change_type, dates, evidence) identical across the
+list's members — the same "one row per list member, shared event context"
+shape `build_links.py` already uses elsewhere for citation edges. Chapter/
+paragraph-level clauses (no modda unit at all) still correctly produce no
+target article, unaffected.
+
+Also cleaned up the log line while in there: it previously called
+`len(amend_rows)` "amendment events", which was accurate when clause==row
+but became misleading once one clause could produce multiple rows. Now logs
+both counts explicitly: "594 amendment clauses -> 612 rows".
+
+**Re-ran `build_links.py`**: `article_amendment` count 594 -> 612 rows
+(+18, exactly the predicted gap), clause-level distributions
+(`by change_type`, `by match_method`) unchanged since those are still
+counted once per clause, not per row. `repeal_clause` and `link_edge`
+counts unchanged (this fix only touches `article_amendment`, confirmed by
+diffing the full pipeline log against the pre-change baseline). Verified
+directly: article 65's own `voided`/2014-05-14 amendment event now exists
+in `v_article_currency` (previously invisible, only article 66's event was
+recorded); the 7-member superscript range resolves all 7
+`norm_id`s (`-111189-a1731` .. `a1737`) against real `norm_unit` rows,
+confirmed present by direct lookup, not just the endpoint article 1737
+that used to be the only one captured.
+
+**Reran `build_okoz.py` and `build_llc.py`**: zero numbers changed in
+either (OKOZ coverage stayed 386/386, LLC foundation/implementing-act
+counts identical) — neither table reads `article_amendment` (grepped both
+scripts and both apps first, confirmed no references, same as the
+2026-09-11 amendment-chains session found). `citation_extractor.py`
+self-tests: 37/37 (unchanged — this fix lives entirely in `build_links.py`,
+not the extractor itself, though it reuses the extractor's regex/expand
+functions as library code). `verify_transfer.py`: all checks green,
+identical reconciliation-detail output to the pre-change baseline (this
+change doesn't touch any AC1-AC7 check's inputs).
+
+**Decision**: fixed rather than deferred, unlike the single-occurrence range
+gaps left open elsewhere in Backlog (e.g. the "173 – 1737" citation-range
+gap from 2026-09-08) — the difference is scope: measuring first showed this
+was 10 occurrences /28 articles, not 1, clearing the bar for a real fix
+rather than a documented, deferred edge case. The remaining two
+amendment-chain residuals (chapter/paragraph-level clauses correctly having
+no target article; the 5.6% amending-act-resolution cap from empty
+`act.doc_number`) are unaffected by this fix and stay as documented,
+not-worth-chasing residuals — see Active threads and Backlog.
 
 ### 2026-09-12 — found "qonunning" missing from RE_STOP entirely: 131 misattributions fixed, biggest precision gap closed since "Qonun" itself
 

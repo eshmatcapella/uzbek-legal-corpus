@@ -530,7 +530,24 @@ def main() -> int:
         r"\)$",
         re.IGNORECASE | re.DOTALL,
     )
-    re_target_article = re.compile(r"(\d{1,5})\s*-?\s*modda", re.IGNORECASE)
+    def target_articles(scope: str) -> list[str]:
+        """Every article a clause's scope names, in order, list/range expanded.
+
+        A bare `(\\d+)...modda` search only ever finds the number immediately
+        adjacent to "modda" — for a list like "65 va 66-moddalar" that's just
+        "66", silently dropping "65" (the one known case DAILY_REVIEW.md
+        flagged 2026-09-11). Reuses citation_extractor's own list/range
+        grammar (RE_CLAUSE + _expand, already exercised by 32+ self-tests
+        elsewhere in the pipeline) instead of a second, narrower regex.
+        Measured 2026-09-13: 10/594 amendment clauses corpus-wide are
+        actually multi-member lists or ranges (28 target articles between
+        them), all previously collapsed to just their last member.
+        """
+        m = cx.RE_CLAUSE.search(scope)
+        if m is None or m.group("unit").lower() != "modda":
+            return []
+        nums, _listing = cx._expand(m.group("nums"))
+        return nums
     re_any_date = re.compile(r"(\d{4})-yil\s+(\d{1,2})-([a-z]+)\w*", re.IGNORECASE)
     re_verb_map = [
         (re.compile(r"tahririda", re.IGNORECASE), "restated"),
@@ -564,6 +581,7 @@ def main() -> int:
 
     amend_rows: list[list] = []
     aid = 0
+    n_clauses = 0
     amend_method_counts: dict[str, int] = {}
     amend_type_counts: dict[str, int] = {}
     for doc_id in CC_DOCS:
@@ -581,9 +599,9 @@ def main() -> int:
                 act_number = (f"OʻRQ-{num}" if num else
                               (m.group("num2") or "") +
                               (f"-{m.group('roman')}" if m.group("roman") else "") + "-son")
+                n_clauses += 1
                 scope = (m.group("locator") or "") + " " + (m.group("verb") or "")
-                tm = re_target_article.search(scope)
-                target_art = tm.group(1) if tm else None
+                target_arts = target_articles(scope) or [None]
                 eff_date = None
                 for y2, d2, mo2 in re_any_date.findall(c):
                     iso2 = amend_to_iso(y2, d2, mo2)
@@ -592,14 +610,6 @@ def main() -> int:
                         break
                 ctype = classify_amend(m.group("verb") or "")
                 amend_type_counts[ctype] = amend_type_counts.get(ctype, 0) + 1
-                # Only fall back to the host article's norm_id when the clause
-                # names no target of its own (a chapter/paragraph-level note);
-                # when it names a *different*, now-gone article (the voided-
-                # neighbor case — see DAILY_REVIEW.md), that article genuinely
-                # has no norm_unit row, so norm_id must stay NULL, not borrow
-                # the host's.
-                lookup_art = target_art if target_art is not None else host_art
-                norm_id = norm_by_article.get(lookup_art) if doc_id == cx.DOC_GENERAL else None
                 amending_doc_id, method = None, "unresolved"
                 if amend_date:
                     civil_cands = [d_id for d_id, nt_d in by_date.get(amend_date, [])
@@ -607,17 +617,29 @@ def main() -> int:
                     if len(civil_cands) == 1:
                         amending_doc_id, method = civil_cands[0], "date+civil-code-title"
                 amend_method_counts[method] = amend_method_counts.get(method, 0) + 1
-                aid += 1
-                amend_rows.append([
-                    aid, doc_id, host_art, target_art, norm_id,
-                    (m.group("locator") or "").strip(" ("),
-                    ctype, amend_date, act_number, eff_date,
-                    amending_doc_id, method, c,
-                ])
+                # Only fall back to the host article's norm_id when the clause
+                # names no target of its own (a chapter/paragraph-level note);
+                # when it names a *different*, now-gone article (the voided-
+                # neighbor case — see DAILY_REVIEW.md), that article genuinely
+                # has no norm_unit row, so norm_id must stay NULL, not borrow
+                # the host's. A multi-member list/range names a real target
+                # per member, same as a single one — each gets its own row,
+                # one per target article, sharing the rest of the event.
+                for target_art in target_arts:
+                    lookup_art = target_art if target_art is not None else host_art
+                    norm_id = norm_by_article.get(lookup_art) if doc_id == cx.DOC_GENERAL else None
+                    aid += 1
+                    amend_rows.append([
+                        aid, doc_id, host_art, target_art, norm_id,
+                        (m.group("locator") or "").strip(" ("),
+                        ctype, amend_date, act_number, eff_date,
+                        amending_doc_id, method, c,
+                    ])
     con.executemany(
         "INSERT INTO article_amendment VALUES (" + ",".join("?" * 13) + ")", amend_rows)
     con.commit()
-    log(f"\narticle_amendment: {len(amend_rows)} amendment events from "
+    log(f"\narticle_amendment: {n_clauses} amendment clauses -> {len(amend_rows)} rows "
+        f"(a list/range clause expands to one row per target article) from "
         f"{len({(r[1], r[2]) for r in amend_rows})} host rows "
         f"(see v_article_currency for the distinct-target-article count)")
     log(f"  by change_type: {amend_type_counts}")
