@@ -45,6 +45,13 @@ KIND_BADGE = {
     "editorial": ("🟦", "LexUZ editorial cross-reference, not the act speaking"),
     "amendment": ("🟨", "drawn from an amendment note (legislative history)"),
 }
+# article_amendment.change_type -> display badge, mined from each article's own
+# LexUZ amendment_note (not the repeal_clause/v_act_currency layer, which tracks
+# whole acts being superseded rather than parts of a still-live article changing).
+CHANGE_BADGE = {
+    "restated": "📝", "supplemented": "➕", "inserted": "➕",
+    "removed": "➖", "voided": "🚫", "replaced": "🔁",
+}
 
 
 def excerpt(text: str, around: str, pad: int = 400) -> str:
@@ -117,14 +124,15 @@ def page_article() -> None:
     norm_id = labels[picked]
 
     meta = q("""
-        SELECT g.article_title_uz, g.article_title_en, g.article_text_uz,
-               g.article_text_en, g.en_align_status, g.breadcrumb, g.struct_node_id,
-               o.okoz_code, o.okoz_breadcrumb, o.confidence, o.validated_by
+        SELECT g.article_number, g.article_title_uz, g.article_title_en,
+               g.article_text_uz, g.article_text_en, g.en_align_status, g.breadcrumb,
+               g.struct_node_id, o.okoz_code, o.okoz_breadcrumb, o.confidence,
+               o.validated_by
         FROM v_general_part g
         LEFT JOIN v_okoz_general_part o USING (norm_id)
         WHERE g.norm_id = ?
     """, [norm_id])[0]
-    (title_uz, title_en, text_uz, text_en, align, breadcrumb,
+    (article_number, title_uz, title_en, text_uz, text_en, align, breadcrumb,
      node_id, okoz_code, okoz_bc, okoz_conf, okoz_val) = meta
 
     st.subheader(title_en or title_uz)
@@ -136,6 +144,34 @@ def page_article() -> None:
     if align and align != "aligned":
         st.warning(f"English text flagged `{align}` — the 2025 translation may not "
                    "match the current Uzbek article. Trust the Uzbek text.")
+
+    currency = q("""
+        SELECT n_amendments, last_amend_date, last_change_type, has_removed_or_voided_part
+        FROM v_article_currency WHERE doc_id = ? AND article_number = ?
+    """, [DOC_GENERAL, article_number])
+    if currency:
+        n_amend, last_date, last_type, has_voided = currency[0]
+        line = (f"**Legislative history:** {CHANGE_BADGE.get(last_type, '📝')} "
+                f"**{n_amend}** amendment event(s), last *{last_type}* on {last_date}")
+        if has_voided:
+            line += "  · ⚠️ **part of this article has been removed/voided**"
+        st.caption(line)
+        with st.expander("Full amendment history (mined from LexUZ's amendment_note)"):
+            for date, ctype, locator, act_no, eff_date, evidence in q("""
+                SELECT amend_date, change_type, locator, amend_act_number,
+                       effective_date, evidence
+                FROM article_amendment
+                WHERE doc_id = ? AND coalesce(target_article_number, host_article_number) = ?
+                ORDER BY amend_date
+            """, [DOC_GENERAL, article_number]):
+                st.markdown(f"{CHANGE_BADGE.get(ctype, '')} **{ctype}** — {date}"
+                            + (f" · Law {act_no}" if act_no else "")
+                            + (f" · effective {eff_date}" if eff_date else ""))
+                st.caption(locator)
+                st.caption(evidence)
+    else:
+        st.caption("**Legislative history:** no amendment events recorded for this "
+                   "article since the corpus's amendment-note coverage began.")
 
     col_uz, col_en = st.columns(2)
     with col_uz, st.expander(f"🇺🇿 {title_uz}", expanded=False):

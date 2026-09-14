@@ -23,25 +23,28 @@ How to use this file each session:
 ## Active threads
 
 - **Amendment chains: built 2026-09-11, list-swallowing residual fixed
-  2026-09-13, one residual left.** New `article_amendment` table +
-  `v_article_currency` view, mined from the per-article `amendment_note`
-  field rather than the backlog's originally-proposed "kiritilsin"-clause
-  detector (see Log for why that approach was rejected first). 8 of
-  `verify_transfer.py`'s 9 long-standing unexplained
-  `structure_missing_articles`/`md_only` gaps now resolve to an exact voiding
-  law + date. Of the two residuals flagged 2026-09-11: (1) the list-swallowing
-  bug ("65 va 66-moddalar" only registering its last member) is **fixed and
-  measured 2026-09-13** — see Log, 10/594 clauses corpus-wide were affected
-  (28 target articles, 18 previously dropped), not just the 1 occurrence
-  originally spotted. (2) amending-act resolution still caps at 5.6%
-  (33/594 clauses) because `act.doc_number` is empty corpus-wide, same root
-  cause as `repeal_clause`'s own unresolved tail — not a parsing gap, a
-  data-acquisition one, left as-is. **Still not done**: wiring either new
-  table into `app_hierarchy.py`/`app_llc.py`'s UI (grepped both again
-  2026-09-13 — still zero references, nothing to break, but also nothing
-  surfaced to a user yet — see Backlog). If picked up again: that UI wiring
-  is the one open step; residual (2) is a data-acquisition gap, not further
-  pipeline work.
+  2026-09-13, UI wiring done 2026-09-14. Thread closed.** New
+  `article_amendment` table + `v_article_currency` view, mined from the
+  per-article `amendment_note` field rather than the backlog's
+  originally-proposed "kiritilsin"-clause detector (see Log for why that
+  approach was rejected first). 8 of `verify_transfer.py`'s 9 long-standing
+  unexplained `structure_missing_articles`/`md_only` gaps now resolve to an
+  exact voiding law + date. Of the two residuals flagged 2026-09-11: (1) the
+  list-swallowing bug ("65 va 66-moddalar" only registering its last member)
+  is **fixed and measured 2026-09-13** — see Log, 10/594 clauses corpus-wide
+  were affected (28 target articles, 18 previously dropped), not just the 1
+  occurrence originally spotted. (2) amending-act resolution still caps at
+  5.6% (33/594 clauses) because `act.doc_number` is empty corpus-wide, same
+  root cause as `repeal_clause`'s own unresolved tail — not a parsing gap, a
+  data-acquisition one, left as-is. **UI wiring done 2026-09-14** — see Log
+  for the full detail: `page_article()` in `app_hierarchy.py` and
+  `page_norm()`/`page_skeleton()`/`page_currency()` in `app_llc.py` now
+  surface `v_article_currency`/`article_amendment` directly (per-article
+  amendment count, last change type/date, a ⚠️ for removed/voided parts, and
+  the full dated history on demand). Verified live in both apps with
+  Playwright, not just by reading the diff. This closes the thread — nothing
+  scoped to `article_amendment` is left open; residual (2) above stays a
+  documented data-acquisition gap, not further pipeline or UI work.
 
 - **Repeal resolution: closed 2026-09-09.** The 45/885 residual left after
   2026-09-06's tiered fallback is now fully characterized — every single
@@ -224,9 +227,11 @@ How to use this file each session:
   rotation target here. Cleanup was fully drained 2026-09-07 and
   re-confirmed empty 2026-09-10. Rotation since: Extractor 09-10, Data
   currency 09-11, Extractor 09-12, Data currency 09-13 (fixed the amendment-
-  chain list-swallowing residual, see Active threads and Log) — next
-  session should land on Cleanup or Extractor unless a new item surfaces
-  that outweighs rotating.
+  chain list-swallowing residual), Data currency 09-14 (UI wiring for
+  `article_amendment`/`v_article_currency`, see Active threads and Log) —
+  three Data-currency sessions in a row now (the amendment-chains thread
+  spanned 09-11 through 09-14), so next session should land on Extractor or
+  Cleanup unless a new item surfaces that outweighs rotating.
 
 - **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
   four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -390,10 +395,17 @@ How to use this file each session:
   hujjatlariga oʻzgartirish...") that don't, and without `doc_number` there's
   no safe way to disambiguate same-day candidates by number; not worth
   chasing further without a corpus update that populates `doc_number`.
-- **Propagate currency into the LLC dossier's implementing-acts list** (and
-  eventually the general explorer) as a first-class filter rather than a
-  toggle buried in an expander — currency should probably gate what counts as
-  "implements" by default.
+- ~~**Propagate currency into the LLC dossier's implementing-acts list.**~~
+  **Partially done 2026-09-14**: article-level currency (from
+  `v_article_currency`, not the act-level `v_act_currency` this item
+  originally meant) is now surfaced in both apps — see Active threads and
+  Log. What's genuinely still open: `v_act_currency`-driven filtering of
+  `page_acts`/`llc_implementing_act` is still a manual toggle (`hide_dead`,
+  default on) rather than currency gating "implements" by default the way
+  this item originally asked; not changed today since that's a behavior
+  change to what counts as an implementing act, not just a visibility
+  addition, and deserves its own measurement pass (how many acts/edges would
+  disappear by default) before being made the default rather than opt-in.
 
 ### Cleanup
 - ~~**Retire superseded prototypes.**~~ **Done 2026-09-07**: deleted
@@ -425,6 +437,102 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-14 — wired `article_amendment`/`v_article_currency` into both Streamlit apps, closing the amendment-chains thread
+
+Continued the mid-flight amendment-chains thread rather than rotating: its
+Active-threads entry named one explicit remaining step ("that UI wiring is
+the one open step"), which is exactly the kind of concrete, scoped
+continuation this file's process asks for.
+
+**Environment note first, unrelated to the actual work**: this fresh clone's
+`articles/train-00000-of-00001.parquet` was a bare git-lfs pointer stub (134
+bytes, `git-lfs.github.com/spec/v1`, ASCII), not the real 163MB parquet —
+`git-lfs` wasn't installed in the container, so the smudge filter never ran
+on checkout. `verify_transfer.py`'s AC3 failed immediately on a fresh clone,
+before touching any code, with `No magic bytes found at end of file`. Fixed
+by `apt-get install -y git-lfs && git lfs install --local && git lfs pull`
+— the real parquet materialized (163,356,047 bytes, matches the LFS oid's
+recorded size exactly) and every AC3 check then passed. Flagging this in
+case tomorrow's fresh clone hits the same thing: it's an environment-image
+gap, not a repo or data problem, and the fix is those three commands before
+anything else.
+
+**What was built.** `page_article()` in `app_hierarchy.py`: a "Legislative
+history" line under the OKOZ caption showing amendment count, last
+change-type/date, and a ⚠️ when `has_removed_or_voided_part` is true, plus an
+expander with the full dated history (locator, act number, effective date,
+raw evidence text) pulled straight from `article_amendment`. `app_llc.py`
+got three additions: (1) `page_skeleton()` — each foundation-article bullet
+now carries an inline amendment badge (e.g. "📝 9 amendments, last
+2025-02-07"), computed once per stage list via a single batched
+`v_article_currency` query rather than one query per article; (2)
+`page_norm()` — the same full summary + expander as `app_hierarchy.py`,
+under the Tier-2 Civil Code article; (3) `page_currency()` ("Is this still
+law?") — a new dataframe table across all 27 distinct LLC foundation
+articles, explicitly captioned as a *different* currency signal from the
+page's existing two (which are about whole acts being repealed via
+`v_act_currency`/`repeal_clause` — this is about parts of a still-live
+article being rewritten in place via `article_amendment`). All new SQL is
+parameterized (`?` placeholders, only `DOC_GENERAL`/article-number values
+bound) — no f-string SQL added anywhere, keeping the project's one known
+offender (already-deleted `hierarchy_engine.py`) the only historical case.
+
+**Measured, not assumed.** Queried live against `corpus.duckdb`: of the 27
+distinct Civil Code articles founding the LLC's 8 stages, **22 (81.5%) have
+recorded amendment history** — article 55 alone has been amended **9
+times** between 2006 and 2025 (four separate `restated` events on its parts
+plus a `supplemented` insertion), several others (39, 40, 42, 43, 46, 48,
+50, 58) were restated as recently as 2025-02-07. This is a genuine,
+previously-invisible signal: before today, neither app told a reader that
+80%+ of the LLC's own legal foundation has been substantively rewritten
+since the Code was enacted — `page_currency()`'s existing act-level view
+would have shown the *2001 LLC Law itself* as repealed-and-replaced, but
+said nothing about churn inside the Code articles the *current* 2026 LLC
+Law still rests on.
+
+**Verified live, not just read from the diff.** `python3 -m py_compile` on
+both files, then actually booted each app with `streamlit run
+--server.headless` and drove them with Playwright (pre-installed Chromium)
+rather than trusting the SQL alone: confirmed the "Legislative history"
+line and its expander render with real content on `app_hierarchy.py`'s
+default article (49), expanded the history panel and read four real dated
+entries with correct badges; on `app_llc.py`, confirmed the skeleton's
+inline badges render, clicked into "Follow a norm down" for article 39 and
+saw the same summary+expander pattern, and clicked into "Is this still
+law?" and confirmed the new dataframe section renders with its caption and
+no traceback. Caught along the way (not a bug, a test artifact): running
+both apps against `corpus.duckdb` simultaneously in this sandbox raises
+DuckDB's expected single-writer lock conflict — pre-existing, documented in
+`app_hierarchy.py`'s own `_connect()` docstring, not something today's
+change touched; tested each app alone instead, which is also how they're
+meant to run in production (one writer max per the docstring's own
+reasoning).
+
+**Scope check against the hard constraints.** No pipeline script touched,
+so no rebuild of `corpus.duckdb` was needed or done — `git status` shows
+only `app_hierarchy.py`/`app_llc.py` modified. Grepped both apps beforehand
+for the table/column names touched (`v_article_currency`,
+`article_amendment`) to confirm nothing else already used them (a fresh
+grep, not trusting yesterday's — matched yesterday's finding of zero
+references). `verify_transfer.py`: **all checks green**, same
+`m0-20260813T110129Z` run, no new INFO/FAIL lines beyond the pre-existing
+documented ones (26¹ version drift, the two ambiguous-key superscript
+articles, the 9 `structure_missing_articles`/`md_only` gaps — all
+pre-existing and already explained in past Log entries).
+
+**Decision: amendment-chains thread closed.** The Active-threads entry
+tracked this since 2026-09-11 across three sessions (built → list-swallowing
+fix → UI wiring); today's step was the one explicitly flagged as remaining,
+and there's nothing else scoped to `article_amendment` left to do — the
+amending-act-resolution residual (33/594, `act.doc_number` empty
+corpus-wide) is a documented data-acquisition gap, not pipeline or UI work.
+Rotation-wise this was technically a third straight Data-currency session
+(09-11 built it, 09-13 fixed the list-swallowing bug, 09-14 wired the UI) —
+justified because "mid-flight thread" takes priority over rotation per this
+file's own process, but it does mean next session should prefer Extractor
+or Cleanup rather than a fourth Data-currency day, absent a new item that
+clearly outweighs rotating.
 
 ### 2026-09-13 — fixed amendment-chain list-swallowing bug: 18 dropped target articles recovered by reusing the extractor's own list/range grammar
 

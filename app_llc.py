@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "corpus.duckdb"
 LLC_LAW_CURRENT = -8151376
 LLC_LAW_PRIOR = -22525
+DOC_GENERAL = -111189  # all LLC foundation articles are Civil Code General Part
 
 TIER_LABEL = {1: "Constitution", 2: "Code", 3: "Law", 4: "Presidential decree",
               5: "Government resolution", 6: "Departmental order", 9: "Unclassified"}
@@ -28,6 +29,13 @@ KIND_BADGE = {
     "normative": ("🟩", "the act's own words invoke the Code"),
     "editorial": ("🟦", "LexUZ editorial cross-reference, not the act speaking"),
     "amendment": ("🟨", "drawn from an amendment note (legislative history)"),
+}
+# article_amendment.change_type -> display badge. This is the foundation article's
+# OWN amendment history (parts restated/added/removed within a still-live article),
+# distinct from v_act_currency below (a whole act repealed and replaced).
+CHANGE_BADGE = {
+    "restated": "📝", "supplemented": "➕", "inserted": "➕",
+    "removed": "➖", "voided": "🚫", "replaced": "🔁",
 }
 
 
@@ -68,6 +76,12 @@ def page_skeleton() -> None:
                "Civil Code articles that stage rests on — the general norm the "
                "special law specialises.")
 
+    currency = {a: (n, d, t, v) for a, n, d, t, v in q("""
+        SELECT article_number, n_amendments, last_amend_date, last_change_type,
+               has_removed_or_voided_part
+        FROM v_article_currency WHERE doc_id = ?
+    """, [DOC_GENERAL])}
+
     for s_no, label, a_from, a_to, n_art, n_f in q(
             "SELECT * FROM llc_stage ORDER BY stage_no"):
         with st.expander(f"**{s_no}. {label}** — LLC Law arts. {a_from}–{a_to} "
@@ -80,8 +94,15 @@ def page_skeleton() -> None:
             if found:
                 st.markdown("**Civil Code foundation**")
                 for a, t_uz, t_en, why in found:
+                    amend = ""
+                    if a in currency:
+                        n, d, t, voided = currency[a]
+                        amend = (f"  {CHANGE_BADGE.get(t, '📝')} *{n} amendment"
+                                 f"{'s' if n != 1 else ''}, last {d}*")
+                        if voided:
+                            amend += " ⚠️"
                     st.markdown(f"- **CC art. {a}** — {t_uz}"
-                                + (f" *({t_en})*" if t_en else ""))
+                                + (f" *({t_en})*" if t_en else "") + amend)
                     st.caption(f"  ↳ {why}")
             else:
                 st.caption("No distinct General Part anchor for this stage.")
@@ -122,6 +143,34 @@ def page_norm() -> None:
     st.caption(f"Why it founds this stage: {rec[3]}")
     with st.expander("Read the Code article"):
         st.write(rec[4])
+
+    currency = q("""
+        SELECT n_amendments, last_amend_date, last_change_type, has_removed_or_voided_part
+        FROM v_article_currency WHERE doc_id = ? AND article_number = ?
+    """, [DOC_GENERAL, art])
+    if currency:
+        n_amend, last_date, last_type, has_voided = currency[0]
+        line = (f"**Legislative history:** {CHANGE_BADGE.get(last_type, '📝')} "
+                f"**{n_amend}** amendment event(s), last *{last_type}* on {last_date}")
+        if has_voided:
+            line += "  · ⚠️ **part of this article has been removed/voided**"
+        st.caption(line)
+        with st.expander("Full amendment history (mined from LexUZ's amendment_note)"):
+            for date, ctype, locator, act_no, eff_date, evidence in q("""
+                SELECT amend_date, change_type, locator, amend_act_number,
+                       effective_date, evidence
+                FROM article_amendment
+                WHERE doc_id = ? AND coalesce(target_article_number, host_article_number) = ?
+                ORDER BY amend_date
+            """, [DOC_GENERAL, art]):
+                st.markdown(f"{CHANGE_BADGE.get(ctype, '')} **{ctype}** — {date}"
+                            + (f" · Law {act_no}" if act_no else "")
+                            + (f" · effective {eff_date}" if eff_date else ""))
+                st.caption(locator)
+                st.caption(evidence)
+    else:
+        st.caption("**Legislative history:** no amendment events recorded for this "
+                   "article since the corpus's amendment-note coverage began.")
 
     st.divider()
     st.subheader(f"Tier 3 · LLC Law — the stage that specialises it")
@@ -240,6 +289,23 @@ def page_currency() -> None:
         WHERE c.derived_status = 'superseded' AND e.hierarchy_rel = 'below'
         GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 15
     """), hide_index=True, width="stretch")
+
+    st.subheader("Civil Code foundation articles — amendment activity")
+    st.caption("A different currency signal from the two above: these 27 articles "
+               "are still in force (not repealed), but LexUZ's per-article "
+               "`amendment_note` shows how much of each has been rewritten in place. "
+               "⚠️ marks an article with a part currently removed or voided.")
+    st.dataframe(qdf("""
+        SELECT ln.article_number AS cc_article, ln.article_title AS title,
+               coalesce(vac.n_amendments, 0) AS amendments,
+               vac.last_amend_date, vac.last_change_type AS last_change,
+               coalesce(vac.has_removed_or_voided_part, false) AS has_voided_part
+        FROM (SELECT DISTINCT article_number, article_title FROM llc_norm
+              WHERE layer = 'foundation') ln
+        LEFT JOIN v_article_currency vac
+               ON vac.doc_id = ? AND vac.article_number = ln.article_number
+        ORDER BY amendments DESC, CAST(ln.article_number AS INT)
+    """, [DOC_GENERAL]), hide_index=True, width="stretch")
 
     st.subheader("Company-form articles the Code no longer has")
     st.caption("Articles 63, 65, 66, 70, 71 and 72 governed company forms and were "
