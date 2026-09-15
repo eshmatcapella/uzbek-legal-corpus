@@ -238,10 +238,27 @@ def main() -> int:
                     conf = BASE_CONFIDENCE[(field, stored_kind)]
                     if c.anchor == "fk_alias":
                         conf *= 0.95
+                    # Ambiguous/dangling means the specific NORM is uncertain
+                    # (e.g. article 261 collides textually with 26-1's
+                    # concatenated superscript form; a dangling article was
+                    # repealed since the citing act wrote it) — it says
+                    # nothing about whether the citing act's own words are
+                    # trustworthy. A normative (article_text) citation stays
+                    # above cross_references' un-downgraded 'article' ceiling
+                    # (0.80) even when downgraded, so this can never invert
+                    # "the act's own words outrank an editorial pointer"
+                    # (BASE_CONFIDENCE's own stated design, checked by
+                    # verify_transfer.py's AC7 evidence-hierarchy check).
+                    # Measured 2026-09-15 (see DAILY_REVIEW.md): the range-list
+                    # fix below was the first time an article_text citation
+                    # ever expanded onto an ambiguous article number (261, via
+                    # "ushbu Kodeksning 234-352-moddalari") — every prior
+                    # ambiguous/dangling edge came from cross_references, so
+                    # this asymmetry was never exercised before.
                     if ambiguous:
-                        conf = min(conf, 0.60)
+                        conf = min(conf, 0.85 if field == "article_text" else 0.60)
                     if dangling:
-                        conf = min(conf, 0.70)
+                        conf = min(conf, 0.88 if field == "article_text" else 0.70)
 
                     edge_id += 1
                     edges.append([

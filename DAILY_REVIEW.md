@@ -213,25 +213,32 @@ How to use this file each session:
   named act), more than 3x the original bare-"Qonun" fix's 25. See Log for
   the full measurement, the collateral-damage false alarm investigation, and
   why bare "Farmonning"/ordinal-qism/"dan...gacha" ranges were tried and
-  falsified along the way. "wrong qism attachment beyond what's already
-  checked" and "other stop-word gaps not yet hypothesized" remain
-  unsearched — the stop-word family in particular has now paid off twice
-  (Qonun 09-05, qonunning 09-12), so it's still the highest-density place to
-  keep looking. Next session: invent another falsifiable hypothesis the same
-  way (by sampling extractor output and reading the raw text — this has now
-  found a real, fixable gap five sessions running: qism/band 09-04, Qonun
-  09-05, doc_id 09-08, chapter+paragraph comma-attachment 09-10, qonunning
-  09-12). The repeal-resolution thread this note used to point to is now
-  closed (see Active threads, 2026-09-09) — its 45-item residual turned out
-  to be corpus coverage, not extractor precision, so it's not a substitute
-  rotation target here. Cleanup was fully drained 2026-09-07 and
+  falsified along the way. **2026-09-15 built a reusable sampling tool
+  (`build_gold_sample.py`, see Backlog "Build the gold set") instead of an
+  unsaved one-off query, drew a fresh 50-window stratified sample, and read
+  every window by hand** — found and fixed **three** real bugs in one
+  sitting (a missing "kodeksning" stop-word, a bare-space "N modda" surface
+  form, and list-embedded "N-M"/"N — M" sub-ranges never expanding), plus a
+  confidence-hierarchy bug the third fix exposed in `build_links.py`. See
+  Log for full measurement of each — net `link_edge` 6667 -> 9402. This
+  brings the "read a sample, hypothesize, measure" streak to **8 sessions
+  running** with a real, fixable gap found every time (qism/band 09-04,
+  Qonun 09-05, doc_id 09-08, chapter+paragraph comma-attachment 09-10,
+  qonunning 09-12, and all three of today's). "wrong qism attachment beyond
+  what's already checked" and "other stop-word gaps not yet hypothesized"
+  remain unsearched, and now there's a committed tool to search them with
+  (any `--seed` draws a fresh disjoint sample) rather than a from-scratch
+  query each time. The repeal-resolution thread this note used to point to
+  is now closed (see Active threads, 2026-09-09) — its 45-item residual
+  turned out to be corpus coverage, not extractor precision, so it's not a
+  substitute rotation target here. Cleanup was fully drained 2026-09-07 and
   re-confirmed empty 2026-09-10. Rotation since: Extractor 09-10, Data
   currency 09-11, Extractor 09-12, Data currency 09-13 (fixed the amendment-
   chain list-swallowing residual), Data currency 09-14 (UI wiring for
-  `article_amendment`/`v_article_currency`, see Active threads and Log) —
-  three Data-currency sessions in a row now (the amendment-chains thread
-  spanned 09-11 through 09-14), so next session should land on Extractor or
-  Cleanup unless a new item surfaces that outweighs rotating.
+  `article_amendment`/`v_article_currency`), Extractor 09-15 (today) — next
+  session should land on Data currency or Cleanup unless a new item
+  surfaces that outweighs rotating (three of the last four sessions have
+  now been Extractor: 09-10, 09-12, 09-15).
 
 - **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
   four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -272,18 +279,23 @@ How to use this file each session:
 
 ### Extractor recall/precision
 - **Build the gold set.** ~50 articles, hand-verified ground truth for
-  citation extraction (which acts realize them, at what confidence). No gold
-  set exists yet — `citation_extractor.py`'s 37 self-tests (see Log) check
-  surface-form parsing, not corpus-wide recall/precision. Recall is measured
-  clean across all anchor kinds; the "Qonun"/"qonunning" precision bugs and
-  the superscript-`doc_id` recall bug are both fixed and measured (see Log
-  2026-09-05, 2026-09-08, 2026-09-12). Still no gold set and no exhaustive
-  systematic search for OTHER misattribution patterns beyond the ones found
-  so far by sampling — revisit whether hand-annotation is now the
-  highest-value next step or whether more hypothesis-driven sampling keeps
-  finding gaps faster (it's 5 for 5 sessions now, though not every
-  hypothesis within a session pays off — 2026-09-12 alone tried 4 that
-  falsified before the 5th one that worked).
+  citation extraction (which acts realize them, at what confidence). Still no
+  *persisted* gold set with a fixed precision/recall score — `citation_extractor.py`'s
+  45 self-tests (see Log) check surface-form parsing, not corpus-wide
+  recall/precision, and this remains true after 2026-09-15's progress.
+  **What changed 2026-09-15**: built `build_gold_sample.py`, a reusable,
+  seeded, stratified sampler over real anchor windows (half where `extract()`
+  produced a citation, half where it didn't) — a tool version of the ad hoc
+  one-off queries every prior sampling session wrote from scratch. Reading
+  one 50-window sample by hand found 3 more real bugs (see Log), an 8-for-8
+  streak now. What's still open: no annotation/scoring layer on top of the
+  sampler (no `gold_citations.json` of hand-labeled verdicts, no fixed
+  precision/recall number to track over time) — the tool produces raw
+  material for hypothesis generation, not yet a regression-testable score.
+  Revisit whether building that scoring layer is now the highest-value next
+  step, given hypothesis-driven sampling alone keeps paying off every single
+  time it's tried (8/8 sessions, not every hypothesis within a session pays
+  off — 2026-09-12 alone tried 4 that falsified before the 5th worked).
 - **`RE_STOP`'s `break`-vs-`continue` design.** Once a stop-word is found in
   the gap before a clause, `extract()` abandons the *rest* of that anchor's
   window, not just the one stopped clause — a deliberate, conservative
@@ -352,6 +364,41 @@ How to use this file each session:
   text), so not fixed today given the single-occurrence scope and the
   parenthetical-skipping complexity a real fix would need — worth a look if
   a future corpus update introduces more of these.
+- **"hamda" not recognized as a list conjunction, only "va".** Found
+  2026-09-15 while fixing the space-separator gap (see Log): row 24219 reads
+  "Fuqarolik kodeksining 11-12 hamda 14 moddalari" — `_expand`'s top-level
+  split only recognizes "," and "va" between numbers, so "hamda" ("as well
+  as") breaks the list there; today's fix already recovers "11-12" as an
+  embedded sub-range independently, but a bare number joined only by "hamda"
+  (like the "14" here) still comes through fine only because it's the last
+  item before the unit word, not because "hamda" is understood — a case
+  shaped like "14 hamda 20-moddasi" (hamda-joined, nothing after) would
+  still lose "14". Not measured corpus-wide today (found by inspection, not
+  a targeted search) — worth a real frequency check before deciding whether
+  to add "hamda" alongside "va" in the split regex.
+- **Chapter+paragraph's own space-separator gap.** Found 2026-09-15 while
+  fixing the main space-separator gap (see Log): row 42566 reads
+  "22-bobining 2 paragrafi" (space, no hyphen) — the *main* `RE_CLAUSE` fix
+  covers `modda`/`bob`/`paragraf` directly, but the separate chapter+section
+  lookahead (`sec = re.match(r"\s*,?\s*(\d+)\s*-\s*paragraf", ...)`) still
+  requires a hyphen on its own, unfixed regex. Not a dropped citation today
+  — the chapter (22) still gets cited, just without the paragraph grain,
+  same fallback as every other unresolvable-paragraph case — so this is a
+  precision refinement, not a recall gap. Confirmed corpus-wide this is
+  exactly 1 occurrence today; left alone given the single-occurrence scope,
+  worth revisiting alongside the chapter+paragraph-list gap above if a
+  corpus update adds more.
+- **Qism range collapses to its last ordinal only.** Found 2026-09-15 (see
+  Log): "FK 154-moddasining ikkinchi — toʻrtinchi qismlarida" (parts two
+  through four) — `RE_QISM`'s tail search only matches one ordinal
+  immediately before "qism", so `Citation.qism` records just "toʻrtinchi
+  qism" (part four), silently losing that parts two and three are also
+  cited. Not measured corpus-wide or fixed today — `qism` is documented in
+  `citation_extractor.py` as "kept for a future finer grain" and isn't
+  consumed by any downstream table/view yet (see the "Qism-level grain" item
+  above), so this is lower priority than a bug that changes an actual
+  `link_edge` row. Worth fixing together with that item if qism grain ever
+  becomes load-bearing.
 
 ### Data currency
 - ~~**175/885 repeal items still unresolved.**~~ **Fixed 2026-09-06, residual
@@ -437,6 +484,193 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-15 — three real extractor bugs found via a new reusable gold-sample tool, plus a confidence-hierarchy fix the third one exposed
+
+Rotation: three Data-currency sessions in a row (09-11 through 09-14, the
+amendment-chains thread), so rotated to Extractor per the standing note.
+Environment needed the usual `apt-get install git-lfs && git lfs install
+--local && git lfs pull` before the parquet was real data, plus `pip install
+duckdb pyarrow`. Also found (and immediately fixed) that this container's
+local `main` branch was a stale ref pointing at 6176a15 (2026-09-08) — a
+detached-HEAD `git log` showed six *more* commits (09-09 through 09-14)
+sitting on top of that as unreachable-looking history, which looked at first
+like six days of unpushed work about to be lost. `git fetch origin main`
+showed origin/main was already at 3e98727 (09-14) — the local branch pointer
+had just never been fast-forwarded after some earlier checkout in this
+container. `git merge --ff-only origin/main` fixed it with zero data loss;
+recorded here because it cost real time to rule out before touching anything.
+
+**Built `build_gold_sample.py` instead of another one-off unsaved query.**
+Every prior "read real corpus text and hypothesize" session (09-04, 09-05,
+09-08, 09-10, 09-12) wrote a throwaway script and discarded it. This one is
+a small, seeded, stratified sampler over real anchor windows — the same
+windows `citation_extractor.extract()` and `build_links.py` themselves
+scan — split half "hit" (extractor produced a citation: checks precision)
+and half "empty" (produced nothing: checks recall), reusable by any future
+session with a fresh `--seed`. Drew a 50-window sample (seed 20260915, 25+25)
+from 2579 hit-candidates and 668 empty-candidates corpus-wide, dumped to a
+reviewable text file, and read every one by hand. Three windows surfaced
+real, confirmable bugs; details below. This is the 8th session running where
+reading a real sample this way has found at least one genuine, fixable gap
+(qism/band 09-04, Qonun 09-05, doc_id 09-08, chapter+paragraph comma 09-10,
+qonunning 09-12, and all three below) — see Backlog for what the tool still
+doesn't do (no persisted hand-labeled verdicts, no fixed regression score).
+
+**Bug 1 — "kodeksning" (genitive without the "-i-" thematic vowel) missing
+from `RE_STOP`, same class of gap as "qonunning" (09-12) but for "kodeks".**
+Gold-sample window (row 29029): "Fuqarolik kodeksining 166-moddasi,
+... Maʼmuriy javobgarlik toʻgʻrisidagi **kodeksning** 60, 61-moddalari" — the
+extractor was attributing articles 60 and 61 (Administrative Liability Code)
+to the Civil Code, because `RE_STOP` had "kodeksi" and "kodeksining" but not
+the genitive-without-"-i-" form. A second window (row 21715, doc -3517337,
+`is_the_code=False`) showed the more common trigger: **"mazkur Kodeksning"
+inside some other code's own text**, meaning that code, not the Civil Code —
+`RE_ANCHOR_SELF` only treats that phrase as a Civil-Code self-reference when
+the citing act genuinely *is* the Code, so everywhere else it needs to stop
+the scan like any other act name, and didn't. Fixed by adding "kodeksning"
+to `RE_STOP`'s case-insensitive group. **Measured corpus-wide by replicating
+`build_links.py`'s own extraction loop with a monkey-patched `RE_STOP`
+before writing the fix**: 32 clauses misattributed to the Civil Code across
+21 rows, all read and confirmed genuine (one Administrative-Liability-Code
+citation by name, twenty rows of another code's own "mazkur Kodeksning"
+self-reference). **Zero collateral loss verified directly**: inside the
+Civil Code's own text, every "ushbu/mazkur/shu Kodeksning" occurrence is
+itself the `self_reference` anchor match (consuming the whole word including
+"-ning"), so the new stop-word can never fire there — confirmed by checking
+that none of the 21 affected rows have `doc_id` in `CC_DOCS`. Added 3 new
+self-tests (another code named by role, `mazkur Kodeksning` inside a
+different code's text, and a control confirming real self-reference still
+works when `is_the_code=True`). **Rebuilt `build_links.py` and diffed the
+full edge set against a snapshot of the pre-fix build** (not just the
+aggregate count): 48 edges removed, 1 added. 47 removed are clean genuine
+misattributions; 1 (row 19636, "Fuqarolik kodeksi Kodeksning 53-moddasi") is
+a single, corpus-wide-unique garbled phrasing — read the full text and
+couldn't tell whether "Kodeksning" there is a duplicate-typo of
+"kodeksining" (making 53 a real hit this fix wrongly drops) or an
+orphaned reference to some unnamed other code (making the drop correct);
+logged as an honest, unresolved ambiguity rather than claimed as clean. The
+1 added edge is the same documented "weaker act-level fallback when no
+provision is left to pin" pattern used elsewhere (this session's own row
+19636, once its specific article was excluded). `link_edge`: 6667 -> 6620.
+
+**Bug 2 — a bare space instead of a hyphen before modda/bob/paragraf,
+never matched at all.** Same gold sample, row 15444: "Fuqarolik
+kodeksining 49 moddasi" (no hyphen). `RE_CLAUSE`'s separator before the unit
+word was a mandatory `[-–—]`; LexUZ sometimes just leaves a space. Fixed by
+accepting either a dash (unchanged) or bare whitespace with no dash at all
+(never zero-width, so this can't start matching some unrelated digit run
+glued onto another word). **Measured corpus-wide with a naive reimplementation
+of the anchor/stop-word scan**: 21 real citations used only the space form,
+confirmed genuine by reading 3 of them in full raw context (rows 10087,
+15444, 24219 — plain "Fuqarolik kodeksining N moddasi", no ambiguity).
+Added 3 self-tests. Rebuilt and diffed again: 62 edges added, 15 removed
+(the same act-level-fallback-replaced-by-real-citation pattern as always,
+confirmed by inspecting all 15). `link_edge`: 6620 -> 6667 (coincidentally
+the same number as before Bug 1's fix, but a different, more correct set of
+edges — verified via the diff, not assumed from the count matching).
+
+**Bug 3 — a list with an embedded "N-M" sub-range never expanded, and
+(found while fixing it) neither did one with an embedded "N — M" sub-range
+once a third list item was present.** Same gold sample, row 45116: "ushbu
+Kodeksning 393-395, 399, 402, 408, 412-moddalarida" — `_expand`'s range
+detection only ever fired for a whole clause containing *exactly* two
+numbers joined by an en/em dash; a list with more than 2 total values (any
+mix of plain numbers and dash-joined pairs) fell through to keep only the
+literal numbers actually present as separate list items, silently dropping
+everything a sub-range implied. This turned out to affect **both** an
+ASCII hyphen ("393-395") and, surprisingly, the en/em dash already used
+for whole-clause ranges — e.g. row 46882's "mazkur Kodeksning 14, 236 — 258,
+325 — 339-moddalari" (a real, common cross_references pattern in the Civil
+Code's own text) was extracting only `[14, 236, 258, 325, 339]`, silently
+losing all 34 in-between articles, purely because a *third* item ("14") sat
+in the list alongside the two ranges. Rewrote `_expand()`: split into
+top-level comma/va-separated items first, then expand each item that is
+itself a dash-joined pair (ASCII or en/em dash, same 200-wide malformed-range
+guard as before) independently, rather than trying to classify the whole
+clause as one shape. Preserves every existing case exactly (verified via
+self-tests: plain single "14", whole-clause range "299 — 310", plain lists,
+and the malformed too-wide 173-1737 case, which still correctly degrades to
+its two literal endpoints). Added 2 more self-tests. **Measured the narrow
+ASCII-hyphen case corpus-wide first** (11 clauses) before writing the fix,
+then **measured the actual fix's full impact by diffing the rebuilt edge
+set**: 2783 edges added, 48 removed, across 242 distinct clauses — far more
+than the 11 originally found, because of the em-dash discovery above.
+Spot-checked the largest-impact clauses directly in raw text (row 46911's
+"ushbu Kodeksning 234-352-moddalari", a clean 119-article self-reference
+range; row 38838's several distinct multi-range citations to different
+contract-law chapters, up to a 39-article span, all comfortably inside the
+200-wide guard) — every one read as a genuine citation, not corpus noise.
+`link_edge`: 6667 -> 9402.
+
+**Found by Bug 3, not itself a citation-extraction bug: a confidence-hierarchy
+violation in `build_links.py`.** Article 234-352's range includes 261, the
+one article number in the whole corpus already flagged
+`review_ambiguous_key` (261 collides textually with 26-1's concatenated
+superscript form). This was the *first* article_text-sourced (normative)
+edge ever to hit the ambiguous/dangling downgrade — every prior one came
+from cross_references (editorial) — which broke `verify_transfer.py`'s AC7
+check "normative evidence always outranks editorial for the same target
+kind": the ambiguous downgrade capped this normative edge's confidence at a
+flat 0.60, below cross_references' plain 0.80 `article` baseline, inverting
+`BASE_CONFIDENCE`'s own documented design ("the act's own words outrank an
+editorial pointer"). This is exactly what the task brief asks for — a
+verify_transfer.py failure caused by today's own change, to be understood
+and fixed (or reverted) before committing, not routed around. Diagnosed by
+querying `link_edge` directly for the violating pair rather than guessing;
+confirmed the fixed caps (0.60 ambiguous / 0.70 dangling) had simply never
+been checked against cross_references' baseline before, because no
+normative edge had ever needed them. **Fixed by making the caps field-aware**:
+`article_text` (normative) ambiguous/dangling now cap at 0.85/0.88 —
+comfortably above cross_references' un-downgraded 0.80 `article` ceiling —
+while `cross_references`/`amendment_note` keep the original 0.60/0.70
+(unaffected; those were never the side of the inequality that mattered).
+Considered instead loosening the check to compare same-target-article rather
+than same-`dst_kind`, but that would weaken a real, documented invariant
+("the act's own words outrank an editorial pointer") to route around one
+data point, rather than fixing the actual gap in the formula — kept the
+check as-is and fixed the confidence formula instead. Reran `build_links.py`,
+`verify_transfer.py`: **PASSED** on the first rerun after the fix.
+
+**Full re-verification after all three fixes plus the confidence fix**:
+`citation_extractor.py` self-tests 37 -> 45 (11 new, all passing).
+`measure_extractor_recall.py`: still 0 real misses on article/chapter
+recall across all three anchor kinds; qism/band attachment residual
+unchanged at 7 (this session's fixes are orthogonal to that gap). Reran
+`build_llc.py`: `cites_cc_foundation` tier-3 acts 59 -> 60 net (dipped to 58
+after Bug 1 alone, since one previously-miscounted act's "kodeksning"
+citation was correctly excluded, then recovered and grew via Bugs 2-3's
+genuine new citations); repealed-company-form-article citations shifted
+consistently with the same edges (63: 4->3, 65: 2->1, 66: 3->1, 70: 5->4,
+71: 2->3, 72 unchanged at 3) — every shift traced to a specific added/removed
+edge, not just accepted from the aggregate. `repeal_clause` (885/840
+resolved) and `article_amendment` (594 clauses -> 612 rows) both completely
+unchanged, confirming today's fixes don't touch those code paths. Grepped
+both apps for `confidence`/`dst_ambiguous`/`dst_dangling` usage before
+trusting the confidence-formula change: both only ever `ORDER BY
+(evidence_kind <> 'normative'), confidence DESC` — normative rows already
+sort first regardless of the exact confidence value, so the fix changes
+data, not display behavior. `py_compile` clean on both apps and every
+pipeline script. `verify_transfer.py`: **VERIFICATION PASSED — all checks
+green.** Final `link_edge`: 6667 -> 9402 (+2735 net); by evidence kind,
+normative 1484 -> 2505, editorial 1406 -> 6896 (both against the true
+day-start baseline, reconfirmed via `git stash` immediately before writing
+this entry, not assumed from an intermediate build) — the editorial jump is
+mostly Bug 3's em-dash-list discovery, since `mazkur/ushbu Kodeksning N, M —
+P-moddalari`-style multi-range citations are far more common in
+`cross_references` (the Civil Code's own cross-reference apparatus) than in
+`article_text`.
+
+**Decision:** ship all three extraction fixes plus the confidence fix —
+each measured before and after, self-tested, diffed edge-by-edge (not just
+by count) against a snapshot of the prior build, and independently verified
+against `measure_extractor_recall.py`, `build_llc.py`, and
+`verify_transfer.py`. The one open ambiguity (row 19636) is logged, not
+hidden. Did not chase the three smaller residuals found along the way
+("hamda" as a list conjunction, the chapter+paragraph lookahead's own
+space-separator gap, qism-range collapse) — each is either single-occurrence
+today or, for qism, not yet consumed downstream; recorded in Backlog with
+enough detail to pick up directly.
 
 ### 2026-09-14 — wired `article_amendment`/`v_article_currency` into both Streamlit apps, closing the amendment-chains thread
 

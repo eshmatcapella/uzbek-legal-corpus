@@ -54,9 +54,28 @@ RE_FK_ALIAS_DEF = re.compile(r"bundan\s+buyon\s+matnda\s+FK\s+deb", re.IGNORECAS
 # "ushbu/shu Kodeks" — only meaningful when the citing act IS the Code.
 RE_ANCHOR_SELF = re.compile(r"(?:ushbu|shu|mazkur)\s+Kodeks\w*", re.IGNORECASE)
 
-# A clause of numbers terminated by modda / bob / paragraf.
+# A clause of numbers terminated by modda / bob / paragraf. The separator
+# before the unit word is usually a hyphen/dash, but LexUZ sometimes just
+# leaves a plain space ("Fuqarolik kodeksining 49 moddasi", no hyphen at all —
+# confirmed by reading raw corpus text, not assumed). Accept either: a
+# dash with optional surrounding whitespace, or bare whitespace with no dash
+# at all (never *zero* separator, so this can't start matching some unrelated
+# digit run glued directly onto another word). Measured 2026-09-15 (see
+# DAILY_REVIEW.md): 21 real citations corpus-wide used only the space form and
+# were silently invisible to the old dash-only pattern — not unresolved, not
+# dangling, the anchor's window just never produced a RE_CLAUSE match for them
+# at all.
+#
+# The inner list separator (between numbers WITHIN nums) also accepts a bare
+# ASCII hyphen now, not just comma/va/en-dash/em-dash — LexUZ sometimes packs
+# a sub-range into a list with an ordinary "-" ("393-395, 399, 402, 408,
+# 412-moddalarida"). No ambiguity with the outer unit separator above: that
+# one needs "modda/bob/paragraf" (letters) right after the dash, this one
+# needs a digit, so the regex engine never confuses the two. _expand() below
+# does the actual sub-range recognition/expansion. Measured 2026-09-15: 11
+# such clauses corpus-wide (see DAILY_REVIEW.md).
 RE_CLAUSE = re.compile(
-    r"(?P<nums>\d+(?:\s*(?:,|va|[–—])\s*\d+)*)\s*[-–—]\s*(?P<unit>modda|bob|paragraf)(?P<suffix>\w*)",
+    r"(?P<nums>\d+(?:\s*(?:,|va|[-–—])\s*\d+)*)(?:\s*[-–—]\s*|\s+)(?P<unit>modda|bob|paragraf)(?P<suffix>\w*)",
     re.IGNORECASE,
 )
 # Another act starting: stop scanning, its numbers are not the Code's.
@@ -87,8 +106,27 @@ RE_CLAUSE = re.compile(
 # Measured 2026-09-12 (see DAILY_REVIEW.md): 131 real Civil-Code misattributions
 # (118 capitalized "Qonunning" + 13 more lowercase "qonunning") corpus-wide, 0
 # collateral loss of genuine Code citations sharing the same anchor window.
+#
+# "kodeksning" is the same genitive-without-"-i-" gap as "qonunning" above, for
+# "kodeks" instead of "qonun": "kodeksi"/"kodeksining" (already in this group)
+# don't match it as a substring (the "i" that "kodeksi" needs sits one letter
+# later than where "kodeksning" puts its "n"). Two real surface forms hit this:
+# another code named by role ("Maʼmuriy javobgarlik toʻgʻrisidagi kodeksning
+# 60-moddasi") and, far more often, "mazkur/ushbu/shu Kodeksning" *inside some
+# other code's own text* pointing at itself, not the Civil Code — RE_ANCHOR_SELF
+# only treats that phrase as a self-reference anchor when the citing act IS the
+# Civil Code (`is_the_code`), so in every other code's text it's just inert
+# words the scan should stop at, same as any other act name. Measured
+# 2026-09-15 (see DAILY_REVIEW.md): 32 clauses misattributed to the Civil Code
+# across 21 rows, all confirmed by reading the citing text — every one names or
+# means a different code (Administrative Liability, and 20 rows of some other
+# code's "mazkur Kodeksning" self-reference). Zero collateral loss: inside the
+# Civil Code's own text, "ushbu/mazkur/shu Kodeksning" is always itself the
+# self_reference anchor match (RE_ANCHOR_SELF consumes the whole word,
+# including "-ning"), so this stop-word never fires there.
 RE_STOP = re.compile(
-    r"(?i:qonuni|qonuniga|qonunining|qonunning|kodeksi|kodeksining|farmoni|farmonining|qarori|qarorining|"
+    r"(?i:qonuni|qonuniga|qonunining|qonunning|kodeksi|kodeksining|kodeksning|"
+    r"farmoni|farmonining|qarori|qarorining|"
     r"nizom|konstitutsiya|buyrugʻi|buyrugi|reglament|"
     # Publication record of the act, e.g. "(Oliy Majlisining Axborotnomasi, 1997-yil,
     # № 2, 56-modda)".  There "56-modda" is item 56 of the gazette issue, not an
@@ -153,17 +191,37 @@ class Citation:
         return DOC_SPECIAL if n <= CODE_LAST_ARTICLE else None
 
 
+RE_RANGE_PAIR = re.compile(r"^(\d+)\s*[-–—]\s*(\d+)$")
+
+
 def _expand(nums: str) -> tuple[list[str], str]:
-    """'299 — 310' -> range, '10, 24, 39' -> list, '14' -> single."""
-    parts = re.split(r"\s*(,|va|[–—])\s*", nums)
-    values = [p for p in parts[::2] if p.strip()]
-    seps = [p for p in parts[1::2]]
-    if any(s in "–—" for s in seps) and len(values) == 2:
-        lo, hi = int(values[0]), int(values[1])
+    """'299 — 310' -> range, '10, 24, 39' -> list, '14' -> single.
+
+    A top-level comma/va-separated item can itself be a dash-joined sub-range
+    ('393-395' inside '393-395, 399, 402, 408, 412') — a compact list style
+    LexUZ uses alongside the plain whole-clause range ('299 — 310'). Each such
+    item is expanded on its own, same 200-wide malformed-range guard as the
+    whole-clause case; a comma/va list is otherwise unaffected. Measured
+    2026-09-15 (see DAILY_REVIEW.md): 11 clauses corpus-wide had at least one
+    such sub-range, previously silently truncated to just its two endpoints
+    (or, when the sub-range came first, losing the rest of the list too — the
+    fixed unit separator couldn't even be reached).
+    """
+    top_items = [p for p in re.split(r"\s*(?:,|va)\s*", nums) if p.strip()]
+    values: list[str] = []
+    single_range = False
+    for item in top_items:
+        m = RE_RANGE_PAIR.match(item)
+        if not m:
+            values.append(item)
+            continue
+        lo, hi = int(m.group(1)), int(m.group(2))
         if 0 < hi - lo <= 200:  # guard against a malformed pair
-            return [str(n) for n in range(lo, hi + 1)], "range"
-        return values, "list"
-    return values, ("list" if len(values) > 1 else "single")
+            values.extend(str(n) for n in range(lo, hi + 1))
+            single_range = len(top_items) == 1
+        else:
+            values.extend((m.group(1), m.group(2)))
+    return values, ("range" if single_range else "list" if len(values) > 1 else "single")
 
 
 def _roman(s: str) -> int | None:
@@ -328,6 +386,36 @@ def _selftest() -> int:
          {}, [("act", None, "single")]),
         ("Fuqarolik kodeksining 14-moddasi, JPKning 22-moddasi", {},
          [("article", "14", "single")]),
+        # "kodeksning" (genitive without "-i-") naming a different code by role
+        # must stop the scan just like "kodeksining" already does (2026-09-15)
+        ("Fuqarolik kodeksining 166-moddasi, Maʼmuriy javobgarlik toʻgʻrisidagi "
+         "kodeksning 60, 61-moddalari.", {}, [("article", "166", "single")]),
+        # "mazkur Kodeksning" inside some OTHER code's own text means that code,
+        # not the Civil Code — is_the_code=False here, so it must stop the scan
+        # rather than being read as a self-reference to the Code just cited
+        ("Fuqarolik kodeksining 31, 32-moddalari, mazkur Kodeksning 36-moddasi.",
+         {}, [("article", "31", "list"), ("article", "32", "list")]),
+        # control: "mazkur Kodeksning" still resolves as a real self-reference
+        # anchor (not stopped) when the citing act genuinely IS the Code
+        ("Fuqarolik kodeksining 14-moddasi. mazkur Kodeksning 20-moddasi.",
+         {"is_the_code": True},
+         [("article", "14", "single"), ("article", "20", "single")]),
+        # a plain space instead of a hyphen before modda/bob/paragraf, real
+        # corpus phrasings (2026-09-15)
+        ("Fuqarolik kodeksining 49 moddasi.", {}, [("article", "49", "single")]),
+        ("Fuqarolik kodeksining 11-12 hamda 14 moddalari.", {},
+         [("article", "14", "single")]),  # "hamda" isn't a recognized list separator
+        ("Oʻzbekiston Respublikasi Fuqarolik kodeksi 40 bobi.", {},
+         [("chapter", None, "single")]),
+        # an ASCII-hyphen sub-range packed into a list, real corpus phrasing
+        # (2026-09-15): "393-395" must expand, not collapse to two endpoints
+        # or (worse) block the rest of the list from ever being reached
+        ("ushbu Kodeksning 393-395, 399, 402, 408, 412-moddalarida", {"is_the_code": True},
+         [("article", str(n), "list") for n in (393, 394, 395, 399, 402, 408, 412)]),
+        # the malformed-range guard still rejects a too-wide sub-range, same
+        # as the whole-clause case (row 1390's documented residual)
+        ("Fuqarolik kodeksining 173 – 1737-moddalari", {},
+         [("article", "173", "list"), ("article", "1737", "list")]),
     ]
     failures = 0
     for text, kwargs, expected in cases:
