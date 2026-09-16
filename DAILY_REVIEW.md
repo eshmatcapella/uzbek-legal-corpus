@@ -22,6 +22,27 @@ How to use this file each session:
 
 ## Active threads
 
+- **LLC implementing-acts currency default: closed 2026-09-16.** Picked up
+  the open half of the "Propagate currency into the LLC dossier" backlog
+  item (see Backlog, Data currency) — whether `page_acts`/
+  `llc_implementing_act` should gate "implements" by currency at the data
+  layer by default, instead of today's opt-in `hide_dead` UI toggle.
+  Measured first, then found and fixed two real bugs the measurement
+  surfaced, then decided. See Log for full detail: **decision is to keep
+  the opt-in toggle** — article 62 (the LLC's own defining Civil Code
+  anchor) has zero surviving, non-superseded implementing evidence at all,
+  so a hard data-layer gate would make the dossier's most central article
+  show nothing with no way to recover it. Along the way, fixed a real
+  fan-out bug from two foundation articles (45, 62) each anchoring more
+  than one LLC stage: `build_llc.py`'s `n_hits` used `count(*)` where the
+  `llc_norm` join fans out per stage, inflating hit counts for 9 acts
+  (total 368 -> 307, -16.6%); `app_llc.py`'s `page_norm` "Below" section
+  read `v_llc_realization` without deduping across stages, silently
+  doubling every citation shown for those 2 articles. Both fixed, measured
+  before/after, verified live in the running app via Playwright, and
+  `verify_transfer.py` stayed green. This closes the backlog item fully —
+  nothing scoped to it is left open.
+
 - **Amendment chains: built 2026-09-11, list-swallowing residual fixed
   2026-09-13, UI wiring done 2026-09-14. Thread closed.** New
   `article_amendment` table + `v_article_currency` view, mined from the
@@ -235,10 +256,11 @@ How to use this file each session:
   re-confirmed empty 2026-09-10. Rotation since: Extractor 09-10, Data
   currency 09-11, Extractor 09-12, Data currency 09-13 (fixed the amendment-
   chain list-swallowing residual), Data currency 09-14 (UI wiring for
-  `article_amendment`/`v_article_currency`), Extractor 09-15 (today) — next
-  session should land on Data currency or Cleanup unless a new item
-  surfaces that outweighs rotating (three of the last four sessions have
-  now been Extractor: 09-10, 09-12, 09-15).
+  `article_amendment`/`v_article_currency`), Extractor 09-15, Data currency
+  09-16 (closed the LLC implementing-acts currency-default question, see
+  Active threads and Log) — next session should prefer Extractor or Cleanup
+  unless a new item outweighs rotating (Data currency has now run three of
+  the last four sessions: 09-13, 09-14, 09-16).
 
 - **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
   four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -249,7 +271,10 @@ How to use this file each session:
   constant (the established, safe pattern this project's f-string-SQL rule
   is actually about), none interpolate a runtime/data-derived value. Nothing
   left open here unless a future session finds something new to add to the
-  Backlog's Cleanup section.
+  Backlog's Cleanup section. **2026-09-16**: found and deleted one more,
+  opportunistically while working elsewhere — `demo_llc.py`, same class as
+  the four scripts removed 2026-09-07 (hardcoded, nonexistent Windows path,
+  zero references anywhere in the repo). Still nothing left open here.
 
 - **Smaller, lower-priority residual: qism/band tail truncation.** The
   qism/band attachment check added today (see Log) has 10 residual misses
@@ -443,16 +468,20 @@ How to use this file each session:
   no safe way to disambiguate same-day candidates by number; not worth
   chasing further without a corpus update that populates `doc_number`.
 - ~~**Propagate currency into the LLC dossier's implementing-acts list.**~~
-  **Partially done 2026-09-14**: article-level currency (from
-  `v_article_currency`, not the act-level `v_act_currency` this item
-  originally meant) is now surfaced in both apps — see Active threads and
-  Log. What's genuinely still open: `v_act_currency`-driven filtering of
-  `page_acts`/`llc_implementing_act` is still a manual toggle (`hide_dead`,
-  default on) rather than currency gating "implements" by default the way
-  this item originally asked; not changed today since that's a behavior
-  change to what counts as an implementing act, not just a visibility
-  addition, and deserves its own measurement pass (how many acts/edges would
-  disappear by default) before being made the default rather than opt-in.
+  **Closed 2026-09-16.** Article-level currency was surfaced in both apps
+  2026-09-14 (via `v_article_currency`). The remaining open half — whether
+  `v_act_currency`-driven filtering of `page_acts`/`llc_implementing_act`
+  should gate "implements" by default at the data layer, instead of today's
+  opt-in `hide_dead` toggle — got the measurement pass this item asked for,
+  2026-09-16: **decision is no, keep the opt-in toggle.** Article 62 (the
+  Civil Code's own definition of the LLC) has zero non-superseded
+  implementing evidence at all — a hard default gate would make the
+  dossier's most central article show nothing, with no way to recover the
+  evidence short of finding and flipping a setting most readers wouldn't
+  know exists. See Active threads and Log for the full measurement
+  (15/74 acts, 94/307 hits of `cites_cc_foundation` evidence are
+  superseded) and for two real fan-out bugs found and fixed along the way
+  (`build_llc.py`'s `n_hits`, `app_llc.py`'s `page_norm` citation list).
 
 ### Cleanup
 - ~~**Retire superseded prototypes.**~~ **Done 2026-09-07**: deleted
@@ -484,6 +513,133 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-16 — closed the LLC currency-default backlog item; found and fixed two real fan-out bugs it exposed
+
+Rotation: Extractor ran 09-15, note said next should prefer Data currency or
+Cleanup. Picked the one open half of the "Propagate currency into the LLC
+dossier" backlog item: article-level currency was already wired into both
+apps 2026-09-14, but whether `page_acts`/`llc_implementing_act` should gate
+"implements" by currency *at the data layer* by default (instead of today's
+opt-in `hide_dead` UI toggle) was explicitly left as "deserves its own
+measurement pass" rather than decided either way.
+
+**Environment**: local `main` was again a stale detached-HEAD pointer 1
+commit behind `origin/main` (same pattern as 09-13/09-15) — `git fetch
+origin main && git checkout -B main origin/main` fixed it, zero data loss,
+confirmed by comparing `git log origin/main` against the detached HEAD
+before touching anything. `git-lfs`/the real 163MB parquet and
+`corpus.duckdb` were both already materialized correctly in this container
+(no LFS-pointer-stub issue this time). Installed `duckdb`, `pyarrow`,
+`numpy`, `streamlit`, and `playwright` (python bindings only — the browser
+itself was pre-installed) via pip. Baseline `verify_transfer.py` was green
+before any change.
+
+**Measured the actual question first.** Queried `llc_implementing_act`
+directly: for the `cites_cc_foundation` route, 74 acts total, 15 (20.3%)
+`superseded`; weighting by the table's own `n_hits` gave a much higher
+41.6% (153/368) of "evidence weight" from dead law — a big enough gap
+between the act-count and hit-count percentages to be suspicious on its
+own, so before drawing any conclusion from it, checked *why* they diverged
+rather than reporting the raw number.
+
+**Bug found while checking that divergence: `build_llc.py`'s `n_hits`
+was inflated by a join fan-out, not a real reflection of citation count.**
+Two Civil Code foundation articles, 45 and 62, each anchor *two* different
+LLC-Law stages (confirmed via `llc_norm`: article 45 founds stages 1 and 4,
+article 62 founds stages 1 and 3 — both legitimate, curated `FOUNDATION`
+dict entries, not a data error). `llc_implementing_act`'s INSERT joins
+`link_edge` to `llc_norm` on `article_number` and groups by
+`(doc_id, tier, title, date, status)` — not by article or stage — so for
+any act citing article 45 or 62, the join produces one row per (edge,
+stage) pair, and `count(*)` counted every duplicate. Measured the real
+scope by rewriting the same join with `count(DISTINCT e.edge_id)` (the
+table's true unique-citation key) instead of `count(*)`: **9 acts had
+inflated `n_hits`** (e.g. one act's badge read "34 hit(s)" when the real
+count was 16), total `cites_cc_foundation` `n_hits` 368 -> 307 (-16.6%).
+Fixed by changing `count(*)` to `count(DISTINCT e.edge_id)` in
+`build_llc.py`'s INSERT query, with a comment recording why (the fan-out
+is a real, intentional multi-stage mapping, not something to "fix" at the
+`llc_norm` level). Re-ran `build_llc.py`: `llc_implementing_act` totals for
+`cites_cc_foundation` now read `59 no-repeal + 15 superseded = 74 acts`,
+`213 + 94 = 307 n_hits` — confirmed against the independent
+`count(DISTINCT edge_id)` measurement query, exact match, not just a
+plausible-looking number.
+
+**Second bug, same root cause, in `app_llc.py`.** `page_norm`'s "Below ·
+acts implementing this Code article" section reads `v_llc_realization`
+`WHERE cc_article = ?` with no stage filter and no `DISTINCT` — since that
+view's own `SELECT DISTINCT` includes `stage_no`, the same citation to
+article 45 or 62 produces two physically distinct rows (identical except
+for `stage_no`, which this particular query doesn't even select), so every
+citation to those two articles was silently rendered *twice*: once in the
+"Normative citations" metric (not deduped by act, so double-counted for
+real when both duplicate rows were normative-kind — confirmed article 45's
+own metric read 2 when the true count was 1) and once as a literal
+duplicate expander in the citation list below (confirmed live: article
+62's page showed 6 raw rows collapsing to 3 real citations from 2 acts).
+Fixed by adding `SELECT DISTINCT` to that one query (safe because it
+doesn't select `stage_no`, so nothing downstream depends on preserving the
+per-stage duplicate). Checked every other `llc_norm`-foundation join in
+both apps and `verify_transfer.py` for the same fan-out risk before calling
+this done: seven other call sites either filter by a single `stage_no`
+already (`page_skeleton`, `page_norm`'s own special-law list) or already
+wrap the foundation-article list in `SELECT DISTINCT article_number,
+article_title` before joining `v_article_currency` (`page_currency`'s
+amendment-activity table) — only these two were actually affected.
+
+**Verified live, not just via SQL.** Booted `app_llc.py` with `streamlit
+run --server.headless` and drove it with Playwright: on "Follow a norm
+down" -> stage 1 -> article 62, confirmed "Implementing acts: 2,
+Superseded acts: 2" and, with the default `hide_dead=True` toggle, the
+"every citation was filtered out" warning (correct — both are dead);
+toggled "Hide superseded acts" off and confirmed exactly 3 expanders
+render (not 6) with two distinct acts named. On "Implementing acts" ->
+`cites_cc_foundation`, confirmed the visible per-act "N hit(s)" badges no
+longer reflect the pre-fix inflated counts. `py_compile` clean on
+`app_llc.py`, `app_hierarchy.py`, `build_llc.py`.
+
+**Answered the original question with the corrected numbers.** Post-fix,
+`cites_cc_foundation`: 74 acts (15 superseded, 20.3% — unchanged, this was
+never wrong at the act level) but now 94/307 hits (30.6%) from superseded
+acts, not the pre-fix 41.6% — a real number, not the artifact the bug had
+been producing. More decisive than the aggregate, though: **article 62
+itself** — `Masʼuliyati cheklangan jamiyat`, the Civil Code's own
+definition of the institution this entire dossier is about — has **zero**
+non-superseded implementing evidence (2/2 acts, all 3 real citations,
+100% superseded); article 41 is the same (1/1, 100%). **Decision: do not
+gate "implements" by currency at the data layer by default.** If
+`llc_implementing_act`/`v_llc_realization` excluded superseded evidence at
+the source instead of leaving it to an opt-in toggle, the dossier's single
+most central article would show no implementing acts at all, with no way
+for a reader to recover the (real, informative) evidence that used to
+exist — worse than today's design, where the toggle already defaults to
+hiding it but a reader can flip it back on. This closes the backlog item's
+open question with a measured decision instead of leaving it pending
+indefinitely.
+
+**Also, opportunistic cleanup**: found `demo_llc.py` while grepping for
+`v_llc_realization` consumers — a standalone walkthrough script hardcoding
+a Windows path (`C:\uzbek-legal-corpus\corpus.duckdb`) that doesn't exist
+in this or any Linux environment, same unrunnable-dead-script pattern as
+the four scripts removed 2026-09-07. Confirmed zero references anywhere in
+the repo before deleting.
+
+**Full re-verification.** Rebuilt only `build_llc.py` (no full
+`build_corpus_db.py` rebuild — nothing upstream of it changed); `git diff
+--stat corpus.duckdb` shows the expected binary-only diff, same byte size.
+`python verify_transfer.py`: **VERIFICATION PASSED — all checks green**,
+same reconciliation detail as every prior session (the 10 pre-existing
+`db_only`/`md_only`/`structure_missing_articles` gaps, the 1 ambiguous-key
+superscript article, the 1 documented version-drift case — nothing new).
+Grepped for `n_hits` corpus-wide first: only `build_llc.py` (the fix) and
+`app_llc.py`'s `page_acts` (reads the now-correct value, no code change
+needed there) reference it.
+
+**Decision: ship both fixes plus the demo_llc.py deletion.** Each
+measured before/after against an independent reimplementation of the
+query, not just accepted from an aggregate count; the citation-list fix
+verified live in the browser, not just read from the diff.
 
 ### 2026-09-15 — three real extractor bugs found via a new reusable gold-sample tool, plus a confidence-hierarchy fix the third one exposed
 

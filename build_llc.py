@@ -218,10 +218,14 @@ def main() -> int:
     """)
 
     found_arts = sorted({a for s in FOUNDATION.values() for a in s})
+    # count(DISTINCT e.edge_id), not count(*): two foundation articles (45, 62)
+    # each anchor more than one stage, so the llc_norm join fans out to one row
+    # per (edge, stage) pair for them -- a plain count(*) would double those
+    # acts' hit counts. edge_id is still the unique count of citations found.
     con.execute("""
         INSERT INTO llc_implementing_act
         SELECT e.src_doc_id, 'cites_cc_foundation', e.src_tier, a.doc_title, a.doc_date,
-               count(*) AS n_hits,
+               count(DISTINCT e.edge_id) AS n_hits,
                string_agg(DISTINCT CAST(n.stage_no AS VARCHAR), ',') AS stages,
                c.derived_status,
                max(e.evidence_clean)

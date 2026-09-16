@@ -184,8 +184,12 @@ def page_norm() -> None:
     st.divider()
     st.subheader("Below · acts implementing this Code article")
 
+    # DISTINCT: articles 45 and 62 each found more than one stage, so
+    # v_llc_realization carries one row per stage for the same citation —
+    # this query doesn't select stage_no at all, so without DISTINCT those
+    # citations would render (and count) twice.
     rows = q("""
-        SELECT src_doc_id, src_doc_title, src_tier, doc_date, source_url,
+        SELECT DISTINCT src_doc_id, src_doc_title, src_tier, doc_date, source_url,
                evidence_kind, confidence, evidence_clean,
                src_prov_number, src_prov_title, src_prov_text, is_whole_act_blob,
                derived_status, repealed_by_title
