@@ -258,9 +258,13 @@ How to use this file each session:
   chain list-swallowing residual), Data currency 09-14 (UI wiring for
   `article_amendment`/`v_article_currency`), Extractor 09-15, Data currency
   09-16 (closed the LLC implementing-acts currency-default question, see
-  Active threads and Log) — next session should prefer Extractor or Cleanup
-  unless a new item outweighs rotating (Data currency has now run three of
-  the last four sessions: 09-13, 09-14, 09-16).
+  Active threads and Log), Extractor 09-17 (another fresh gold-sample round —
+  a doubled-en-dash range collapse and a missing-vowel anchor gap, see Log —
+  now **9/9** sampling sessions with a real, fixable bug found) — next
+  session should prefer Data currency or Cleanup unless a new item outweighs
+  rotating (Extractor has now run three of the last four sessions: 09-12,
+  09-15, 09-17, and Cleanup hasn't had an actual working session, only two
+  re-confirms of empty, since 09-07).
 
 - **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
   four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -313,14 +317,28 @@ How to use this file each session:
   produced a citation, half where it didn't) — a tool version of the ad hoc
   one-off queries every prior sampling session wrote from scratch. Reading
   one 50-window sample by hand found 3 more real bugs (see Log), an 8-for-8
-  streak now. What's still open: no annotation/scoring layer on top of the
-  sampler (no `gold_citations.json` of hand-labeled verdicts, no fixed
-  precision/recall number to track over time) — the tool produces raw
-  material for hypothesis generation, not yet a regression-testable score.
-  Revisit whether building that scoring layer is now the highest-value next
-  step, given hypothesis-driven sampling alone keeps paying off every single
-  time it's tried (8/8 sessions, not every hypothesis within a session pays
-  off — 2026-09-12 alone tried 4 that falsified before the 5th worked).
+  streak now. **2026-09-17**: drew another fresh sample (`--seed 20260917`)
+  and found 2 more real, fixed bugs (a doubled-en-dash range collapse and a
+  missing-vowel anchor gap — see Log) plus one correctly-rejected false
+  alarm (an alias-definition parenthetical that looked like a recall miss in
+  the sampler's per-anchor display window but wasn't, once checked against
+  the full-text extraction `build_links.py` actually runs) — streak now
+  **9/9**. That false alarm is a concrete argument for building the scoring
+  layer carefully rather than naively: a gold set built directly from the
+  sampler's per-anchor "extracted" field would have recorded a false
+  positive miss for gold_id 27, since that field reflects the *display*
+  window's anchor attribution, not whether `extract()` on the full text
+  actually finds the citation (it does, via a second, nearby anchor
+  occurrence). Any future scoring layer needs to check against full-text
+  `extract()` output, not the per-anchor slice. What's still open: no
+  annotation/scoring layer on top of the sampler (no `gold_citations.json`
+  of hand-labeled verdicts, no fixed precision/recall number to track over
+  time) — the tool produces raw material for hypothesis generation, not yet
+  a regression-testable score. Revisit whether building that scoring layer
+  is now the highest-value next step, given hypothesis-driven sampling
+  alone keeps paying off every single time it's tried (9/9 sessions, not
+  every hypothesis within a session pays off — 2026-09-12 alone tried 4
+  that falsified before the 5th worked).
 - **`RE_STOP`'s `break`-vs-`continue` design.** Once a stop-word is found in
   the gap before a clause, `extract()` abandons the *rest* of that anchor's
   window, not just the one stopped clause — a deliberate, conservative
@@ -424,6 +442,22 @@ How to use this file each session:
   above), so this is lower priority than a bug that changes an actual
   `link_edge` row. Worth fixing together with that item if qism grain ever
   becomes load-bearing.
+- **"boʻlim" (Part, the structural level above chapter) is never a
+  recognized citation unit.** Found 2026-09-17 while reading a gold sample
+  (see Log): "Fuqarolik kodeksining IV-boʻlimi" cites Part IV of the Code by
+  roman numeral, but `RE_CLAUSE` only recognizes `modda`/`bob`/`paragraf` as
+  unit words, so a bare Part-level citation (no chapter/article alongside
+  it) falls all the way back to a coarse act-level citation, losing the
+  Part distinction entirely. Measured corpus-wide
+  (`Fuqarolik\s+kodeks\w*\s+[IVXLC]+\s*-\s*boʻlim\w*`): 6 occurrences, all
+  genuine. Not fixed today — unlike the other regex-only fixes this
+  session, adding a real Part-level grain means a new `target_kind`
+  ("section"/"part"), roman-numeral parsing, and touching whatever in
+  `build_links.py`/both apps would need to consume it, which isn't
+  justified by a 6-occurrence count alone. Worth building if a future
+  corpus update raises that count, or if the Qism-level-grain backlog item
+  above is ever picked up (same "is a coarser-than-article grain worth
+  modeling" question, one level up the hierarchy instead of down).
 
 ### Data currency
 - ~~**175/885 repeal items still unresolved.**~~ **Fixed 2026-09-06, residual
@@ -513,6 +547,151 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-17 — two real corpus-wide extractor bugs fixed via a fresh gold-sample round; one false alarm rejected; one new backlog item captured
+
+Rotation: 09-15 Extractor, 09-16 Data currency (closed). Standing note said
+next should prefer Extractor or Cleanup (Data currency had run three of the
+last four sessions); Cleanup was re-confirmed empty as recently as 09-16
+with nothing new to drain, so picked Extractor — continued the "read a
+fresh sample, hypothesize, measure" loop via `build_gold_sample.py` rather
+than building the still-open scoring-layer backlog item (see Backlog
+"Build the gold set"): that item is real and worth doing, but sampling
+alone had paid off in 8/8 prior sessions, so tried it once more before
+switching approaches.
+
+**Environment**: same drill as every prior session — `apt-get install
+git-lfs`, `git lfs install --local && git lfs pull` (materializes the real
+163MB parquet from its LFS pointer stub; `corpus.duckdb` was already a real
+DuckDB file, no stub issue this time), `pip install duckdb pyarrow numpy
+streamlit playwright pytest`. Baseline `verify_transfer.py` was green
+before any change.
+
+**Drew a fresh 50-window sample** (`--seed 20260917`, disjoint from every
+prior seed used) and read all 50 by hand (25 "hit" windows for precision,
+25 "empty" windows for recall, per the tool's own stratification). Two
+candidate bugs stood out and were both confirmed genuine after independent
+corpus-wide measurement against the raw parquet; one more candidate was
+investigated and correctly rejected as a false alarm; one more was measured
+and logged as a new backlog item rather than fixed.
+
+**Bug 1 — a doubled en-dash range collapses to its own trailing endpoint.**
+Window (gold_id 16, row 29535): "Fuqarolik kodeksining 744 –– 748-moddalari"
+— two literal U+2013 en-dash characters back to back with no space between
+them (confirmed at the codepoint level; a LexUZ export artifact, not a
+different separator). `RE_CLAUSE`'s inner list/range separator and
+`RE_RANGE_PAIR` both used `[-–—]` — exactly one dash character. Hitting the
+second dash where a digit was expected silently failed the whole match
+attempt starting at "744", so the regex engine backtracked to match "748"
+alone as an unrelated single citation: 744-747 vanished with no edge at
+all, not even a dangling one. Searched the whole corpus for
+`\d+\s*[–—]{2,}\s*\d+` (84 raw hits across all three source fields) and
+manually classified every one by whether it sits inside a genuine Civil
+Code anchor (`Fuqarolik kodeksi`/`FK`/`self_reference` inside doc -111189
+or -180552) versus some other code's own range (Labor Code, Criminal Code,
+Administrative Liability Code, a Customs Code's *own* "mazkur Kodeksning"
+self-reference, etc. — all correctly out of scope for this extractor) or a
+non-citation number run (years, percentages, gazette table positions):
+**16 clauses corpus-wide** are genuine Civil Code range citations hitting
+this bug. Fixed by widening both regexes' dash class from `[-–—]` to
+`[-–—]+`. Verified each of the 16 individually by running `extract()` on
+the full field text before/after the fix: every one now expands to its
+full range instead of collapsing to one endpoint (e.g. row 29535's
+744→748 now yields all 5 articles instead of just 748; row 25211's
+437→456 now yields 20 articles instead of 1).
+
+**Bug 2 — "Fuqarolik Kodeksning" (missing the "-i-" thematic vowel) never
+anchors at all.** While corpus-scanning for Bug 1, row 7437 stood out:
+"Oʻzbekiston Respublikasi Fuqarolik Kodeksning 260 –– 263-moddalari"
+produced **zero** citations from `extract()` — not even a bare act-level
+one. `RE_ANCHOR_CC` required the literal substring "kodeksi"
+(`Fuqarolik\s+kodeksi\w*`); "Kodeksning" is "kodeks"+"ning" with no "i", so
+the anchor regex never matched at all — the whole clause was invisible,
+not merely coarser. This is the *anchor*-side twin of the "kodeksning"
+*stop-word* gap already fixed 2026-09-15 (that one was about some OTHER
+code naming itself "...kodeksning" and wrongly attracting a nearby Code
+citation into itself — same missing-vowel surface form, opposite failure
+mode: there it was a false attribution to guard against, here it's a
+missing anchor to add). Measured corpus-wide
+(`Fuqarolik\s+[Kk]odeksning\b`): exactly **3 rows / 4 raw occurrences**,
+all genuine, all previously producing zero citations (row 7437: articles
+260-263, doubly affected since it's also a doubled-dash range needing
+Bug 1's fix; rows 32791/32792: articles 54 and 50). Fixed by extending
+`RE_ANCHOR_CC` to `Fuqarolik\s+kodeks(?:i\w*|ning)`. Confirmed this doesn't
+reopen the existing "kodeksning naming another code" stop-word self-test
+(still passes unchanged): that case requires "Ma'muriy javobgarlik
+to'g'risidagi kodeksning", not "Fuqarolik" immediately before "kodeks", so
+the two patterns don't collide.
+
+**False alarm investigated and rejected.** Gold_id 27 (row 5291) looked
+like a third bug at first glance: "Fuqarolik kodeksi (bundan buyon matnda
+Fuqarolik kodeksi deb yuritiladi) 549-moddasi" sampled as a bare act-level
+citation with no article number — suggesting the alias-definition
+parenthetical breaks the lookahead to the real article, a plausible bug
+given "FK" alias definitions are a documented, handled pattern elsewhere.
+Reran `extract()` on the row's *full* text (not the gold-sample's
+per-anchor display slice) and found article 549 (with "birinchi qism")
+correctly present. Root cause of the false alarm: the phrase "Fuqarolik
+kodeksi" appears *twice* in this sentence — once at the very start, once
+again inside its own alias definition — so `RE_ANCHOR_CC.finditer` finds
+two separate anchor matches, and the real article citation attaches to the
+*second* one. `build_gold_sample.py`'s display window cuts each sampled
+anchor's shown slice at the *next* anchor's start position (for
+readability), so the first anchor's sampled record correctly shows nothing
+attached to *it* — but `build_links.py` calls `extract()` once on the whole
+row and doesn't care which anchor index produced a citation, so this was
+never a real recall gap. Recorded here (and in the Backlog "Build the gold
+set" item) as a concrete methodology note: always verify a sampled "empty"
+against the full-text `extract()` output before concluding it's a miss.
+
+**Measured corpus-wide impact.** Added 2 new self-test cases (one per
+fix) to `citation_extractor.py`: **47/47 self-tests passed** (was 45).
+Reran `build_links.py`: `link_edge` 9402 -> **9531 (+129 edges)** — matches
+the hand-computed expected total from the 16+3 confirmed rows closely
+(≈126 from Bug 1's range expansions, ≈3 from Bug 2's previously-zero
+rows). Reran `build_llc.py` next per the pipeline order, since `link_edge`
+changed underneath it: the `FOUNDATION` dict itself is untouched (curated,
+off-limits by design), but the *acts* citing it are more complete — two
+acts citing the range "49 –– 57" (all 9 articles land inside LLC stage 8's
+own foundation set, 39-59) now produce 9 `link_edge` rows each (articles
+49-57) instead of 1 (article 57 only): "Kreativ iqtisodiyot toʻgʻrisida"
+(2024, in-force) and the 2016 Customs Code. Confirmed directly in
+`llc_implementing_act`: the Creative Economy Act's `n_hits` for the
+`cites_cc_foundation` route now reads **9**, up from what would have been
+1 before today's fix. Verified live, not just from the diff: booted
+`app_llc.py` (`streamlit run --server.headless`) and drove it with
+Playwright — "Follow a norm down" -> Stage 8 -> CC article 49 renders
+"Implementing acts: 32" without error; booted `app_hierarchy.py`'s article
+explorer the same way and confirmed it still renders citation counts
+correctly (General Part only, per the existing M0 scope decision — the
+744-748 and 260-263 fixes are Special Part articles, outside
+`norm_unit`'s populated scope, so not independently spot-checkable in that
+app, which is expected and unrelated to today's fix). `py_compile` clean
+on `app_llc.py`, `app_hierarchy.py`, `build_links.py`, `build_llc.py`,
+`citation_extractor.py`. Reran `measure_extractor_recall.py`: still 0 real
+misses on article/chapter recall; qism/band residual unchanged at 7/630
+(untouched by today's fixes, as expected — different bug class). Reran
+`test_transfer_e2e.py`: 14/14 passed (independent markdown-parser
+implementation, unaffected as expected).
+
+**Full re-verification.** `python verify_transfer.py`: **VERIFICATION
+PASSED — all checks green**, same reconciliation detail as every prior
+session (10 pre-existing `db_only`/`md_only`/`structure_missing_articles`
+gaps, 1 ambiguous-key superscript article, 1 documented version-drift
+case — nothing new introduced). Checked `git diff --stat corpus.duckdb`:
+binary-only diff, no schema change (only row counts grew in `link_edge`
+and the `llc_implementing_act`/`v_llc_realization` tables derived from
+it), so no need to touch either app's queries.
+
+**Decision: ship both extractor fixes; log the false alarm and the new
+backlog item rather than act on them.** Both fixes are minimal, targeted
+regex widenings with a documented root cause, a measured corpus-wide
+scope, and a verified before/after at both the extractor and the
+downstream-table level; the false alarm is recorded so a future session
+doesn't re-investigate the same alias-parenthetical pattern from scratch;
+the new "boʻlim" (Part-level citation) gap is recorded with its measured
+count (6 occurrences) so a future session can decide with data whether
+that ever justifies a new structural grain, rather than guessing.
 
 ### 2026-09-16 — closed the LLC currency-default backlog item; found and fixed two real fan-out bugs it exposed
 

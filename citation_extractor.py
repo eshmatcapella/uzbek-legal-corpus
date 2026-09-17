@@ -46,7 +46,16 @@ ORDINALS = ("birinchi", "ikkinchi", "uchinchi", "toʻrtinchi", "to'rtinchi", "be
 
 # The Civil Code itself.  "Fuqarolik" and "kodeksi" must be adjacent, which is
 # what excludes "Fuqarolik protsessual kodeksi" without a separate rule.
-RE_ANCHOR_CC = re.compile(r"Fuqarolik\s+kodeksi\w*", re.IGNORECASE)
+# The "kodeksning" alternative (genitive without the "-i-" thematic vowel,
+# same gap class as "qonunning" below) is needed here too, not just as a
+# RE_STOP entry: unlike "kodeksning" naming some OTHER code by role (already
+# handled by RE_STOP so the scan stops on it), "Fuqarolik kodeksning" is a
+# real, if rare, way LexUZ names the Civil Code itself, and without this the
+# anchor never fires at all (not merely a coarser match — the whole citation,
+# including every article listed after it, is invisible). Measured
+# 2026-09-17 (see DAILY_REVIEW.md): 3 rows / 4 occurrences corpus-wide, all
+# genuine, all previously producing zero citations.
+RE_ANCHOR_CC = re.compile(r"Fuqarolik\s+kodeks(?:i\w*|ning)", re.IGNORECASE)
 RE_OLD_CODE = re.compile(r"19\d\d\s*-\s*yilgi\s*$", re.IGNORECASE)
 # "FK" as a standalone token, immediately followed by a number or a reference word.
 RE_ANCHOR_FK = re.compile(r"(?<![A-Za-zА-Яа-я0-9ʻʼ'-])FK(?:ning|ga|da|ni)?(?=\s+\d|\s+boshqa|\s+[0-9])")
@@ -74,8 +83,18 @@ RE_ANCHOR_SELF = re.compile(r"(?:ushbu|shu|mazkur)\s+Kodeks\w*", re.IGNORECASE)
 # needs a digit, so the regex engine never confuses the two. _expand() below
 # does the actual sub-range recognition/expansion. Measured 2026-09-15: 11
 # such clauses corpus-wide (see DAILY_REVIEW.md).
+#
+# The dash class itself is "+", not a single character, because LexUZ
+# sometimes doubles it ("744 –– 748-moddalari", two literal en-dashes back
+# to back with no space between them — an export artifact, not a different
+# separator). A single-dash class silently fails to extend "nums" past the
+# first number when it hits the second dash character where a digit was
+# expected, so the whole range collapsed to just its own trailing endpoint
+# (matched as an unrelated single citation, the range's low end dropped
+# entirely with no edge, dangling or otherwise). Measured 2026-09-17 (see
+# DAILY_REVIEW.md): 16 clauses corpus-wide.
 RE_CLAUSE = re.compile(
-    r"(?P<nums>\d+(?:\s*(?:,|va|[-–—])\s*\d+)*)(?:\s*[-–—]\s*|\s+)(?P<unit>modda|bob|paragraf)(?P<suffix>\w*)",
+    r"(?P<nums>\d+(?:\s*(?:,|va|[-–—]+)\s*\d+)*)(?:\s*[-–—]\s*|\s+)(?P<unit>modda|bob|paragraf)(?P<suffix>\w*)",
     re.IGNORECASE,
 )
 # Another act starting: stop scanning, its numbers are not the Code's.
@@ -191,7 +210,7 @@ class Citation:
         return DOC_SPECIAL if n <= CODE_LAST_ARTICLE else None
 
 
-RE_RANGE_PAIR = re.compile(r"^(\d+)\s*[-–—]\s*(\d+)$")
+RE_RANGE_PAIR = re.compile(r"^(\d+)\s*[-–—]+\s*(\d+)$")
 
 
 def _expand(nums: str) -> tuple[list[str], str]:
@@ -416,6 +435,16 @@ def _selftest() -> int:
         # as the whole-clause case (row 1390's documented residual)
         ("Fuqarolik kodeksining 173 – 1737-moddalari", {},
          [("article", "173", "list"), ("article", "1737", "list")]),
+        # a doubled en-dash ("744 –– 748", two literal en-dashes, no space
+        # between them) must still expand the full range, not just its
+        # trailing endpoint (real corpus phrasing, 2026-09-17)
+        ("Oʻzbekiston Respublikasi Fuqarolik kodeksining 744 –– 748-moddalari.", {},
+         [("article", str(n), "range") for n in range(744, 749)]),
+        # "Fuqarolik kodeksning" (missing the "-i-" thematic vowel: kodeks+ning,
+        # as opposed to kodeksi+ning) must still anchor as the Civil Code
+        # itself, not be dropped entirely (real corpus phrasing, 2026-09-17)
+        ("Oʻzbekiston Respublikasi Fuqarolik Kodeksning 260 –– 263-moddalari.", {},
+         [("article", str(n), "range") for n in range(260, 264)]),
     ]
     failures = 0
     for text, kwargs, expected in cases:
