@@ -370,6 +370,9 @@ def main() -> int:
             cited_number VARCHAR,    -- '310-II'
             dst_doc_id  BIGINT,      -- resolved target, NULL if unresolved
             match_method VARCHAR,
+            target_locator VARCHAR,  -- e.g. '9-moddasi': a single article of
+                                     -- dst_doc_id is voided, NOT the whole act
+                                     -- (NULL means the whole act loses force)
             evidence    VARCHAR
         );
     """)
@@ -387,6 +390,19 @@ def main() -> int:
         r"[^“”\"]{0,120}?[“\"](?P<title>[^“”\"]{6,300})[”\"]"
         r"(?:\s*\w*\s*(?P<num>[\dA-ZIVX\-]{2,14})-sonli)?",
         re.IGNORECASE | re.DOTALL,
+    )
+    # Measured 2026-09-18 (see DAILY_REVIEW.md): a "kuchini yoʻqotgan deb
+    # topilsin" list item doesn't always void the *whole* quoted act — 398/885
+    # (45%) instead read "...gi NNN-sonli Qonunining (Axborotnomasi, YYYY,
+    # № N, N-modda) M-moddasi ... kuchini yoʻqotgan deb topilsin", i.e. only
+    # article M of that act loses force (the parenthetical is a bibliographic
+    # gazette locator for the act itself, not a target — skipped explicitly so
+    # it's never mistaken for the real qualifier). Every item without this
+    # trailing qualifier genuinely repeals the whole act (verified against the
+    # two real LLC-law whole-act repeals inside doc -8151376's own list).
+    re_target_locator = re.compile(
+        r"^[\s\w\-]{0,80}?(?:\([^()]{0,300}\)\s*)?(\d+[\d\-]*\s*-\s*(?:modda|qism|band|bob|paragraf)\w*)",
+        re.IGNORECASE,
     )
 
     def norm_title(s: str) -> str:
@@ -481,15 +497,22 @@ def main() -> int:
                 if km and km.group(1).lower() in ("qaror", "farmon"):
                     method = "unresolved:non-statute"
             method_counts[method] = method_counts.get(method, 0) + 1
+            after = tail[m.end(): m.end() + 400]
+            lm = re_target_locator.match(after)
+            locator = re.sub(r"\s+", " ", lm.group(1)).strip() if lm else None
             cid += 1
             clauses.append([cid, doc_id, row_id, i,
                             f"{m.group('y')}-yil {m.group('d')}-{m.group('mon')}",
                             (m.group("num") or "").strip().upper() or None,
-                            dst, method,
+                            dst, method, locator,
                             re.sub(r"\s+", " ",
                                    tail[max(0, m.start() - 40): m.end() + 40]).strip()])
-    con.executemany("INSERT INTO repeal_clause VALUES (" + ",".join("?" * 9) + ")", clauses)
+    con.executemany("INSERT INTO repeal_clause VALUES (" + ",".join("?" * 10) + ")", clauses)
     con.commit()
+    n_whole = sum(1 for c in clauses if c[8] is None)
+    log(f"\nrepeal_clause scope: {n_whole}/{len(clauses)} void the whole cited "
+        f"act; {len(clauses) - n_whole} name a specific article/part of it "
+        "(kept, but excluded from v_act_currency's whole-act 'superseded' call)")
     resolved = sum(1 for c in clauses if c[6] is not None)
     log(f"\nrepeal_clause: {len(clauses)} repeal items from "
         f"{len({c[1] for c in clauses})} acts; {resolved} resolved to a corpus act")
@@ -676,17 +699,31 @@ def main() -> int:
     """)
     con.commit()
 
-    # An act is superseded if a later act repealed it by date+number.
+    # An act is superseded if a later act repealed it, whole, by date+number.
+    # `target_locator IS NULL` excludes the 45% of repeal-list items that
+    # name only one article of the act (see the repeal_clause build above) —
+    # those don't make the act itself dead. Even restricted to whole-act
+    # items, 96 dst_doc_ids are still declared repealed more than once (a
+    # handful of old Soviet-era acts get redundantly re-repealed by later
+    # cleanup laws) — QUALIFY keeps exactly one row per act, so this view
+    # stays one-row-per-doc_id for every downstream JOIN ON doc_id, in this
+    # app and in app_llc.py.
     con.execute("""
         CREATE OR REPLACE VIEW v_act_currency AS
+        WITH whole_repeal AS (
+            SELECT dst_doc_id, src_doc_id, evidence
+            FROM repeal_clause
+            WHERE dst_doc_id IS NOT NULL AND target_locator IS NULL
+            QUALIFY row_number() OVER (PARTITION BY dst_doc_id ORDER BY cited_date) = 1
+        )
         SELECT a.doc_id, a.doc_title, a.doc_date, a.doc_number, a.tier, a.status AS corpus_status,
                r.src_doc_id AS repealed_by, ra.doc_title AS repealed_by_title,
                ra.doc_date  AS repealed_on, r.evidence AS repeal_evidence,
                CASE WHEN r.src_doc_id IS NOT NULL THEN 'superseded' ELSE 'no repeal found' END
                    AS derived_status
         FROM act a
-        LEFT JOIN repeal_clause r ON r.dst_doc_id = a.doc_id
-        LEFT JOIN act ra          ON ra.doc_id = r.src_doc_id
+        LEFT JOIN whole_repeal r ON r.dst_doc_id = a.doc_id
+        LEFT JOIN act ra         ON ra.doc_id = r.src_doc_id
     """)
     con.commit()
 

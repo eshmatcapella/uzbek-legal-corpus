@@ -198,22 +198,51 @@ def page_article() -> None:
         st.info("No realizing act below the Code cites this article — "
                 "turn the toggle on to see its other citations.")
 
+    # Off by default: unlike the LLC dossier's single-institution slice, this
+    # page covers all 386 General Part articles, and 4 of them have realizing
+    # acts that are *exclusively* superseded (see DAILY_REVIEW.md) — hiding
+    # by default would silently show "nothing cites this" for those articles
+    # instead of "everything that once cited this is now dead law".
+    hide_dead = st.toggle("Hide superseded acts", value=False)
+    n_live_acts, n_all_acts = q("""
+        SELECT count(DISTINCT r.src_doc_id) FILTER (WHERE c.derived_status IS DISTINCT FROM 'superseded'),
+               count(DISTINCT r.src_doc_id)
+        FROM v_realization r LEFT JOIN v_act_currency c ON c.doc_id = r.src_doc_id
+        WHERE r.norm_id = ? AND r.hierarchy_rel = ANY(?)
+    """, [norm_id, rels])[0]
+    if hide_dead and n_live_acts == 0 and n_all_acts > 0:
+        st.warning(f"All {n_all_acts} realizing act(s) for this article are "
+                   "superseded — turn the toggle off to see them.")
+
     for tier, in q("""
         SELECT DISTINCT src_tier FROM v_realization
         WHERE norm_id = ? AND hierarchy_rel = ANY(?) ORDER BY src_tier
     """, [norm_id, rels]):
         acts = q("""
-            SELECT src_doc_id, src_doc_title, src_doc_date, src_url,
-                   count(*) AS n, max(hierarchy_rel) AS rel
-            FROM v_realization
-            WHERE norm_id = ? AND src_tier = ? AND hierarchy_rel = ANY(?)
-            GROUP BY 1, 2, 3, 4 ORDER BY n DESC, src_doc_date
-        """, [norm_id, tier, rels])
+            SELECT r.src_doc_id, r.src_doc_title, r.src_doc_date, r.src_url,
+                   count(*) AS n, max(r.hierarchy_rel) AS rel,
+                   c.derived_status, c.repealed_by_title
+            FROM v_realization r
+            LEFT JOIN v_act_currency c ON c.doc_id = r.src_doc_id
+            WHERE r.norm_id = ? AND r.src_tier = ? AND r.hierarchy_rel = ANY(?)
+            GROUP BY 1, 2, 3, 4, 7, 8
+            HAVING NOT (? AND c.derived_status = 'superseded')
+            ORDER BY (c.derived_status = 'superseded'), n DESC, r.src_doc_date
+        """, [norm_id, tier, rels, hide_dead])
+        if not acts:
+            continue
+        n_dead = sum(1 for a in acts if a[6] == "superseded")
+        dead_note = f" · {n_dead} superseded" if n_dead else ""
         st.markdown(f"#### Tier {tier} — {TIER_LABEL.get(tier, '?')} "
-                    f"({len(acts)} act{'s' if len(acts) != 1 else ''})")
-        for doc_id, doc_title, doc_date, url, n, rel in acts:
-            head = f"{doc_title[:110]}  ·  {doc_date or 'no date'}  ·  {n} citation(s)"
+                    f"({len(acts)} act{'s' if len(acts) != 1 else ''}{dead_note})")
+        for doc_id, doc_title, doc_date, url, n, rel, derived, rep_by in acts:
+            dead = " 🔴" if derived == "superseded" else ""
+            head = (f"{doc_title[:110]}  ·  {doc_date or 'no date'}  ·  "
+                    f"{n} citation(s){dead}")
             with st.expander(head):
+                if derived == "superseded":
+                    st.error(f"Superseded by: {rep_by or 'a later act'} — "
+                             "not current law.")
                 if url:
                     st.caption(f"[source]({url})  ·  {REL_LABEL.get(rel, rel)}")
                 for (ev, qism, conf, kind, amb, p_no, p_title,

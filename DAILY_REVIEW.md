@@ -22,6 +22,60 @@ How to use this file each session:
 
 ## Active threads
 
+- **`repeal_clause` whole-act/partial-repeal conflation: fixed 2026-09-18,
+  closed.** Investigating whether the General Part explorer (`app_hierarchy.py`,
+  which unlike the LLC dossier never surfaced act-level currency at all)
+  should show a 🔴 badge for superseded realizing acts, first measured the
+  underlying numbers directly against `corpus.duckdb` rather than trusting
+  the existing "357 acts provably superseded" stat — and found that stat
+  itself was substantially wrong. Two compounding bugs in `repeal_clause`/
+  `v_act_currency` (both in `build_links.py`), found by reading raw text,
+  not by inspecting the SQL first: (1) a "kuchini yoʻqotgan deb topilsin"
+  repeal-list item was always treated as voiding the *whole* quoted act, but
+  398/885 (45%) of items actually read "...gi NNN-sonli Qonunining
+  (Axborotnomasi, YYYY, № N, N-modda) M-moddasi ... kuchini yoʻqotgan deb
+  topilsin" — Article M of that act loses force, not the act itself (the
+  parenthetical is a bibliographic gazette locator, not a target, and was
+  being misread as one until a corpus-wide sample confirmed the pattern:
+  verified directly inside doc -8151376's own repeal list, which has both
+  kinds side by side — items 1-2 are genuine whole-act repeals of the two
+  old LLC laws, items 3-21 each void exactly one article of an unrelated
+  act). (2) `v_act_currency`'s `LEFT JOIN repeal_clause` silently fanned out
+  — some acts are named in more than one repeal_clause row (up to 35, for
+  one omnibus 2021 law whose individual articles were voided piecemeal by
+  35 later cleanup acts) — so the view, despite looking like one row per
+  `doc_id`, wasn't; any downstream `JOIN v_act_currency ON doc_id` (both
+  apps do this) silently multiplied whatever it was counting. Confirmed live
+  in `app_llc.py`'s `page_currency()` "Superseded acts still feeding the
+  realization graph" table, which was overcounting per-act edge totals
+  before the fix. Fixed both at the source: `repeal_clause` gained a
+  `target_locator` column (NULL = whole act, else the article/qism/band/bob/
+  paragraf text voided) computed from the same regex family already used
+  elsewhere in the file; `v_act_currency` now only treats `target_locator IS
+  NULL` rows as `superseded`, deduplicated to one row per `dst_doc_id` via
+  `QUALIFY row_number() ... = 1` (picking the earliest repeal when an act is
+  redundantly re-repealed). Net effect, corpus-wide: "acts provably
+  superseded" 357 -> **248** (-31%), "stale realization edges" 1115 ->
+  **494** (-56%); LLC's own `cites_cc_foundation` route 15/74 -> **13/74**
+  superseded. The 2001 LLC Law itself (the load-bearing verify_transfer
+  check) stays correctly `superseded` — it's one of the genuine whole-act
+  items. Then built the originally-scoped feature on the corrected data:
+  `page_article()` in `app_hierarchy.py` now joins `v_act_currency` and
+  shows a 🔴 badge + `st.error` per superseded realizing act, a per-tier
+  "N superseded" count, and a "Hide superseded acts" toggle — **off** by
+  default (unlike the LLC dossier's `value=True`), because this page spans
+  all 386 General Part articles and 4 of them (art. 21, 62, 290, 291 — art.
+  62 is the LLC's own Civil Code anchor, the same one 2026-09-16 already
+  flagged as having zero live LLC-slice evidence) have realizing acts that
+  are *exclusively* superseded; a warning banner explains why nothing shows
+  when the toggle empties a tier, mirroring `app_llc.py`'s existing pattern.
+  Verified live in both apps via Playwright (screenshots of the badge, the
+  toggle hiding/revealing, and the all-dead warning on Article 62) and
+  `verify_transfer.py` stayed green (`sup`/`stale` INFO lines recompute from
+  the same query, no check needed updating). This closes the thread —
+  `target_locator` is stored and available but not yet surfaced anywhere in
+  either app (see Backlog).
+
 - **LLC implementing-acts currency default: closed 2026-09-16.** Picked up
   the open half of the "Propagate currency into the LLC dossier" backlog
   item (see Backlog, Data currency) — whether `page_acts`/
@@ -260,11 +314,14 @@ How to use this file each session:
   09-16 (closed the LLC implementing-acts currency-default question, see
   Active threads and Log), Extractor 09-17 (another fresh gold-sample round —
   a doubled-en-dash range collapse and a missing-vowel anchor gap, see Log —
-  now **9/9** sampling sessions with a real, fixable bug found) — next
-  session should prefer Data currency or Cleanup unless a new item outweighs
-  rotating (Extractor has now run three of the last four sessions: 09-12,
-  09-15, 09-17, and Cleanup hasn't had an actual working session, only two
-  re-confirms of empty, since 09-07).
+  now **9/9** sampling sessions with a real, fixable bug found), Data
+  currency 09-18 (found and fixed the `repeal_clause` whole-act/partial-
+  repeal conflation and its `v_act_currency` join fan-out while building the
+  General Part explorer's currency badge — see Active threads and Log) —
+  next session should prefer Cleanup unless a new item outweighs rotating
+  (Cleanup hasn't had an actual working session, only two re-confirms of
+  empty, since 09-07; Extractor and Data currency have each had two of the
+  last four).
 
 - **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
   four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -516,6 +573,21 @@ How to use this file each session:
   (15/74 acts, 94/307 hits of `cites_cc_foundation` evidence are
   superseded) and for two real fan-out bugs found and fixed along the way
   (`build_llc.py`'s `n_hits`, `app_llc.py`'s `page_norm` citation list).
+  **Note 2026-09-18**: the 15/74 count above was itself measured against the
+  pre-fix, over-broad `derived_status`; on the corrected data it's 13/74 (see
+  Active threads and Log, 2026-09-18) — the "keep the opt-in toggle" decision
+  and its reasoning (article 62 has zero surviving evidence either way) are
+  unaffected.
+- **`repeal_clause.target_locator` isn't surfaced anywhere yet.** Added
+  2026-09-18 alongside the whole-act/partial-repeal fix (see Active
+  threads): every partial repeal-list item now records which article/qism/
+  band/bob/paragraf of the named act was voided (398/885 items), but neither
+  app displays it — there's no per-article currency table for an arbitrary
+  (non-Civil-Code) act the way `article_amendment`/`v_article_currency`
+  exists for the Code itself. Could be worth its own small view/table if a
+  future session wants "which articles of this act have been individually
+  voided" as a currency signal, but that's a new feature, not a bug fix, and
+  wasn't in today's scope.
 
 ### Cleanup
 - ~~**Retire superseded prototypes.**~~ **Done 2026-09-07**: deleted
@@ -547,6 +619,135 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-18 — found and fixed a whole-act/partial-repeal conflation and a silent join fan-out in `v_act_currency`; brought act-level currency badges to the General Part explorer
+
+Rotation: 09-17 Extractor (its third of the last four sessions). Standing
+note said next should prefer Data currency or Cleanup; Cleanup had nothing
+new since 09-07/09-10's re-confirms, so picked Data currency. Also first had
+to fast-forward and push a fully-verified but unpushed commit
+(`3e61579`) left behind from 09-17's session — its local `main` branch was
+detached and never reached `origin/main`; confirmed it was sound (`git lfs
+pull` had to run first, since the raw parquet's LFS pointer hadn't resolved
+in this fresh container either) before pushing. Worth flagging in case it
+recurs: something about how a prior session ends can leave the branch
+pointer behind the last commit even though the commit itself is already on
+`origin` — not investigated further today since the actual risk (an
+unpushed commit silently lost) didn't materialize, but a future session
+should double-check `git fetch && git log origin/main` before assuming
+local state reflects what shipped.
+
+Picked up the open half of "Propagate currency into the LLC dossier's
+implementing-acts list" (closed 2026-09-16) — the General Part explorer,
+`app_hierarchy.py`, never got the same act-level currency badge the LLC
+dossier has, despite covering 386 articles vs. the LLC's single slice.
+Before writing any UI code, measured the underlying numbers directly against
+`corpus.duckdb` rather than trusting the standing "357 acts provably
+superseded" / "1115 stale realization edges" INFO stat from
+`verify_transfer.py` — and building the join for the new feature
+(`LEFT JOIN v_act_currency`) immediately threw `InvalidInputException: More
+than one row returned by a subquery`, which is what actually surfaced the
+first bug: `v_act_currency.doc_id` isn't unique. 483/24,750 rows are
+duplicates, some doc_ids appearing up to 35 times.
+
+Root-caused by reading raw text, not by staring at the SQL. The worst
+offender, doc -5388561 (an omnibus 2021 law, OʻRQ-683), had 35 different
+later acts each listed as "repealing" it. Pulling the actual clause text
+(not the view) showed why: each item reads "...gi OʻRQ-683-sonli
+Qonunining (Oʻzbekiston Respublikasi Oliy Majlisi ... Axborotnomasi,
+2021-yil, 4-songa ilova) 132-moddasi ... kuchini yoʻqotgan deb topilsin" —
+i.e. only Article 132 of OʻRQ-683 lost force, not the whole act; 34 other
+later acts each separately voided one other article of the same 2021
+omnibus law over the following years. `repeal_clause`'s extraction only
+ever matched act-level (date, title), with no check for a trailing article
+qualifier, so every one of these got recorded identically to a genuine
+whole-act repeal. Measured corpus-wide with a standalone regex (matching
+`repeal_clause`'s own `re_item`, then checking the text right after each
+resolved title/number for `\d+-(?:modda|qism|band|bob|paragraf)`, skipping
+over the intervening bibliographic gazette-citation parenthetical which
+itself often contains an unrelated "N-modda" that would otherwise produce
+false positives): **398/885 (45%)** of all repeal-list items are actually
+partial, article-level repeals, not whole-act ones. Confirmed the extractor
+side is sound by reading every item inside one real host row's own list end
+to end (doc -8151376, the LLC Law's own final repeal clause): items 1-2 are
+genuine whole-act repeals of the two old LLC laws (no trailing qualifier),
+items 3-21 (19 of them) each void exactly one unrelated act's single
+article (all with the qualifier) — a clean, unambiguous split, not a
+borderline judgment call. Random-sampled 8 more hits from elsewhere in the
+corpus (seed 42): all 8 confirmed the same "Act X's article N loses force"
+reading, no false positives from the qualifier regex.
+
+Second bug, found while designing the fix for the first: even restricting
+to whole-act-only repeal items, 96/185 resolved `dst_doc_id`s still had more
+than one repeal_clause row (max 4) — a handful of old Soviet-era acts
+(e.g. a 1992 sports law, doc -10860) are redundantly re-declared repealed by
+more than one later cleanup act. So `v_act_currency`'s `LEFT JOIN
+repeal_clause` was always going to fan out even after fixing bug 1, just
+less severely — meaning any downstream `JOIN v_act_currency ON doc_id`
+(both apps do this) was silently multiplying whatever it counted. Confirmed
+this was live, not just theoretical, in `app_llc.py`'s `page_currency()`
+"Superseded acts still feeding the realization graph" table (`GROUP BY
+act, count(*) AS edges` through that same join) — checked one row directly
+(-55558, the housing-policy act, 52 raw `link_edge` rows) and confirmed
+`v_act_currency` had exactly 1 row for it post-fix, so the displayed count
+now equals the raw count instead of some join-inflated multiple.
+
+Fixed both at the source in `build_links.py`. (1) `repeal_clause` gained a
+`target_locator` column (NULL = whole act; else the matched "N-moddasi"/
+"N-bandi" text) computed via a new regex during the same extraction loop
+that already builds each clause — additive schema change, `INSERT` count
+bumped from 9 to 10 placeholders. (2) `v_act_currency`'s view now joins a
+`whole_repeal` CTE that filters to `target_locator IS NULL` and dedupes
+with `QUALIFY row_number() OVER (PARTITION BY dst_doc_id ORDER BY
+cited_date) = 1` (earliest repeal wins for the rare redundant-repeal case).
+Verified the view is now genuinely 1-row-per-`doc_id`: `24267` rows, `24267`
+distinct `doc_id`, `0` duplicates (was 483 duplicate rows across 24,750
+total).
+
+Reran `build_links.py`: `repeal_clause` unchanged at 885 items/840 resolved
+(scope classification doesn't touch resolution), now logs "487/885 void the
+whole cited act; 398 name a specific article/part of it". Reran
+`build_llc.py`: `cites_cc_foundation` route's superseded count dropped
+15 -> 13/74 (2 acts were false positives from the partial-repeal bug); the
+2001 LLC Law itself (doc -22525, the load-bearing `verify_transfer.py`
+check) is still correctly `superseded` — it's a genuine whole-act repeal,
+confirmed by hand in the same doc -8151376 list read above (item 1, no
+qualifier). Corpus-wide: "acts provably superseded" 357 -> **248** (-31%,
+109 fewer), "stale realization edges" 1115 -> **494** (-56%, 621 fewer) —
+both numbers were substantially overstated before today, not just off by a
+rounding error.
+
+With the data fixed, built the originally-scoped feature: `page_article()`
+in `app_hierarchy.py`'s "Realization pyramid" now joins `v_act_currency`,
+shows a 🔴 badge + a `st.error("Superseded by: ...")` inside the expander for
+each superseded realizing act, a per-tier "(N acts · M superseded)" count,
+and a "Hide superseded acts" toggle. Chose **off** by default — the
+opposite of `app_llc.py`'s `value=True` — because this measurement also
+found **4** General Part articles (21, 62, 290, 291) whose realizing acts
+are *exclusively* superseded; defaulting to hidden would silently show
+"nothing cites this" for those 4 instead of "everything that once cited
+this is now dead law". Article 62 is exactly the LLC's own Civil Code
+anchor that 2026-09-16 already flagged as having zero surviving
+`cites_cc_foundation` evidence in the LLC slice — this confirms the same
+fact holds at the whole-corpus level, not just within the LLC's narrower
+foundation-article set. Added a warning banner (mirroring `app_llc.py`'s
+existing "every citation was filtered out" pattern) for the case where the
+toggle empties a tier.
+
+Verified live with Playwright against a running `streamlit run
+app_hierarchy.py`: screenshotted the 🔴 badge and its `st.error` on Article
+48's Tier 3 list (a real superseded railway-transport act among 6 live
+ones), the toggle correctly dropping the tier's act count when flipped, and
+Article 62 showing 2/2 superseded acts with the "all realizing acts are
+superseded" warning once hidden. Also re-verified `app_llc.py` still loads
+and its `page_currency()` table now shows correct, non-inflated edge counts
+(spot-checked -55558 by hand: 52 raw `link_edge` rows, 52 shown, 1
+`v_act_currency` row — was silently able to be wrong before, though this
+specific act happened not to be one of the fanned-out ones).
+`verify_transfer.py` stays green; the `sup`/`stale` INFO lines recompute
+from the same query against the corrected view, so no check needed
+touching. This closes today's thread — `repeal_clause.target_locator` is
+captured but not yet surfaced in either app (see Backlog).
 
 ### 2026-09-17 — two real corpus-wide extractor bugs fixed via a fresh gold-sample round; one false alarm rejected; one new backlog item captured
 
