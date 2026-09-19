@@ -317,11 +317,11 @@ How to use this file each session:
   now **9/9** sampling sessions with a real, fixable bug found), Data
   currency 09-18 (found and fixed the `repeal_clause` whole-act/partial-
   repeal conflation and its `v_act_currency` join fan-out while building the
-  General Part explorer's currency badge — see Active threads and Log) —
-  next session should prefer Cleanup unless a new item outweighs rotating
-  (Cleanup hasn't had an actual working session, only two re-confirms of
-  empty, since 09-07; Extractor and Data currency have each had two of the
-  last four).
+  General Part explorer's currency badge — see Active threads and Log),
+  Cleanup 09-19 (first actual working Cleanup session since 09-07 — a
+  `pyflakes` pass found and fixed 9 real dead-code/import issues, see
+  Active threads and Log) — next session should prefer Extractor or Data
+  currency (each has had two of the last five; Cleanup has now had one).
 
 - **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
   four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -336,6 +336,21 @@ How to use this file each session:
   opportunistically while working elsewhere — `demo_llc.py`, same class as
   the four scripts removed 2026-09-07 (hardcoded, nonexistent Windows path,
   zero references anywhere in the repo). Still nothing left open here.
+  **2026-09-19**: this session's turn in the rotation, and the manual
+  execute-f-string re-audit (above) stayed clean, so widened what "cleanup"
+  means instead of re-confirming the same empty backlog a third time — ran
+  `python3 -m pyflakes *.py` over the whole repo (first install: not a
+  dependency the project already had) and found 9 real issues across 5
+  files (`build_llc.py`, `app_hierarchy.py`, `app_llc.py`, `parser.py`,
+  `test_transfer_e2e.py`): dead locals never read again (`run_id`,
+  `found_arts`, `by_id`), two unused imports, two f-strings with no
+  placeholder. Fixed all 9, verified `pyflakes *.py` is clean (0 issues),
+  re-ran `build_llc.py` against the existing `corpus.duckdb` and confirmed
+  identical output, and checked both apps live via Playwright. See Log for
+  full detail. Nothing left open here — but this is now a repeatable check
+  (`pyflakes *.py`, not previously part of this project's toolchain) worth
+  running again on a future Cleanup rotation rather than assuming it stays
+  empty forever the way the original four backlog items did.
 
 - **Smaller, lower-priority residual: qism/band tail truncation.** The
   qism/band attachment check added today (see Log) has 10 residual misses
@@ -619,6 +634,110 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-19 — Cleanup rotation: ran a static-analysis pass (`pyflakes`) over the whole repo, found and fixed 9 real dead-code/import issues across 5 files
+
+Rotation note from 09-18 said next session should prefer Cleanup (it hadn't
+had an actual working session, only two re-confirms of empty, since
+2026-09-07). Checked the Backlog's Cleanup section first — genuinely empty,
+every item struck through — so this session's job was to invent a new
+angle rather than pull a queued item, per the brief.
+
+First confirmed 09-18's two commits (`3e61579`, `676e8f0`) had actually
+reached `origin/main` this time (`git fetch origin main` showed local
+`main` was just a stale cached ref, one `fetch` away from matching
+`origin/main` exactly) — no recurrence of the "commit sound but branch
+pointer left behind" risk 09-18's log entry flagged, just ordinary
+freshclone staleness. Also had to `apt-get install git-lfs` and
+`git lfs pull` before anything could run — the raw parquet arrives as a
+134-byte LFS pointer in a fresh container, same gotcha 09-18 hit and noted;
+recording it again since it's now happened on back-to-back days and is
+clearly not a one-off. Worth a `SETUP.md`/README note for future sessions
+so it doesn't have to be rediscovered by a failing `InvalidInputException:
+No magic bytes found` each time.
+
+New angle: rather than re-grepping for `execute(f"...")` patterns (already
+fully audited 2026-09-07/09-10, still clean today — every f-string
+interpolation is one of `PARQUET`/`CC_GENERAL_PART`/`LLC_LAW_CURRENT`-style
+hardcoded constants, confirmed again by re-reading all 27 occurrences
+across the repo, zero data-derived values), ran `python3 -m pyflakes *.py`
+across the whole repo — a class of bug the manual f-string audits and
+gold-sample reading never targeted: dead locals, unused imports, and
+accidental f-strings with nothing to interpolate. **9 findings, all real,
+none false positives** (checked each by hand — unlike the AST-based
+same-file usage-count script tried first, which threw 2 false positives on
+cross-module calls before being discarded in favor of `pyflakes`):
+
+- `build_llc.py`: `run_id = datetime.now(...)` computed in `main()` but
+  never used — unlike its siblings `build_corpus_db.py` and `build_links.py`,
+  which both compute an identical-shaped `run_id` *and* actually log/persist
+  it (`extraction_run.run_id`, `link_edge.run_id`) for build provenance.
+  `build_llc.py` has no such provenance table and never referenced the
+  variable again — vestigial, almost certainly copy-pasted from
+  `build_links.py`'s `main()` boilerplate when the file was created and
+  never wired in. Removed it and the now-unused `datetime`/`timezone`
+  import rather than half-wiring provenance tracking for one script when
+  the other two don't share a table for it either — that would be a new
+  feature, not a cleanup, and out of today's scope.
+- `build_llc.py`: `found_arts = sorted({a for s in FOUNDATION.values() ...})`
+  computed right before the `cites_cc_foundation` INSERT but never
+  referenced in the query, which instead filters via `llc_norm.layer =
+  'foundation'` (a join-based approach). Leftover from an earlier,
+  presumably explicit-filter implementation. Removed.
+- `app_hierarchy.py`: `by_id = {n[0]: n for n in nodes}` in `page_structure()`
+  built but never read (the function only needs `kids`, the parent->children
+  map, built separately). Removed.
+- `app_llc.py`: `import re` unused (no `re.` call anywhere in the file).
+  Removed. Also `st.subheader(f"Tier 3 · ...")` — an f-string with no
+  `{}` placeholder, harmless but wrong; dropped the stray `f`.
+- `parser.py`: `import os` unused (`os.path`/`os.*` never called — the file
+  uses `pathlib.Path` throughout instead). Removed. Also one
+  `print(f"[ERROR] ...")` with no placeholder — dropped the stray `f`,
+  same class as `app_llc.py`'s.
+- `test_transfer_e2e.py`: `import json` and `import sys` both unused
+  (`os`/`re`, imported alongside, are genuinely used — checked before
+  touching either).
+
+Measured before/after: `python3 -m pyflakes *.py` — 9 issues -> 0
+(`exit=0`). Every removed local was a pure dead-end (never read again in
+its own function); none were "removed but should have been used" bugs
+disguised as dead code, confirmed for the two most suspicious ones
+(`build_llc.py`'s `run_id`/`found_arts`) by reading the surrounding query
+and checking neither the schema nor the WHERE/JOIN clauses ever needed
+them.
+
+Verified live, not just by diffing: re-ran `python3 build_llc.py` (the one
+script whose function body changed, not just an import line) against the
+existing `corpus.duckdb` — output identical to before the edit (8 stages,
+100 `llc_norm` rows, 132 `llc_implementing_act` rows, same per-stage/per-tier
+breakdown) — then reverted the resulting `corpus.duckdb` diff (`git checkout
+-- corpus.duckdb`) since the content was byte-for-byte equivalent in every
+table's row count and the diff was pure re-serialization noise, not a real
+data change; no reason to carry a 52MB binary diff for a no-op rebuild.
+Also ran `python3 test_transfer_e2e.py` (14/14 pass, unaffected by the
+import removal) and started both `app_hierarchy.py` and `app_llc.py` under
+`streamlit run` and drove them with Playwright: `page_structure()` (the
+`by_id` removal) renders the full structural tree with no exception;
+`page_norm()` (the f-string fix) renders "Tier 3 · LLC Law — the stage
+that specialises it" correctly for stage 1. One test-only wrinkle, not a
+real bug: running both apps concurrently against the same `corpus.duckdb`
+in this sandbox hit `app_hierarchy.py`'s own documented read-write/read-only
+fallback in a way that briefly locked `app_llc.py` out
+(`_duckdb.IOException: Could not set lock`) — resolved by not running both
+against the same file at the same instant, not a code change; the two apps
+were never designed to be launched simultaneously against one file from a
+single test harness, only used one-at-a-time in this session. `python3
+verify_transfer.py` — all checks green, same as before any edit.
+
+**Decision: this closes today's Cleanup session with a concrete, measured
+artifact** (a repeatable `pyflakes *.py` check, now 0 issues) rather than
+"nothing found" — Cleanup's last two sessions (09-07, 09-10) were genuine
+re-confirms of an already-drained backlog; this one found real, if minor,
+new material by widening what "cleanup" means (static analysis, not just
+manual re-reading of the same execute-f-string pattern). Worth running
+`pyflakes *.py` again after any future session that adds new files or
+touches these — cheap, fast, and just found 9 real issues on a repo that
+had already had two "nothing left" cleanup passes.
 
 ### 2026-09-18 — found and fixed a whole-act/partial-repeal conflation and a silent join fan-out in `v_act_currency`; brought act-level currency badges to the General Part explorer
 

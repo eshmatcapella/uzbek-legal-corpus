@@ -15,7 +15,6 @@ Features:
 """
 
 import sys
-import os
 import re
 import json
 import argparse
@@ -426,7 +425,7 @@ def main():
                 break
 
     if not input_path or not input_path.exists():
-        print(f"[ERROR] Input markdown file not found.", file=sys.stderr)
+        print("[ERROR] Input markdown file not found.", file=sys.stderr)
         sys.exit(2)
 
     if not args.quiet:

@@ -300,7 +300,6 @@ def page_structure() -> None:
                art_from, art_to, n_units
         FROM struct_node
     """)
-    by_id = {n[0]: n for n in nodes}
     kids: dict[str | None, list] = {}
     for n in nodes:
         kids.setdefault(n[4], []).append(n)

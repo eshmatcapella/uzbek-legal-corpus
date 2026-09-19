@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import re
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 import duckdb
@@ -105,7 +104,6 @@ def log(msg: str = "") -> None:
 
 
 def main() -> int:
-    run_id = datetime.now(timezone.utc).strftime("llc-%Y%m%dT%H%M%SZ")
     con = duckdb.connect(str(DB_PATH))
     raw = f"read_parquet('{PARQUET.as_posix()}', file_row_number=true)"
 
@@ -217,7 +215,6 @@ def main() -> int:
         );
     """)
 
-    found_arts = sorted({a for s in FOUNDATION.values() for a in s})
     # count(DISTINCT e.edge_id), not count(*): two foundation articles (45, 62)
     # each anchor more than one stage, so the llc_norm join fans out to one row
     # per (edge, stage) pair for them -- a plain count(*) would double those

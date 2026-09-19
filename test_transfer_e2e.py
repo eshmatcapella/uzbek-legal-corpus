@@ -31,10 +31,8 @@ Runs via: `python test_transfer_e2e.py` or `python -m unittest test_transfer_e2e
 """
 
 import importlib.util
-import json
 import os
 import re
-import sys
 import unittest
 
 import duckdb

@@ -11,7 +11,6 @@ foundation and the LLC Law's own chapters as the skeleton.
 """
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import duckdb
@@ -173,7 +172,7 @@ def page_norm() -> None:
                    "article since the corpus's amendment-note coverage began.")
 
     st.divider()
-    st.subheader(f"Tier 3 · LLC Law — the stage that specialises it")
+    st.subheader("Tier 3 · LLC Law — the stage that specialises it")
     for a, t, txt in q("""
         SELECT article_number, article_title, article_text FROM llc_norm
         WHERE stage_no = ? AND layer = 'special' ORDER BY CAST(article_number AS INT)
