@@ -10,9 +10,14 @@ This script does NOT judge correctness. It draws a stratified, seeded random
 sample of real anchor windows (the same anchors/windows citation_extractor.py
 and build_links.py themselves use) and dumps them, with the extractor's own
 output over each window, to a JSON file for a human/LLM annotator to read the
-raw Uzbek text against and reason about by hand -- there is no separate
-annotation-storage or scoring script yet (that's still open, see
-DAILY_REVIEW.md backlog "Build the gold set"). What this script deterministically
+raw Uzbek text against and reason about by hand. The annotation-storage and
+scoring layer lives separately, in gold_citations.json (committed,
+hand-verified ground truth) and score_gold.py (the scorer) -- see that
+script's docstring for why recall and precision are scored against
+different scopes of extract()'s output. Each record here carries
+anchor_start/anchor_end (added 2026-09-20) so the scorer can recompute
+exactly which citations this specific anchor occurrence produced, without
+relying on approximate window-text matching. What this script deterministically
 reproduces (same --seed -> same sample, so it's never committed to git) has
 already paid for itself once: reading the 2026-09-15 sample by hand found and
 fixed three real corpus-wide bugs in one sitting (a missing "kodeksning"
@@ -108,6 +113,8 @@ def main() -> None:
                     "article_number": art_no,
                     "field": field,
                     "anchor_kind": kind,
+                    "anchor_start": a_start,
+                    "anchor_end": a_end,
                     "is_the_code": is_code,
                     "window": window_text,
                     "extracted": [citation_dict(c) for c in cites_here],

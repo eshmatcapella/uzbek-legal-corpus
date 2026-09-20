@@ -22,6 +22,60 @@ How to use this file each session:
 
 ## Active threads
 
+- **Gold-set scoring layer: built 2026-09-20, baseline measured, thread
+  open for the next sampling round.** Picked up the Extractor backlog's
+  longest-standing open item ("Build the gold set") — `build_gold_sample.py`
+  (2026-09-15) drew reproducible samples but had no annotation-storage or
+  scoring script, so every session's precision/recall claim was a fresh,
+  unsaved read-by-hand with no persisted number to compare against over
+  time. Built that missing layer: `gold_citations.json` (committed,
+  hand-verified ground truth — 50 anchor occurrences, drawn via
+  `build_gold_sample.py --seed 20260920`, each hand-read against the raw
+  Uzbek text and against `citation_extractor.py`'s own stop-word/anchor
+  rules) and `score_gold.py` (the scorer, re-runnable any time the
+  extractor changes). Two design decisions worth keeping in mind for future
+  rounds: (1) precision is scored per-anchor (does everything this anchor
+  produced belong there) but recall is scored against the *whole field's*
+  `extract()` output, not just this anchor's bucket — deliberately
+  different scopes, because the 2026-09-17 false-alarm lesson (a citation
+  attributed to a *different*, nearby anchor isn't a miss) would otherwise
+  reproduce itself inside the scorer. (2) `qism` (article-part) is recorded
+  per citation but excluded from the headline score — it isn't consumed by
+  any downstream table/view yet (see Backlog, "Qism-level grain"), and one
+  gold record (gold_id 6) is a live example of why conflating it in would
+  be misleading: `extract()`'s documented, already-known "qism range
+  collapses to its last ordinal" gap (backlog item, found 2026-09-15) means
+  gold_id 6's `expected` can only encode the single ordinal the current
+  `Citation` schema is capable of returning, not the true two-part ground
+  truth — scoring that as a precision failure would conflate a load-bearing
+  article-level correctness bug with a non-load-bearing grain limitation
+  that's already tracked separately. Baseline result: **precision 68/68
+  (100%), recall 68/68 (100%)** on this 50-window sample — every one of the
+  50 read by hand matched what `citation_extractor.py` already produces,
+  including several non-trivial cases (plenum-resolution titles correctly
+  producing only a bare `act` citation via the `qarori`/`axborotnoma`/`№`
+  stop words, `self_reference` anchors with no pinned article correctly
+  producing *nothing* at all — confirmed this is `extract()`'s deliberate,
+  existing design: the bare-act fallback only fires for
+  `kind=='fuqarolik_kodeksi'`, not `self_reference`/`fk_alias`, not a gap —
+  and two cases where a second, different code's own article list sitting
+  right after the Code's citation in the same sentence is correctly
+  excluded by `RE_STOP`'s `kodeksining`/`Qonunining`). This breaks the
+  9-session "always finds a bug" streak (see Backlog note) — a legitimate,
+  informative result in itself (the extractor's edge cases from 9 prior
+  hand-read sessions are holding up), not a failure of today's session.
+  **Still open**: only 50/~3251 candidate anchor windows (2599 hit + 652
+  empty, corpus-wide) are in the gold set so far — a 100% score on 50
+  windows is a promising baseline, not proof the extractor is bug-free
+  corpus-wide. Next Extractor-rotation session should either (a) draw and
+  annotate another disjoint 50-window batch with a new `--seed` and merge
+  it into `gold_citations.json` (grow the set, tighten the confidence
+  interval), or (b) if a future hypothesis-driven session finds and fixes a
+  new bug, add a targeted gold record for that exact case so it's a
+  permanent regression check, not just a one-time fix. Either way, run
+  `score_gold.py` after any `citation_extractor.py` change from now on —
+  it's a real regression signal that didn't exist before today.
+
 - **`repeal_clause` whole-act/partial-repeal conflation: fixed 2026-09-18,
   closed.** Investigating whether the General Part explorer (`app_hierarchy.py`,
   which unlike the LLC dossier never surfaced act-level currency at all)
@@ -320,8 +374,13 @@ How to use this file each session:
   General Part explorer's currency badge — see Active threads and Log),
   Cleanup 09-19 (first actual working Cleanup session since 09-07 — a
   `pyflakes` pass found and fixed 9 real dead-code/import issues, see
-  Active threads and Log) — next session should prefer Extractor or Data
-  currency (each has had two of the last five; Cleanup has now had one).
+  Active threads and Log), Extractor 09-20 (built the gold-set scoring
+  layer, `gold_citations.json` + `score_gold.py`, baseline 100%/100% on 50
+  windows — see Active threads and Log; first sample not to find a new bug,
+  breaking the 9-session streak) — of the last five sessions (09-16 through
+  09-20), Extractor and Data currency are tied at two each and Cleanup has
+  one; next session should prefer Data currency, the longer-idle of the two
+  (last touched 09-18 vs. Extractor's 09-20).
 
 - **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
   four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -379,38 +438,30 @@ How to use this file each session:
 ## Backlog
 
 ### Extractor recall/precision
-- **Build the gold set.** ~50 articles, hand-verified ground truth for
-  citation extraction (which acts realize them, at what confidence). Still no
-  *persisted* gold set with a fixed precision/recall score — `citation_extractor.py`'s
-  45 self-tests (see Log) check surface-form parsing, not corpus-wide
-  recall/precision, and this remains true after 2026-09-15's progress.
-  **What changed 2026-09-15**: built `build_gold_sample.py`, a reusable,
-  seeded, stratified sampler over real anchor windows (half where `extract()`
-  produced a citation, half where it didn't) — a tool version of the ad hoc
-  one-off queries every prior sampling session wrote from scratch. Reading
-  one 50-window sample by hand found 3 more real bugs (see Log), an 8-for-8
-  streak now. **2026-09-17**: drew another fresh sample (`--seed 20260917`)
-  and found 2 more real, fixed bugs (a doubled-en-dash range collapse and a
-  missing-vowel anchor gap — see Log) plus one correctly-rejected false
-  alarm (an alias-definition parenthetical that looked like a recall miss in
-  the sampler's per-anchor display window but wasn't, once checked against
-  the full-text extraction `build_links.py` actually runs) — streak now
-  **9/9**. That false alarm is a concrete argument for building the scoring
-  layer carefully rather than naively: a gold set built directly from the
-  sampler's per-anchor "extracted" field would have recorded a false
-  positive miss for gold_id 27, since that field reflects the *display*
-  window's anchor attribution, not whether `extract()` on the full text
-  actually finds the citation (it does, via a second, nearby anchor
-  occurrence). Any future scoring layer needs to check against full-text
-  `extract()` output, not the per-anchor slice. What's still open: no
-  annotation/scoring layer on top of the sampler (no `gold_citations.json`
-  of hand-labeled verdicts, no fixed precision/recall number to track over
-  time) — the tool produces raw material for hypothesis generation, not yet
-  a regression-testable score. Revisit whether building that scoring layer
-  is now the highest-value next step, given hypothesis-driven sampling
-  alone keeps paying off every single time it's tried (9/9 sessions, not
-  every hypothesis within a session pays off — 2026-09-12 alone tried 4
-  that falsified before the 5th worked).
+- ~~**Build the gold set.**~~ **Scoring layer built 2026-09-20** — see
+  Active threads and Log for the full detail. `gold_citations.json`
+  (50 hand-verified anchor occurrences) + `score_gold.py` (the scorer) now
+  exist; baseline **precision 68/68 (100%), recall 68/68 (100%)**. Not
+  closed outright — 50 windows is a first batch, not corpus-wide coverage
+  (2599 hit + 652 empty candidate windows exist). **Next step, whenever
+  Extractor rotation comes up again**: draw another disjoint batch with a
+  new `--seed`, hand-annotate it, and merge into `gold_citations.json` to
+  grow the set — or add a targeted record for any new bug a hypothesis-driven
+  session finds, so fixes become permanent regression checks instead of
+  one-time. What changed getting here: `build_gold_sample.py` (2026-09-15)
+  built the reusable, seeded, stratified sampler over real anchor windows
+  (half `extract()`-produced-a-citation, half empty); 2026-09-17's sample
+  found a false alarm — a citation that looked like a recall miss in one
+  anchor's *display* window but was actually caught by `extract()` via a
+  different, nearby anchor occurrence — which is why `score_gold.py` scores
+  recall against the whole field's `extract()` output rather than each
+  anchor's own local bucket (see Active threads for the full reasoning).
+  Hypothesis-driven sampling had found a real, fixable bug in every one of
+  9 sessions running before this one (qism/band 09-04, Qonun 09-05, doc_id
+  09-08, chapter+paragraph comma-attachment 09-10, qonunning 09-12, three on
+  09-15, two more on 09-17) — 2026-09-20's 50-window batch is the first to
+  come back clean (100/100), which the scoring layer now records as a real,
+  comparable data point rather than losing it to an unsaved one-off read.
 - **`RE_STOP`'s `break`-vs-`continue` design.** Once a stop-word is found in
   the gap before a clause, `extract()` abandons the *rest* of that anchor's
   window, not just the one stopped clause — a deliberate, conservative
@@ -634,6 +685,104 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-20 — Extractor rotation: built the gold-set annotation/scoring layer (`gold_citations.json` + `score_gold.py`), baseline precision/recall 100%/100% on 50 hand-verified windows
+
+Rotation note from 09-19 said Extractor or Data currency was due (each two
+of the last five). Checked the Extractor backlog: "Build the gold set" was
+still open after `build_gold_sample.py` (09-15) — a reusable sampler
+existed, but nothing turned its output into a persisted score. That gap
+was explicitly flagged 09-17 as worth revisiting given hypothesis-driven
+sampling's 9/9 hit rate, so picked it up rather than drawing yet another
+one-off sample to read and discard.
+
+**Environment note first**: this session started from a fresh clone with
+neither `duckdb` (Python package) nor `git-lfs` installed, and
+`articles/train-00000-of-00001.parquet` was still an unresolved LFS
+pointer (134 bytes, not the real 163MB file) — `build_gold_sample.py`
+failed immediately with a DuckDB "no magic bytes" error. Installed
+`git-lfs`, ran `git lfs pull`, and `pip install duckdb`; unrelated to
+today's actual work but recording it in case a future session hits the
+same cold-start failure and wastes time suspecting a corpus bug instead.
+
+**What was built**: `gold_citations.json` — 50 hand-verified anchor
+occurrences (drawn via `python build_gold_sample.py --seed 20260920`, half
+"hit" windows where `extract()` produced a pinned citation, half "empty"
+where it didn't), each read against the raw Uzbek text and against
+`citation_extractor.py`'s own stop-word/anchor logic, not just skimmed —
+and `score_gold.py`, the scorer. Added `anchor_start`/`anchor_end` to
+`build_gold_sample.py`'s output (small, additive) so the scorer can
+recompute exactly which citations a specific anchor occurrence produces,
+instead of matching on approximate window text.
+
+Two scoring-design decisions, both load-bearing for why the number is
+trustworthy rather than accidentally lenient:
+1. **Precision is scored per-anchor; recall is scored against the whole
+   field's `extract()` output.** The 09-17 log entry found a false alarm:
+   a citation that looked like a recall miss in one anchor's local display
+   window was actually produced by `extract()`, just attributed to a
+   *different*, nearby anchor occurrence in the same text. Scoring recall
+   against each anchor's own bucket (the same-scope choice a naive gold
+   set would make) would silently reproduce that exact false alarm inside
+   the "regression-testable" score meant to prevent this kind of mistake.
+   Verified the asymmetry matters by construction, not just in theory: the
+   scorer's recall check walks `all_cites` from a full `extract()` call on
+   the entire field text, matching by signature tuple
+   `(target_kind, article, struct_number, section_number, listing)`,
+   independent of which anchor produced it.
+2. **`qism` (article-part) is tracked but excluded from the headline
+   score.** It isn't consumed by any downstream table/view yet (Backlog:
+   "Qism-level grain"), and gold_id 6 is a concrete example of why folding
+   it in would be misleading: the text reads "642-moddasining ikkinchi va
+   uchinchi qismlari" (parts two AND three), but `extract()` has a known,
+   already-tracked gap (Backlog, found 2026-09-15) where a qism range
+   collapses to just its last ordinal — `Citation.qism` is a single string
+   field, structurally incapable of holding "parts two and three" today.
+   Recording that as a precision failure in the headline number would
+   conflate a load-bearing article-level bug class with a
+   known-non-load-bearing grain limitation that already has its own
+   backlog entry — so `expected` records what the current `Citation`
+   schema can express, and the gap is documented in the gold record's
+   `notes` field and in `score_gold.py`'s separate, non-headline
+   `grain_mismatch` counter instead.
+
+**Baseline result**: `python score_gold.py` → **precision 68/68 (100%),
+recall 68/68 (100%)**, 0/50 drift, 0 qism grain mismatches surfaced today
+(gold_id 6's is pre-recorded as a known limitation, not a fresh mismatch,
+since `expected` was built to match what the schema can express — see
+above). All 50 read cases held up, including non-trivial ones: 8 plenum
+resolution titles correctly reduced to a bare `act` citation via the
+`qarori`/`axborotnoma`/`№` stop words (a resolution *about* the Code isn't
+a Code article, and the Code's own gazette-publication parenthetical
+listing "56-modda, 241-modda, ..." is a bibliographic locator, not a list
+of cited articles — both previously-fixed classes of bug, still holding);
+6 `self_reference` anchors with no pinned article number correctly
+producing *no* citation at all (confirmed this is `extract()`'s deliberate
+design — the bare-`act` fallback only fires for
+`kind == 'fuqarolik_kodeksi'`, not `self_reference`/`fk_alias`, since an
+article-less "this Code provides for..." inside the Code's own text isn't
+a meaningful citation edge the way an external act naming the Code is);
+2 cases where a second, different code's own article list sitting in the
+same sentence right after the Civil Code's citation is correctly excluded
+by `RE_STOP`'s `kodeksining`/`Qonunining`. No new bug found — the first of
+10 sampling sessions (09-04 through 09-20) not to. That's a real,
+informative result the scoring layer now preserves as a comparable number
+instead of losing it the way every prior session's read-and-discard
+sample would have.
+
+**Scope explicitly not done today**: only 50 of ~3251 candidate anchor
+windows (2599 hit + 652 empty, corpus-wide) are annotated — this is a
+first batch establishing the scoring layer and a baseline, not corpus-wide
+coverage. See Active threads and Backlog for what a future Extractor
+session should do with it (grow the set with a new `--seed` batch, or add
+a targeted record any time a new bug is found and fixed, so fixes become
+permanent regression checks).
+
+`verify_transfer.py`: all checks green, unaffected (`corpus.duckdb` was
+not touched — this thread's artifacts are two new/modified pure-Python
+files plus a committed JSON gold set, no pipeline script ran against the
+database). `python citation_extractor.py`: 47/47 self-tests still pass.
+`pyflakes score_gold.py build_gold_sample.py`: clean.
 
 ### 2026-09-19 — Cleanup rotation: ran a static-analysis pass (`pyflakes`) over the whole repo, found and fixed 9 real dead-code/import issues across 5 files
 
