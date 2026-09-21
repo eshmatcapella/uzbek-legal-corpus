@@ -727,6 +727,34 @@ def main() -> int:
     """)
     con.commit()
 
+    # A finer-grained currency signal than v_act_currency's whole-act
+    # supersession: `repeal_clause.target_locator IS NOT NULL` rows record an
+    # act that is itself still current law but has had one or more individual
+    # articles voided by a *later* cleanup act (the same "kuchini yoʻqotgan
+    # deb topilsin" list, just naming one article instead of the whole act —
+    # see the target_locator build above). Not surfaced anywhere until now
+    # (flagged 2026-09-18 in DAILY_REVIEW.md); one row per dst_doc_id so it
+    # joins the same way v_act_currency does.
+    con.execute("""
+        CREATE OR REPLACE VIEW v_act_partial_repeal AS
+        SELECT r.dst_doc_id AS doc_id,
+               count(*)                                AS n_voided,
+               string_agg(DISTINCT r.target_locator, ', ' ORDER BY r.target_locator)
+                                                         AS locators,
+               max(sa.doc_date)                         AS last_voided_on,
+               arg_max(sa.doc_title, sa.doc_date)        AS last_voided_by_title,
+               arg_max(r.src_doc_id, sa.doc_date)        AS last_voided_by_doc_id
+        FROM repeal_clause r
+        JOIN act sa ON sa.doc_id = r.src_doc_id
+        WHERE r.target_locator IS NOT NULL AND r.dst_doc_id IS NOT NULL
+        GROUP BY r.dst_doc_id
+    """)
+    con.commit()
+    n_partial_acts = con.execute(
+        "SELECT count(*) FROM v_act_partial_repeal").fetchone()[0]
+    log(f"\nv_act_partial_repeal: {n_partial_acts} acts have at least one "
+        "individually-voided article/band (still current law overall)")
+
     log("\nGeneral Part coverage:")
     cov = con.execute(f"""
         SELECT count(DISTINCT dst_norm_id) FROM link_edge

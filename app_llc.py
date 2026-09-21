@@ -371,21 +371,31 @@ def page_acts() -> None:
     route = st.radio("Route", ["cites_cc_foundation", "names_llc_law"], horizontal=True)
     hide_dead = st.toggle("Hide superseded", value=True)
     rows = q("""
-        SELECT tier, doc_title, doc_date, n_hits, stages, derived_status, evidence
-        FROM llc_implementing_act
-        WHERE route = ? AND (? OR derived_status <> 'superseded')
-        ORDER BY tier, n_hits DESC
+        SELECT l.tier, l.doc_title, l.doc_date, l.n_hits, l.stages,
+               l.derived_status, l.evidence,
+               p.n_voided, p.locators, p.last_voided_on, p.last_voided_by_title
+        FROM llc_implementing_act l
+        LEFT JOIN v_act_partial_repeal p ON p.doc_id = l.doc_id
+        WHERE l.route = ? AND (? OR l.derived_status <> 'superseded')
+        ORDER BY l.tier, l.n_hits DESC
     """, [route, not hide_dead])
     st.write(f"**{len(rows)}** acts")
     for tier in sorted({r[0] for r in rows}):
         st.markdown(f"### Tier {tier} — {TIER_LABEL.get(tier, '?')}")
-        for t_, title, date, n, stages, derived, ev in [r for r in rows if r[0] == tier]:
+        for (t_, title, date, n, stages, derived, ev,
+             n_voided, locators, voided_on, voided_by) in [r for r in rows if r[0] == tier]:
             dead = " 🔴" if derived == "superseded" else ""
-            with st.expander(f"{title[:95]} · {date or '—'} · {n} hit(s){dead}"):
+            partial = " ⚠️" if n_voided else ""
+            with st.expander(f"{title[:95]} · {date or '—'} · {n} hit(s){dead}{partial}"):
                 if stages:
                     st.caption(f"touches LLC stage(s): {stages}")
                 if derived == "superseded":
                     st.error("Superseded by a later act — not current law.")
+                if n_voided:
+                    st.warning(f"Still current law overall, but **{n_voided}** of its "
+                               f"own provisions ({locators}) have been individually "
+                               f"voided — most recently by {voided_by[:80] if voided_by else 'a later act'} "
+                               f"on {voided_on}.")
                 st.caption(f"…{ev}…")
 
 

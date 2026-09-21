@@ -22,6 +22,69 @@ How to use this file each session:
 
 ## Active threads
 
+- **`repeal_clause.target_locator` surfaced: built and closed 2026-09-21.**
+  Picked up the Data currency backlog item flagged 2026-09-18 ("isn't
+  surfaced anywhere yet") — every partial repeal-list item (an act that
+  voids one specific article of another act, not the whole thing) already
+  had its target article/band recorded in `target_locator`, but neither app
+  showed it, so a reader had no way to see that an act which reads
+  "current law" in the whole-act `v_act_currency` sense might still have
+  individual provisions dead. Built `v_act_partial_repeal` in
+  `build_links.py`, right after `v_act_currency`: one row per `dst_doc_id`
+  (article-voiding acts only, i.e. `target_locator IS NOT NULL`), aggregating
+  count of voided provisions, the distinct locator text, and the most
+  recent voiding act/date (joined through `repeal_clause.src_doc_id ->
+  act.doc_date`, since `repeal_clause.cited_date` is the *target* act's own
+  adoption date, not the repeal date — easy to get backwards, checked
+  carefully against the schema comment before writing the join).
+  **Measured, corpus-wide**: 137 acts (of the acts named anywhere in
+  `repeal_clause`) have at least one individually-voided provision while
+  remaining current law overall — 384 are article-level (`modda`), 14 are
+  numbered-item-level (`band`); zero `qism`/`bob`/`paragraf` locators exist
+  in the actual data even though the regex allows them (not a bug — just
+  what the corpus's repeal lists happen to name). Of the 137, 28 *also* have
+  a later whole-act repeal on record — the natural legislative lifecycle of
+  "several cleanup laws prune individual articles over the years, then a
+  final act repeals what's left," both signals correctly coexisting rather
+  than conflicting. Checked where this actually lands in the two apps'
+  existing data before building UI: 20 of the LLC dossier's 129
+  distinct implementing acts (`llc_implementing_act`) carry this signal (2
+  of 74 `cites_cc_foundation`, 19 of the rest under `names_llc_law`, one
+  act counted in both routes) — a real, non-trivial fraction of "acts this
+  dossier calls live" that had zero visibility into partial death. Wired
+  into both apps the same way the existing 🔴 whole-act badge works: a new
+  ⚠️ marker on the act's expander header plus an `st.warning()` inside
+  naming the count, the locators, and who voided them most recently —
+  `app_llc.py`'s `page_acts()` (LEFT JOIN alongside the existing
+  `llc_implementing_act` query) and `app_hierarchy.py`'s `page_article()`
+  realization-pyramid loop (LEFT JOIN alongside the existing
+  `v_act_currency` join, same GROUP BY extension). Verified live in both
+  running apps via Playwright — screenshotted the LLC dossier's
+  `names_llc_law` route showing 12+ ⚠️-marked acts with one expanded
+  (2011 amendment act: "6 provisions individually voided... most recently
+  on 2025-07-10"), and the General Part explorer's Article 14 (cited by a
+  2016 act with 6 voided provisions, one of which is directly relevant:
+  Article 14 of *that citing act itself* was later gutted, "14-modda ...
+  toʻrtinchi qism deb hisoblansin" visible in the same evidence snippet).
+  Re-ran `build_links.py` against the existing `corpus.duckdb` (not a
+  from-scratch rebuild — only this file changed); `repeal_clause`,
+  `article_amendment`, and edge counts are byte-for-byte identical to
+  2026-09-20's run, confirming the new view is additive and touches no
+  existing table. Re-ran `build_llc.py`: `llc_implementing_act` numbers
+  (74/74 route counts, 13/74 superseded on `cites_cc_foundation`) unchanged.
+  `pyflakes build_links.py app_hierarchy.py app_llc.py`: clean.
+  `verify_transfer.py`: all checks green, same INFO-line numbers as
+  2026-09-20 (248 superseded acts, 494 stale edges — this feature doesn't
+  touch whole-act supersession at all, by design). This closes the backlog
+  item outright — nothing scoped to `target_locator` visibility is left
+  open. Possible future angle, not pursued today: the same "count of
+  individually-voided provisions" signal could be surfaced on
+  `app_hierarchy.py`'s `page_structure()` tree view too (currently only
+  shows realizing-act counts, no currency at all there) — not done since
+  today's brief was specifically "surface `target_locator`", and
+  `page_structure()`'s existing scope is Civil Code structure, not
+  third-party acts' own internal currency.
+
 - **Gold-set scoring layer: built 2026-09-20, baseline measured, thread
   open for the next sampling round.** Picked up the Extractor backlog's
   longest-standing open item ("Build the gold set") — `build_gold_sample.py`
@@ -377,10 +440,13 @@ How to use this file each session:
   Active threads and Log), Extractor 09-20 (built the gold-set scoring
   layer, `gold_citations.json` + `score_gold.py`, baseline 100%/100% on 50
   windows — see Active threads and Log; first sample not to find a new bug,
-  breaking the 9-session streak) — of the last five sessions (09-16 through
-  09-20), Extractor and Data currency are tied at two each and Cleanup has
-  one; next session should prefer Data currency, the longer-idle of the two
-  (last touched 09-18 vs. Extractor's 09-20).
+  breaking the 9-session streak), Data currency 09-21 (built and shipped
+  `v_act_partial_repeal`, the "which articles of this act have been
+  individually voided" signal flagged as unbuilt 2026-09-18 — see Active
+  threads and Log) — of the last five sessions (09-17 through 09-21),
+  Extractor has two, Data currency has two, Cleanup has one; next session
+  should prefer Extractor or Cleanup over Data currency, which just went
+  twice in three days.
 
 - **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
   four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -644,16 +710,12 @@ How to use this file each session:
   Active threads and Log, 2026-09-18) — the "keep the opt-in toggle" decision
   and its reasoning (article 62 has zero surviving evidence either way) are
   unaffected.
-- **`repeal_clause.target_locator` isn't surfaced anywhere yet.** Added
-  2026-09-18 alongside the whole-act/partial-repeal fix (see Active
-  threads): every partial repeal-list item now records which article/qism/
-  band/bob/paragraf of the named act was voided (398/885 items), but neither
-  app displays it — there's no per-article currency table for an arbitrary
-  (non-Civil-Code) act the way `article_amendment`/`v_article_currency`
-  exists for the Code itself. Could be worth its own small view/table if a
-  future session wants "which articles of this act have been individually
-  voided" as a currency signal, but that's a new feature, not a bug fix, and
-  wasn't in today's scope.
+- ~~**`repeal_clause.target_locator` isn't surfaced anywhere yet.**~~ **Built
+  and closed 2026-09-21**: new `v_act_partial_repeal` view (one row per
+  voided-but-not-whole-act `dst_doc_id`, 137 acts corpus-wide) wired into
+  both apps as a ⚠️ marker alongside the existing 🔴 whole-act badge. See
+  Active threads and Log for the full measurement (20/129 LLC implementing
+  acts carry this signal) and the two apps' exact wiring.
 
 ### Cleanup
 - ~~**Retire superseded prototypes.**~~ **Done 2026-09-07**: deleted
@@ -685,6 +747,102 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-21 — Data currency rotation: built `v_act_partial_repeal`, surfaced individually-voided-provision currency in both apps
+
+Rotation note from 09-20 flagged Data currency as the longer-idle of the
+two threads (last touched 09-18 vs. Extractor's 09-20). Checked the Data
+currency backlog: only one item wasn't struck through — "`target_locator`
+isn't surfaced anywhere yet," flagged 2026-09-18 the same day
+`target_locator` itself was built (the column recording which single
+article/band of a *partially* repealed act was voided) but never wired
+into anything downstream. Picked that up rather than re-measuring an
+already-closed item.
+
+**Environment note** (same cold-start gotcha as 09-19/09-20): fresh clone
+had neither `git-lfs`, `duckdb`, `pyflakes`, `streamlit`, nor `playwright`
+installed; installed all five. `git status` showed HEAD detached from
+`refs/heads/main` one commit *behind* a stale cached `origin/main` — a
+`git fetch origin main` resolved it immediately (local `main` was just
+behind, `git checkout -B main origin/main` fixed it) — huge relief this was
+the same one-fetch staleness 09-19 already diagnosed, not new data loss.
+
+**What was built**: `v_act_partial_repeal` in `build_links.py`, a view
+aggregating `repeal_clause` rows where `target_locator IS NOT NULL` (an
+act voided one specific provision of another act, not the whole thing) by
+`dst_doc_id` — count of voided provisions, the distinct locator text, and
+the most recent voiding act/date. One subtlety worth flagging for future
+readers of this table: `repeal_clause.cited_date` is the *target* act's
+own adoption date (used upstream to resolve `dst_doc_id` by date+title),
+not the date of the repeal itself — the repeal date has to come from
+`act.doc_date` for `src_doc_id`, joined in explicitly. Got this right by
+re-reading the `repeal_clause` build loop's column order before writing
+the join, not by trial and error against the output.
+
+**Measured, corpus-wide**: 137 acts have at least one individually-voided
+provision while remaining current law overall (not the 45%/398 raw
+`repeal_clause` items — that's items, this is distinct acts). 384 of the
+398 partial items are article-level (`modda`), 14 are numbered-item-level
+(`band`); zero `qism`/`bob`/`paragraf` locators occur in the actual data
+even though `re_target_locator` (built 09-18) allows all four — not a bug,
+just what the corpus's repeal lists happen to name in practice, confirmed
+by grouping every distinct `target_locator` value and pattern-matching the
+unit word. 28 of the 137 *also* have a later whole-act repeal on record —
+inspected a couple by hand, and this is the ordinary legislative lifecycle
+(cleanup laws prune individual articles over several years, then a final
+act repeals whatever's left), not a data conflict — both signals correctly
+coexist rather than needing to be reconciled into one.
+
+**Where this actually lands**: checked against the LLC dossier's own data
+before building UI, since "worth a look" backlog items sometimes turn out
+to hit zero real rows. They don't here — 20 of `llc_implementing_act`'s 129
+distinct acts carry this signal (2 of 74 under `cites_cc_foundation`, 19
+under `names_llc_law`, one act counted under both routes), meaning roughly
+1 in 6 acts the dossier calls "implementing" had zero visibility into
+partial death before today: an act reading as fully "current" in the
+existing whole-act `derived_status` sense could still have had several of
+its own provisions individually gutted by later cleanup laws.
+
+**UI wiring**: mirrored the existing 🔴 whole-act-superseded pattern rather
+than inventing a new one. `app_llc.py`'s `page_acts()` — `LEFT JOIN
+v_act_partial_repeal` alongside the existing `llc_implementing_act` query,
+a ⚠️ appended to the expander header, and an `st.warning()` inside naming
+the count, the locators, and who voided them most recently.
+`app_hierarchy.py`'s `page_article()` realization-pyramid loop — the same
+pattern, `LEFT JOIN v_act_partial_repeal` alongside the existing
+`v_act_currency` join (extended the `GROUP BY` list to match), same ⚠️ +
+`st.warning()`. Verified live in both running apps via Playwright, not
+just by reading the diff: screenshotted the LLC dossier's `names_llc_law`
+route with `hide_dead` on, showing a dozen ⚠️-marked "current law" acts and
+one expanded (a 2011 amendment act: "Still current law overall, but 6 of
+its own provisions (11-moddasi, 19-moddasi, 22-moddasi, 23-moddasi,
+6-moddasi, 8-moddasi) have been individually voided — most recently by
+[...] on 2025-07-10"); and the General Part explorer's Article 14, cited
+by a 2016 act itself later shown to have 6 voided provisions — one of
+which is directly visible in the same evidence snippet already displayed
+("14-modda ... toʻrtinchi qism deb hisoblansin", i.e. that citing act's own
+Article 14 was later gutted, an almost-too-neat coincidence confirmed by
+reading the actual text, not assumed from the article number matching).
+
+**Verification**: re-ran `build_links.py` against the existing
+`corpus.duckdb` (only this file changed, no full rebuild) — `repeal_clause`
+(885 items, 840 resolved), `article_amendment` (594 clauses -> 612 rows),
+and `link_edge` (9531) counts are byte-for-byte identical to 2026-09-20's
+last run, confirming the new view is purely additive. Re-ran `build_llc.py`
+— `llc_implementing_act` route/tier counts and the 13/74 `cites_cc_foundation`
+superseded count are unchanged. `pyflakes build_links.py app_hierarchy.py
+app_llc.py`: clean. `python verify_transfer.py`: **all checks green**, same
+INFO-line numbers as 2026-09-20 (248 acts provably superseded, 494 stale
+realization edges) — this feature is a new, additive currency signal, not
+a change to whole-act supersession, so nothing there was expected to move
+and nothing did.
+
+**Scope explicitly not done today**: `page_structure()` in
+`app_hierarchy.py` (the structural tree view) still shows only realizing-act
+counts with no currency signal of any kind — a future session could extend
+this same view there, but that page's existing scope is Civil Code
+structure, not third-party acts' own internal currency, so it wasn't part
+of today's "surface `target_locator`" brief.
 
 ### 2026-09-20 — Extractor rotation: built the gold-set annotation/scoring layer (`gold_citations.json` + `score_gold.py`), baseline precision/recall 100%/100% on 50 hand-verified windows
 

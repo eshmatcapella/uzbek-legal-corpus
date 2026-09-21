@@ -221,11 +221,13 @@ def page_article() -> None:
         acts = q("""
             SELECT r.src_doc_id, r.src_doc_title, r.src_doc_date, r.src_url,
                    count(*) AS n, max(r.hierarchy_rel) AS rel,
-                   c.derived_status, c.repealed_by_title
+                   c.derived_status, c.repealed_by_title,
+                   p.n_voided, p.locators, p.last_voided_on, p.last_voided_by_title
             FROM v_realization r
             LEFT JOIN v_act_currency c ON c.doc_id = r.src_doc_id
+            LEFT JOIN v_act_partial_repeal p ON p.doc_id = r.src_doc_id
             WHERE r.norm_id = ? AND r.src_tier = ? AND r.hierarchy_rel = ANY(?)
-            GROUP BY 1, 2, 3, 4, 7, 8
+            GROUP BY 1, 2, 3, 4, 7, 8, 9, 10, 11, 12
             HAVING NOT (? AND c.derived_status = 'superseded')
             ORDER BY (c.derived_status = 'superseded'), n DESC, r.src_doc_date
         """, [norm_id, tier, rels, hide_dead])
@@ -235,14 +237,22 @@ def page_article() -> None:
         dead_note = f" · {n_dead} superseded" if n_dead else ""
         st.markdown(f"#### Tier {tier} — {TIER_LABEL.get(tier, '?')} "
                     f"({len(acts)} act{'s' if len(acts) != 1 else ''}{dead_note})")
-        for doc_id, doc_title, doc_date, url, n, rel, derived, rep_by in acts:
+        for (doc_id, doc_title, doc_date, url, n, rel, derived, rep_by,
+             n_voided, locators, voided_on, voided_by) in acts:
             dead = " 🔴" if derived == "superseded" else ""
+            partial = " ⚠️" if n_voided else ""
             head = (f"{doc_title[:110]}  ·  {doc_date or 'no date'}  ·  "
-                    f"{n} citation(s){dead}")
+                    f"{n} citation(s){dead}{partial}")
             with st.expander(head):
                 if derived == "superseded":
                     st.error(f"Superseded by: {rep_by or 'a later act'} — "
                              "not current law.")
+                if n_voided:
+                    st.warning(f"Still current law overall, but **{n_voided}** of its "
+                               f"own provisions ({locators}) have been individually "
+                               f"voided — most recently by "
+                               f"{voided_by[:80] if voided_by else 'a later act'} "
+                               f"on {voided_on}.")
                 if url:
                     st.caption(f"[source]({url})  ·  {REL_LABEL.get(rel, rel)}")
                 for (ev, qism, conf, kind, amb, p_no, p_title,
