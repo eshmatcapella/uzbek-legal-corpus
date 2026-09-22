@@ -139,6 +139,52 @@ How to use this file each session:
   `score_gold.py` after any `citation_extractor.py` change from now on —
   it's a real regression signal that didn't exist before today.
 
+  **2026-09-22: grew the set to 100, found one small real gap.** Followed
+  path (a) above — `build_gold_sample.py --seed 20260922 --n 50` (confirmed
+  disjoint from the 09-20 batch: zero `(row_id, field, anchor_start)`
+  overlap), read all 50 windows by hand against the raw Uzbek text, merged
+  into `gold_citations.json` as `gold_id` 50-99. 49/50 read exactly as
+  `extract()` already produces (including a `self_reference` anchor scoped
+  correctly to stop right where the *next* `mazkur Kodeksning` anchor takes
+  over — the same 2026-09-17 "different anchor, not a miss" mechanic this
+  scorer's recall/precision split exists to handle, confirmed still working
+  as designed rather than assumed). The 50th (`gold_id` 52, row 46605, the
+  Code's own cross-reference commentary) is a real, if tiny, gap: LexUZ
+  writes "mazkur Kodeksning 65-bobi[ning] 1-paragrifi" — misspelling
+  "paragrafi" as "paragrifi" — identically twice in the same row. The
+  chapter+section lookahead inside `extract()` requires the literal
+  substring "paragraf", so both occurrences fall back to a bare
+  chapter-65 citation, silently losing the section-1 grain (this *is*
+  downstream-visible, unlike `qism`: `dst_kind` would read `section` not
+  `chapter`, a real `link_edge` column, so it doesn't get the same
+  qism-style exclusion from scoring). Measured corpus-wide before deciding
+  what to do about it: exactly one other row anywhere in the corpus
+  contains any "paragrif" spelling (row 25664), and it's entirely about a
+  different Cabinet committee's own *nizom* — no "Fuqarolik"/"FK" anchor
+  anywhere in that row at all, so it was never even a candidate row for
+  this extractor. That makes the real, in-scope footprint exactly 2
+  occurrences in exactly 1 row, corpus-wide. Recorded the gold entry with
+  its true (typo-corrected) expected output rather than silently matching
+  today's coarser behavior — `verdict: known_gap`, not `correct` — so the
+  score is honest rather than inflated. **Not fixed**, on the same
+  single-occurrence-scope precedent this project already applied to the
+  2026-09-15 chapter+paragraph space-separator gap (1 occurrence, also left
+  unfixed despite a similarly cheap possible fix) — added to Backlog
+  instead (see Extractor recall/precision) rather than special-casing one
+  more spelling variant into the regex for a single row. **New combined
+  score: precision 217/218 (99.5%), recall 217/218 (99.5%)** on 100
+  windows — the one mismatch is exactly the gap above (1 FP + 1 FN, same
+  underlying cause), everything else confirmed correct. This is a more
+  informative number than the previous batch's 100/100: it's the gold
+  set's first genuine, on-the-record miss, and it's now a permanent
+  regression check (`score_gold.py` will flag it again immediately if
+  `citation_extractor.py` changes touch the chapter+section lookahead, and
+  will flag it as *fixed* — precision/recall ticking back to 218/218 — the
+  day someone adds the "paragrif" spelling to the regex). Thread stays
+  open: 100/~3251 candidate windows is still a first few batches, not
+  corpus-wide coverage; next round, draw and annotate another disjoint
+  batch with a fresh `--seed`.
+
 - **`repeal_clause` whole-act/partial-repeal conflation: fixed 2026-09-18,
   closed.** Investigating whether the General Part explorer (`app_hierarchy.py`,
   which unlike the LLC dossier never surfaced act-level currency at all)
@@ -443,10 +489,16 @@ How to use this file each session:
   breaking the 9-session streak), Data currency 09-21 (built and shipped
   `v_act_partial_repeal`, the "which articles of this act have been
   individually voided" signal flagged as unbuilt 2026-09-18 — see Active
-  threads and Log) — of the last five sessions (09-17 through 09-21),
-  Extractor has two, Data currency has two, Cleanup has one; next session
-  should prefer Extractor or Cleanup over Data currency, which just went
-  twice in three days.
+  threads and Log), Extractor 09-22 (grew the gold set to 100 records with
+  a second disjoint 50-window batch, seed 20260922; found and documented
+  one small real gap — a "paragrafi"/"paragrifi" misspelling losing
+  chapter+section grain in exactly 1 row/2 occurrences — see Active
+  threads, Backlog, and Log; new combined score 217/218 = 99.5% precision
+  and recall) — of the last five sessions (09-18 through 09-22), Data
+  currency has two, Extractor has two, Cleanup has one; next session should
+  prefer Cleanup or Data currency over Extractor, which just went twice in
+  four days (though the two Extractor rounds were three sessions apart,
+  09-20 and 09-22, not back-to-back).
 
 - **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
   four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -504,11 +556,14 @@ How to use this file each session:
 ## Backlog
 
 ### Extractor recall/precision
-- ~~**Build the gold set.**~~ **Scoring layer built 2026-09-20** — see
-  Active threads and Log for the full detail. `gold_citations.json`
-  (50 hand-verified anchor occurrences) + `score_gold.py` (the scorer) now
-  exist; baseline **precision 68/68 (100%), recall 68/68 (100%)**. Not
-  closed outright — 50 windows is a first batch, not corpus-wide coverage
+- ~~**Build the gold set.**~~ **Scoring layer built 2026-09-20, grown to 100
+  records 2026-09-22** — see Active threads and Log for the full detail.
+  `gold_citations.json` (100 hand-verified anchor occurrences, two disjoint
+  50-window batches) + `score_gold.py` (the scorer) now exist; current
+  score **precision 217/218 (99.5%), recall 217/218 (99.5%)** — the one
+  mismatch is the documented "paragrif" spelling gap below, recorded with
+  its true expected output rather than silently marked correct. Not closed
+  outright — 100 windows is still two batches, not corpus-wide coverage
   (2599 hit + 652 empty candidate windows exist). **Next step, whenever
   Extractor rotation comes up again**: draw another disjoint batch with a
   new `--seed`, hand-annotate it, and merge into `gold_citations.json` to
@@ -523,11 +578,35 @@ How to use this file each session:
   recall against the whole field's `extract()` output rather than each
   anchor's own local bucket (see Active threads for the full reasoning).
   Hypothesis-driven sampling had found a real, fixable bug in every one of
-  9 sessions running before this one (qism/band 09-04, Qonun 09-05, doc_id
+  9 sessions running before 2026-09-20 (qism/band 09-04, Qonun 09-05, doc_id
   09-08, chapter+paragraph comma-attachment 09-10, qonunning 09-12, three on
-  09-15, two more on 09-17) — 2026-09-20's 50-window batch is the first to
-  come back clean (100/100), which the scoring layer now records as a real,
-  comparable data point rather than losing it to an unsaved one-off read.
+  09-15, two more on 09-17); 2026-09-20's batch was the first to come back
+  clean (100/100); 2026-09-22's batch found one small real gap (see below) —
+  see Active threads for the full measurement of each.
+- **LexUZ misspells "paragrafi" as "paragrifi" in one row — chapter+section
+  grain silently lost.** Found 2026-09-22 while annotating the second
+  gold-set batch (see Active threads): row 46605 (the Civil Code's own
+  cross-reference commentary) writes "mazkur Kodeksning 65-bobi[ning]
+  1-paragrifi" — twice, identically, in the same row — instead of
+  "paragrafi". `extract()`'s chapter+section lookahead only matches the
+  literal substring "paragraf", so both occurrences fall back to a bare
+  chapter-65 citation, losing the section-1 grain (`dst_kind` would read
+  `chapter` instead of `section` in `link_edge` — a real column, unlike
+  `qism`, so this one isn't exempt from scoring the way qism-grain issues
+  are). Measured corpus-wide: exactly one other row anywhere has any
+  "paragrif" spelling (row 25664), and it's about an unrelated Cabinet
+  committee's own *nizom* with no Civil-Code/FK anchor anywhere in that row
+  at all — never a candidate row for this extractor in the first place. So
+  the real, in-scope footprint is exactly 2 occurrences in exactly 1 row,
+  corpus-wide. Not fixed today — same single-occurrence-scope precedent
+  this project already applied to the 2026-09-15 chapter+paragraph
+  space-separator gap (1 occurrence, also left unfixed despite a similarly
+  cheap fix) — but recorded as a `known_gap` gold record (`gold_id` 52,
+  see `gold_citations.json`) with its true expected output, so it's a
+  standing, honest regression check rather than a silently-inflated score.
+  If ever picked up: add `paragraf|paragrif` (or a small edit-distance
+  tolerance) to both `RE_CLAUSE`'s unit alternation and the chapter+section
+  lookahead's literal match inside `extract()`.
 - **`RE_STOP`'s `break`-vs-`continue` design.** Once a stop-word is found in
   the gap before a clause, `extract()` abandons the *rest* of that anchor's
   window, not just the one stopped clause — a deliberate, conservative
@@ -605,9 +684,16 @@ How to use this file each session:
   (like the "14" here) still comes through fine only because it's the last
   item before the unit word, not because "hamda" is understood — a case
   shaped like "14 hamda 20-moddasi" (hamda-joined, nothing after) would
-  still lose "14". Not measured corpus-wide today (found by inspection, not
-  a targeted search) — worth a real frequency check before deciding whether
-  to add "hamda" alongside "va" in the split regex.
+  still lose "14". **Measured corpus-wide 2026-09-22** (regex search for
+  `\d+(?:\s*[-–—]\s*\d+)?\s+hamda\s+\d+\s*[-–—]?\s*(modda|bob|paragraf)`
+  across all three source fields): 3 raw occurrences total, of which 2 are
+  inside `Fuqarolik protsessual kodeksi` (FPK) text — already correctly
+  excluded entirely by `RE_STOP_ABBR`, not this project's Code at all — and
+  only 1 (the row 24219 case already known) is a genuine in-scope Civil
+  Code citation. Same tiny single-occurrence shape as the "paragrif"
+  spelling gap found the same day (see Log/Active threads) — not worth
+  fixing today for the same reason, but now a real measured count instead
+  of "not measured."
 - **Chapter+paragraph's own space-separator gap.** Found 2026-09-15 while
   fixing the main space-separator gap (see Log): row 42566 reads
   "22-bobining 2 paragrafi" (space, no hyphen) — the *main* `RE_CLAUSE` fix
@@ -747,6 +833,104 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-22 — Extractor rotation: grew the gold set to 100 records, found and documented one real grain gap
+
+Rotation note from 09-21 flagged Extractor and Cleanup as due (Data
+currency had gone twice in three days). Picked Extractor's gold-set thread
+over a fresh Cleanup pass — it had an explicit, already-recorded next step
+("draw another disjoint batch with a new `--seed`") rather than an
+open-ended re-audit, and growing a committed, scored ground-truth set is
+higher-leverage than re-confirming Cleanup is still empty a third time.
+
+**Environment note** (same cold-start gotcha as every session 09-19
+onward): fresh clone had neither `git-lfs`, `duckdb`, `pyflakes`, nor
+`streamlit` installed, and HEAD was detached one commit behind origin/main
+— installed all four and ran `git fetch origin main && git checkout -B
+main origin/main` to resync, same fix as prior sessions. `git lfs pull`
+was also needed this time (the raw parquet came down as a 134-byte LFS
+pointer, not the real 163MB file) — `verify_transfer.py`'s AC3 check
+caught this immediately and correctly (`InvalidInputException: No magic
+bytes found`) rather than silently passing on a truncated file, which is
+exactly what that check is for.
+
+**What was done**: `python build_gold_sample.py --n 50 --seed 20260922`
+drew a fresh stratified sample (candidate pool unchanged from 09-20:
+2599 hit + 652 empty windows, confirming no corpus drift). Verified it was
+fully disjoint from the existing 50 records by `(row_id, field,
+anchor_start)` before reading — zero overlap. Read all 50 windows by hand
+against the raw Uzbek parquet text and `citation_extractor.py`'s own
+stop-word/anchor rules, the same way 09-15/09-17/09-20 did. Spent extra
+care re-verifying, not just assuming, a few structurally tricky cases
+matched the *design*, not just "looked plausible": a 39-citation
+list/range spanning "14, 236 — 258, 325 — 339-moddalari" (counted the
+range math by hand: 1 + 23 + 15 = 39, matched); a window where two
+separate `mazkur Kodeksning` self-reference anchors sit close together
+("...57-bobi (985—1004-moddalar)... 58-bobi (1023—1030-moddalar)...") —
+confirmed the *first* anchor's own bucket correctly stops at chapter 57's
+content and does NOT reach into chapter 58, because `extract()`'s window
+limit is the *next* anchor's start position, not a fixed character count;
+chapter 58's citations belong to that second anchor's own (unsampled)
+occurrence, not a miss on this one — this is the exact mechanic the
+2026-09-17 "different anchor, not a miss" lesson put in place, confirmed
+still working as designed rather than assumed.
+
+**Found**: 49/50 windows matched `extract()`'s current output exactly.
+The 50th (row 46605, the Civil Code's own cross-reference commentary)
+reads "mazkur Kodeksning 65-bobi[ning] 1-paragrifi" — LexUZ misspells
+"paragrafi" as "paragrifi", identically, twice in the same row (confirmed
+by reading the full row text, not just the sampled window). `extract()`'s
+chapter+section lookahead requires the literal substring "paragraf", so
+both occurrences fall back to a bare chapter-65 citation, silently losing
+the section-1 grain. This *is* downstream-visible unlike `qism` (a real
+`link_edge` column, `dst_kind`, would read `chapter` instead of `section`)
+so it doesn't get the same "not load-bearing yet" exemption qism-grain
+issues get. Measured corpus-wide before deciding what to do: searched
+every `article_text`/`cross_references`/`amendment_note` field for any
+"paragrif" spelling — exactly one other row (25664) has one, and it's
+entirely about an unrelated Cabinet committee's own *nizom* (no
+"Fuqarolik"/"FK" anchor anywhere in that row at all, confirmed by
+substring search), so it was never even a candidate row for this
+extractor. Real in-scope footprint: 2 occurrences, 1 row, corpus-wide.
+
+**Decision: documented, not fixed**, same single-occurrence-scope
+precedent this project already applied 2026-09-15 to the chapter+paragraph
+space-separator gap (1 occurrence, left unfixed despite an equally cheap
+possible fix) — a corpus-wide search that turns up exactly one row isn't
+worth widening a regex for today, but it's cheap to fix later (add
+`paragraf|paragrif` to `RE_CLAUSE`'s unit alternation and the
+chapter+section lookahead) if a corpus update ever makes it recur. Added
+to Backlog. Recorded the gold entry (`gold_id` 52) with its true,
+typo-corrected expected output rather than silently marking it "correct"
+to match today's coarser behavior — `verdict: known_gap` — so `score_gold.py`
+reports an honest miss instead of an inflated 100%, and the record becomes
+a permanent regression check: precision/recall will tick back to 218/218
+automatically the day someone does fix the spelling gap.
+
+**Measured**: merged both batches into `gold_citations.json` (100 records,
+`gold_id` 0-99, `_meta.batches` records both seeds). `python score_gold.py`:
+**precision 217/218 (99.5%), recall 217/218 (99.5%)** — the single
+mismatch is exactly the "paragrif" gap (1 FP + 1 FN, same underlying
+cause), zero drift, everything else confirmed correct. This is a more
+informative number than 09-20's clean 100/100: it's the gold set's first
+genuine on-the-record miss rather than an unbroken streak that could read
+as "nothing's ever been found because nothing's being looked for hard
+enough." `python citation_extractor.py`: 47/47 self-tests still pass
+(untouched — no extractor code changed today, only the gold-set data
+file). `pyflakes build_gold_sample.py score_gold.py citation_extractor.py`:
+clean. `python verify_transfer.py`: **all checks green**, identical
+numbers to 09-21 (248 superseded acts, 494 stale edges, 9531 `link_edge`
+rows) — expected, since nothing in the pipeline itself changed, only the
+gold-set JSON (not read by any pipeline script).
+
+**Decided not to pursue today**: fixing the "paragrif" gap itself (see
+above — single-occurrence precedent). Also considered, and set aside in
+favor of the gold-set's explicit next step: the "hamda" list-conjunction
+backlog item (measured today as a side check while reading windows —
+3 raw corpus occurrences total, only 1 inside a real Civil Code anchor,
+same tiny single-occurrence shape as the paragraf gap — not written up as
+its own thread since the backlog entry already exists and the count
+doesn't change its "not worth fixing yet" status).
 
 ### 2026-09-21 — Data currency rotation: built `v_act_partial_repeal`, surfaced individually-voided-provision currency in both apps
 
