@@ -31,7 +31,6 @@ DB_PATH = ROOT / "corpus.duckdb"
 PARQUET = ROOT / "articles" / "train-00000-of-00001.parquet"
 
 # The institution.
-LLC_OKOZ = "03.03.05.04"          # Limited Liability Company. Additional Liability Company
 LLC_LAW_CURRENT = -8151376        # 2026-04-21, 71 articles, 8 chapters
 LLC_LAW_PRIOR = -22525            # 2001-12-06, repealed by art. 68 of the 2026 Law
 CC_GENERAL = -111189

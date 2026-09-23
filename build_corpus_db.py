@@ -35,7 +35,6 @@ DB_PATH = ROOT / "corpus.duckdb"
 
 CC_GENERAL_PART = -111189
 
-# Kelsenian tier of each act type. Lower number = higher in the pyramid.
 # Alignment decisions taken after reading both texts side by side.  Keyed by
 # norm_id.  The corpus is pinned at version_date 2026-06-29 while the English
 # markdown is a 2025 state, so a shared article number does not guarantee a
@@ -50,16 +49,6 @@ ALIGNMENT_OVERRIDES = {
         "Verified by reading both bodies on 2026-08-12. The other 9 superscript articles "
         "(173-1..173-7, 259-1, 358-1) and Article 26 itself were checked and align correctly.",
     ),
-}
-
-TIER = {
-    "constitution": 1,
-    "code": 2,
-    "law": 3,
-    "decree": 4,
-    "resolution": 5,
-    "order": 6,
-    "other": 9,
 }
 
 
@@ -207,6 +196,7 @@ def main() -> int:
             any_value(act_group_id),
             any_value(doc_title),
             any_value(doc_type),
+            -- Kelsenian tier of each act type. Lower number = higher in the pyramid.
             CASE any_value(doc_type)
                 WHEN 'constitution' THEN 1 WHEN 'code' THEN 2 WHEN 'law' THEN 3
                 WHEN 'decree' THEN 4 WHEN 'resolution' THEN 5 WHEN 'order' THEN 6

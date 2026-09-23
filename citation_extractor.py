@@ -59,7 +59,6 @@ RE_ANCHOR_CC = re.compile(r"Fuqarolik\s+kodeks(?:i\w*|ning)", re.IGNORECASE)
 RE_OLD_CODE = re.compile(r"19\d\d\s*-\s*yilgi\s*$", re.IGNORECASE)
 # "FK" as a standalone token, immediately followed by a number or a reference word.
 RE_ANCHOR_FK = re.compile(r"(?<![A-Za-zА-Яа-я0-9ʻʼ'-])FK(?:ning|ga|da|ni)?(?=\s+\d|\s+boshqa|\s+[0-9])")
-RE_FK_ALIAS_DEF = re.compile(r"bundan\s+buyon\s+matnda\s+FK\s+deb", re.IGNORECASE)
 # "ushbu/shu Kodeks" — only meaningful when the citing act IS the Code.
 RE_ANCHOR_SELF = re.compile(r"(?:ushbu|shu|mazkur)\s+Kodeks\w*", re.IGNORECASE)
 

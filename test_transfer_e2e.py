@@ -703,7 +703,9 @@ class TestTier2BoundaryAndEdgeCases(unittest.TestCase):
 
     def test_edge_missing_article_168(self):
         """Test missing article 168 (gap between 167 and 169)."""
-        art_168 = [a for a in self.extracted_articles if a["raw_id"] == "168"]
+        art_168 = [
+            a for a in self.extracted_articles if a["raw_id"] == EXPECTED_MISSING_ARTICLE
+        ]
         self.assertEqual(
             len(art_168),
             0,

@@ -84,7 +84,8 @@ class ContextTracker:
             "part": self.part,
             "section": self.section,
             "chapter": self.chapter,
-            "subsection": self.subsection
+            "subsection": self.subsection,
+            "paragraph_division": self.paragraph_division
         }
 
 

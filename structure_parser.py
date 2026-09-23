@@ -27,8 +27,6 @@ GENERAL_PART_LAST_ARTICLE = 385
 DOC_GENERAL = -111189
 DOC_SPECIAL = -180552
 
-ROMAN = {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6}
-
 RE_PART = re.compile(r"^\*\*Part\s+(I{1,3}|IV|V|VI)\.\s*(.+?)\*\*\s*$")
 RE_DOC_BREAK = re.compile(r"^\*\*Part\s+Two\*\*\s*$")
 RE_SUBSECTION = re.compile(r"^\*\*Subsection\s+(\d+)\.\s*(.+?)\*\*\s*$")

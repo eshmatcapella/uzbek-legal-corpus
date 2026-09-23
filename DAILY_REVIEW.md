@@ -494,11 +494,12 @@ How to use this file each session:
   one small real gap — a "paragrafi"/"paragrifi" misspelling losing
   chapter+section grain in exactly 1 row/2 occurrences — see Active
   threads, Backlog, and Log; new combined score 217/218 = 99.5% precision
-  and recall) — of the last five sessions (09-18 through 09-22), Data
-  currency has two, Extractor has two, Cleanup has one; next session should
-  prefer Cleanup or Data currency over Extractor, which just went twice in
-  four days (though the two Extractor rounds were three sessions apart,
-  09-20 and 09-22, not back-to-back).
+  and recall), Cleanup 09-23 (added `vulture` to the toolchain alongside
+  `pyflakes`, found and fixed 6 real dead-code items pyflakes structurally
+  cannot catch — see Active threads and Log) — of the last five sessions
+  (09-19 through 09-23), Cleanup has two, Data currency has two, Extractor
+  has one; next session should prefer Extractor or Data currency over
+  Cleanup, which just went twice in five days.
 
 - **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
   four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -528,6 +529,127 @@ How to use this file each session:
   (`pyflakes *.py`, not previously part of this project's toolchain) worth
   running again on a future Cleanup rotation rather than assuming it stays
   empty forever the way the original four backlog items did.
+  **2026-09-23**: re-ran `pyflakes *.py` first — clean, 0 issues, confirming
+  09-19's fixes held. Rather than re-confirm the same empty pyflakes result a
+  second time, widened the toolchain again: installed `vulture` (a dead-code
+  detector that does whole-repo unused-symbol analysis pyflakes structurally
+  can't — pyflakes only flags unused imports/locals within a single scope,
+  not an unused module-level constant or a written-but-never-read instance
+  attribute). At default confidence it found nothing; at `--min-confidence
+  60` it flagged 7 candidates across 6 files. Verified every one by hand
+  (grepped the whole repo for each symbol, read the surrounding code) before
+  touching anything — vulture's own docs warn it has no cross-file call-graph
+  and flags real false positives, so each finding got the same "verify
+  before fixing" treatment as pyflakes's hits, not a blind auto-fix. One
+  (`app_llc.py`'s unused `t_` tuple-unpack element) was already following
+  this codebase's `_`-prefix-for-unused convention and just needed the
+  rename to plain `_`, not a real bug — fixed as a free 1-line nit while in
+  the file, not counted as a "found bug." The other 6 were genuine, each
+  verified independently:
+  (1) `build_corpus_db.py`'s module-level `TIER` dict was never read
+  anywhere — the actual doc_type-to-tier mapping is a hardcoded `CASE`
+  expression inline in the `act` INSERT (found by grepping `tier` across the
+  file), so the dict was a stale, unreferenced duplicate of logic that had
+  already moved inline; deleted it and moved its explanatory comment down to
+  sit on the `CASE` that's actually load-bearing now, instead of orphaned
+  above an unrelated dict.
+  (2) `citation_extractor.py`'s `RE_FK_ALIAS_DEF` regex (matching "bundan
+  buyon matnda FK deb", the clause defining the FK abbreviation) was compiled
+  but never called from `extract()` or anywhere else — `build_links.py:129`
+  independently reimplements the identical pattern as a raw SQL
+  `regexp_matches` string against the parquet directly, which is the version
+  actually driving `allow_fk_alias` corpus-wide. The Python regex was a dead
+  duplicate of logic that lives in SQL now; deleted it (kept the SQL version,
+  since that's the one actually exercised and tested via `verify_transfer.py`
+  AC5).
+  (3) `structure_parser.py`'s `ROMAN` dict (roman numeral -> int) was never
+  read — `RE_PART` captures the roman numeral as a raw string used directly
+  in `node_id`, and each part's `ordinal` field comes from a simple
+  incrementing counter (`counters["part"] += 1`), not a numeral conversion;
+  deleted the dead dict.
+  (4) `test_transfer_e2e.py`'s `EXPECTED_MISSING_ARTICLE = "168"` constant
+  sat unused while the one test it should parametrize
+  (`test_edge_missing_article_168`) hardcoded the literal `"168"` directly —
+  inconsistent with every sibling `EXPECTED_*` constant in the same file,
+  which are all actually threaded into their tests. Fixed the test to use
+  the constant instead of deleting it, matching the established pattern.
+  (5) `parser.py`'s `ContextTracker.paragraph_division` attribute is
+  genuinely tracked (set from `PARAGRAPH_DIV_PATTERN`, reset on each new
+  chapter) but `snapshot()` — the method that turns the tracker into the
+  `structural_hierarchy` field written to `parsed_articles.json` — silently
+  dropped it, keeping only part/section/chapter/subsection. This directly
+  contradicts the module's own docstring, which lists "Paragraph Division"
+  as a tracked structural-context feature. Confirmed the pattern is real,
+  not a null-forever dead field: an independent regex count against the raw
+  markdown found exactly 10 `§`-division headers, matching the "10/10"
+  `--verify` check parser.py already runs on itself. Added
+  `"paragraph_division": self.paragraph_division` to `snapshot()`'s returned
+  dict — one line, matching how part/section/chapter/subsection already
+  flow through the identical mechanism. Regenerated `parsed_articles.json`
+  via `python3 parser.py --verify`: all 10/10 checks still pass, and a
+  before/after diff (scripted, not eyeballed) confirmed **zero** change to
+  any other field on any of the 394 articles — only the new key, populated
+  for exactly 109 articles across the 10 real `§` divisions, matching the
+  regex count exactly. Checked whether this needed a `build_corpus_db.py`
+  rerun: grepped the whole repo for `structural_hierarchy` and found it's
+  produced by `parser.py` but consumed by *nothing* downstream — not
+  `build_corpus_db.py`'s English-transfer alignment (which only reads
+  `title`/`clean_text`/`article_number_display`/`heading_type`/`titleless`/
+  `repealed`/`line_range`/`db_article_number_key`), not either Streamlit app.
+  So this fix makes the shipped `parsed_articles.json` artifact honest about
+  what it tracks, with zero effect on `corpus.duckdb` or either app — no
+  rebuild needed, and none done.
+  (6) `build_llc.py`'s `LLC_OKOZ = "03.03.05.04"` constant was never read in
+  its own file. Before deleting it, checked whether it *should* have been
+  wired into something — cross-referenced it against the independently-built
+  OKOZ classification axis (`build_okoz.py`) rather than assuming it was
+  simple dead weight, since the two axes (curated LLC foundation mapping vs.
+  regex-parsed OKOZ tree) had never been checked against each other before.
+  Confirmed `03.03.05.04` is a real, correctly-spelled OKOZ leaf ("Limited
+  Liability Company. Additional Liability Company") — not a typo or
+  hallucinated code. But queried `okoz_assignment` corpus-wide and found
+  **zero** General Part structural nodes are ever classified under
+  `03.03.05.*` (the "Business Partnerships and Companies" branch, LLC's own
+  parent) at all: article 62 (the LLC's Civil Code anchor) resolves instead
+  to the coarser sibling `03.03.04.00` ("Commercial Organisations"), because
+  its containing struct_node (`C4.S2`, articles 58-72) is literally titled
+  "Commercial Organizations" in the Code's own structure and the General
+  Part isn't subdivided any finer than that at the struct_node level — OKOZ
+  classification here is a title-literal match to the Code's own section
+  headings, not a semantic one, so it can't reach LLC-specific granularity
+  without a struct_node split this project has no reason to make today. Not
+  a bug in either axis — `LLC_OKOZ`'s value is correct as a label for the
+  *institution*, `okoz_assignment`'s value is correct as a classification of
+  the *section that contains it*; they're deliberately different grains that
+  happen to both be right. Confirmed `app_llc.py`'s sidebar caption already
+  displays "OKOZ 03.03.05.04" correctly as a hardcoded literal (not imported
+  from `build_llc.py` — checked, and found this project's apps never import
+  build-layer constants; `app_llc.py` already keeps its own local duplicates
+  of `LLC_LAW_CURRENT`/`LLC_LAW_PRIOR`/`DOC_GENERAL` rather than importing
+  them, an established convention, not an oversight to fix). So the constant
+  really was dead in its own file with no wiring gap to close; deleted it.
+  All 6 fixes verified together: `pyflakes *.py` and `vulture *.py
+  --min-confidence 60` both clean afterward; `python3 -m py_compile` on
+  every touched file; `score_gold.py` unchanged at 217/218 (confirms the
+  `citation_extractor.py` deletion is behaviorally inert); all 14
+  `test_transfer_e2e.py` tests pass, including the fixed one;
+  `python3 -m unittest`/47/47 extractor self-tests and `verify_transfer.py`
+  both green. Re-ran `build_llc.py` against the existing `corpus.duckdb` (the
+  one file among the six with pipeline side effects) and confirmed every
+  table's row count identical before/after — then **discarded** the
+  resulting `corpus.duckdb` diff rather than committing it: the bytes
+  differed (DuckDB's `CREATE OR REPLACE TABLE` doesn't serialize
+  deterministically) but every table's content was confirmed identical, so
+  committing it would have been exactly the "large binary diff for no
+  reason" this project's own build hygiene rule warns against. Checked both
+  apps live via Playwright (screenshots, not just a page-load check): loaded
+  `app_llc.py`'s `page_acts()` — the function with the `t_` rename — and
+  expanded a real row to confirm the tuple-unpack still renders correctly;
+  loaded `app_hierarchy.py` for the general no-exception check the other
+  five fixes need (none of them touch its code path directly). Nothing left
+  open here; `vulture *.py --min-confidence 60` is now a second repeatable
+  check worth re-running on the next Cleanup rotation, the same way 09-19
+  established `pyflakes` as one.
 
 - **Smaller, lower-priority residual: qism/band tail truncation.** The
   qism/band attachment check added today (see Log) has 10 residual misses
@@ -802,6 +924,26 @@ How to use this file each session:
   both apps as a ⚠️ marker alongside the existing 🔴 whole-act badge. See
   Active threads and Log for the full measurement (20/129 LLC implementing
   acts carry this signal) and the two apps' exact wiring.
+- **OKOZ classification can't express LLC-specific granularity anywhere in
+  the General Part today.** Found 2026-09-23 while deciding whether
+  `build_llc.py`'s dead `LLC_OKOZ = "03.03.05.04"` constant should be wired
+  into something (see Active threads' Cleanup entry for the full
+  investigation). Measured corpus-wide: `okoz_assignment` never classifies
+  any General Part struct_node under the `03.03.05.*` branch ("Business
+  Partnerships and Companies", LLC's own OKOZ parent) — article 62 (the
+  LLC's Civil Code anchor) lands on the coarser sibling `03.03.04.00`
+  ("Commercial Organisations") instead, because its containing struct_node
+  (`C4.S2`, arts 58-72) is titled exactly that in the Code's own structure
+  and the General Part isn't subdivided any finer at the struct_node level.
+  Not a bug — `build_okoz.py`'s classifications are title-literal matches to
+  the Code's own section headings, and are correct at that grain — but it
+  means the OKOZ axis and the LLC dossier's own institution-level curation
+  can never agree at a finer grain than "Commercial Organisations" without a
+  new struct_node (e.g. splitting `C4.S2` the way the LLC Law's own chapters
+  already split the institution). Worth a look only if OKOZ-level filtering
+  or breadcrumbs ever need to distinguish LLC-specific provisions from
+  general commercial-organization ones within the General Part — not
+  scoped or justified by today's single dead-constant finding alone.
 
 ### Cleanup
 - ~~**Retire superseded prototypes.**~~ **Done 2026-09-07**: deleted
@@ -829,10 +971,147 @@ How to use this file each session:
 - ~~**`hierarchy_engine.py`'s f-string SQL.**~~ **Closed 2026-09-07** by
   deleting the file (see above) rather than patching it, since it was
   already confirmed dead.
+- ~~**`pyflakes`-class dead code beyond unused imports/locals.**~~ **Found and
+  fixed 2026-09-23** via a new `vulture` pass (see Active threads and Log for
+  the full detail on all 6): a dead module-level dict duplicated by an inline
+  SQL `CASE` (`build_corpus_db.py`'s `TIER`), a dead regex duplicated by raw
+  SQL in `build_links.py` (`citation_extractor.py`'s `RE_FK_ALIAS_DEF`), a
+  dead roman-numeral dict superseded by a plain counter
+  (`structure_parser.py`'s `ROMAN`), an unused test constant wired into its
+  test instead of deleted (`test_transfer_e2e.py`'s
+  `EXPECTED_MISSING_ARTICLE`), a tracked-but-never-serialized parser field
+  fixed to match its own docstring's claim (`parser.py`'s
+  `paragraph_division` — see Active threads for why this needed no
+  `corpus.duckdb` rebuild), and a dead OKOZ-code constant kept unwired after
+  confirming, corpus-wide, that no General Part struct_node is classified
+  finer than "Commercial Organisations" today (`build_llc.py`'s `LLC_OKOZ` —
+  see Active threads for the full cross-axis measurement). `vulture *.py
+  --min-confidence 60` is now clean and is a second repeatable Cleanup check
+  alongside `pyflakes`.
 
 ---
 
 ## Log
+
+### 2026-09-23 — Cleanup rotation: added `vulture` to the toolchain, found and fixed 6 real dead-code items pyflakes can't catch
+
+Rotation note from 09-22 flagged Cleanup or Data currency as due (Extractor
+had gone twice in four days: 09-20, 09-22). Picked Cleanup — its own
+rotation note (09-19) had already flagged `pyflakes` as worth re-running
+periodically rather than assumed permanently clean, and it hadn't been
+re-run since.
+
+**Environment note** (same cold-start pattern as every session since
+09-19): fresh clone had `duckdb`, `streamlit`, `playwright`, `pyflakes`
+missing, plus `git-lfs` itself not installed at the OS level this time —
+`articles/train-00000-of-00001.parquet` came down as a 134-byte LFS pointer
+(`git lfs ls-files` failed with "not a git command" until `apt-get install
+-y git-lfs` + `git lfs install --local` + `git lfs pull`). Confirmed the
+pulled file is correct before using it: 163,356,047 bytes, sha256
+`e7a30c53...` matching the pointer's own recorded oid, 54,173 parquet rows.
+`build_llc.py` failing with `InvalidInputException: No magic bytes found`
+on the first attempt was this same gotcha, not a code bug — same failure
+mode 09-22's log entry already documented for a truncated parquet.
+
+**What was done**: `python3 -m pyflakes *.py` first, to check whether
+09-19's fixes had held and whether anything new had crept in — clean, 0
+issues. Rather than stop there (a second "still empty" confirmation adds
+little), installed `vulture`, a dead-code detector pyflakes structurally
+can't replicate: pyflakes only catches unused imports/locals within a
+single function scope, not an unused module-level constant or a tracked-
+but-never-read instance attribute, both of which need whole-file (or
+whole-class) analysis. `vulture *.py` at its default confidence found
+nothing; `--min-confidence 60` (vulture's own docs note lower confidence
+trades more false positives for more real findings) surfaced 7 candidates
+across 6 files. Verified every one by hand before changing anything —
+grepped the whole repo for each symbol and read the surrounding code —
+since vulture has no cross-file call graph and a "write-only-looking"
+attribute can still be a deliberate design choice (this project has
+precedent for that: `qism`'s own docstring explicitly says it's "kept for
+a future finer grain" and isn't wired in yet, which is not a bug).
+
+**Found and fixed** (full investigation and reasoning for each in Active
+threads' Cleanup entry — kept there rather than duplicated in full here):
+1. `build_corpus_db.py`'s `TIER` dict — dead, duplicated by an inline SQL
+   `CASE` that's the actual source of truth. Deleted; moved its comment to
+   sit on the `CASE` instead.
+2. `citation_extractor.py`'s `RE_FK_ALIAS_DEF` — dead, duplicated by a raw
+   SQL `regexp_matches` in `build_links.py:129` that's what actually drives
+   `allow_fk_alias` corpus-wide. Deleted the Python copy.
+3. `structure_parser.py`'s `ROMAN` dict — dead; roman numerals are kept as
+   raw strings for `node_id`, and `ordinal` comes from a plain counter, not
+   a numeral conversion. Deleted.
+4. `test_transfer_e2e.py`'s `EXPECTED_MISSING_ARTICLE` — unused while its
+   own test hardcoded the literal `"168"` instead, unlike every sibling
+   `EXPECTED_*` constant in the file. Wired the constant into the test
+   rather than deleting it, matching the established pattern.
+5. `parser.py`'s `ContextTracker.paragraph_division` — genuinely tracked
+   (10 real `§`-division headers, confirmed by an independent regex count
+   matching the parser's own `--verify` "10/10" check) but silently dropped
+   by `snapshot()` before reaching `parsed_articles.json`, contradicting the
+   module docstring's own claim of tracking it. Added it to `snapshot()`'s
+   output. Confirmed via a scripted before/after diff that this is the
+   *only* change to the regenerated JSON (109 articles now carry a non-null
+   value, zero other fields touched on any of the 394 articles), and
+   confirmed via a repo-wide grep that `structural_hierarchy` (the field
+   that carries it) is produced by `parser.py` but consumed by nothing
+   downstream today — not `build_corpus_db.py`'s English-transfer
+   alignment, not either app — so this fix has zero effect on
+   `corpus.duckdb` and needed no pipeline rebuild.
+6. `build_llc.py`'s `LLC_OKOZ = "03.03.05.04"` — before deleting, checked
+   whether it should have been wired into something instead by
+   cross-referencing it against `build_okoz.py`'s independently-built OKOZ
+   axis, since the two had never been checked against each other. Confirmed
+   `03.03.05.04` is a real, correctly-spelled OKOZ leaf ("Limited Liability
+   Company. Additional Liability Company"), then measured corpus-wide that
+   `okoz_assignment` never classifies any General Part struct_node under
+   `03.03.05.*` at all — article 62 lands on the coarser sibling
+   `03.03.04.00` ("Commercial Organisations") instead, because its
+   containing struct_node is literally titled that in the Code's own
+   structure and isn't subdivided any finer. Not a bug in either axis, just
+   two deliberately different grains — see Backlog (Data currency) for the
+   finding, written up as a possible future angle, not an open bug. Deleted
+   the constant; confirmed `app_llc.py`'s sidebar caption already shows the
+   same code correctly as its own hardcoded literal (apps in this project
+   don't import build-layer constants — `app_llc.py` already keeps local
+   duplicates of `LLC_LAW_CURRENT`/`LLC_LAW_PRIOR`/`DOC_GENERAL` rather than
+   importing them, an established convention).
+
+Also fixed, opportunistically, while in `app_llc.py`'s `page_acts()` for
+finding 6's context: renamed an unused tuple-unpack element from `t_` to
+`_`, matching this codebase's own unused-variable convention. Not counted
+as a "found bug" — it was already harmless, just inconsistently named.
+
+**Measured/verified**: `pyflakes *.py` and `vulture *.py --min-confidence
+60` both clean after the fixes. `python3 -m py_compile` on all 6 touched
+files. `python score_gold.py`: unchanged at **217/218 (99.5%)** precision
+and recall — confirms the `citation_extractor.py` deletion is behaviorally
+inert, not just "looks safe." `python3 -m unittest test_transfer_e2e`: all
+14 tests pass, including the fixed `test_edge_missing_article_168`.
+`python citation_extractor.py`: 47/47 self-tests pass. Re-ran `build_llc.py`
+against the existing `corpus.duckdb` (the one touched file with pipeline
+side effects) and confirmed every table's row count identical before/after
+(`llc_stage` 8, `llc_norm` 100, `llc_implementing_act` 132, and all other
+tables' counts matched too, checked programmatically, not just the three
+LLC ones) — then **discarded** the resulting `corpus.duckdb` binary diff
+rather than committing it, since DuckDB's `CREATE OR REPLACE TABLE` doesn't
+serialize deterministically byte-for-byte even with identical content;
+committing it would have been exactly the "large binary diff for no
+reason" this project's own build hygiene rule warns against, for a change
+already proven to be a no-op. Checked both apps live via Playwright
+(screenshots, not just a page-load check): `app_llc.py`'s `page_acts()`
+(the function with the `t_`→`_` rename) loads and its row expanders render
+evidence text correctly; `app_hierarchy.py` loads with no exception (the
+other 5 fixes don't touch its code path). `python verify_transfer.py`:
+**all checks green**, identical INFO numbers to 09-22 (248 superseded acts,
+494 stale edges, 9531 `link_edge` rows, 386/386 OKOZ-classified) — expected,
+since none of today's fixes touch extraction, links, or OKOZ assignment
+logic.
+
+**Decided not to pursue today**: wiring `LLC_OKOZ`'s underlying question
+(finer OKOZ granularity for the LLC within the General Part) into a real
+fix — recorded as a Backlog item instead, since nothing today's session
+found justifies a new struct_node split on its own.
 
 ### 2026-09-22 — Extractor rotation: grew the gold set to 100 records, found and documented one real grain gap
 

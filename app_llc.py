@@ -382,7 +382,7 @@ def page_acts() -> None:
     st.write(f"**{len(rows)}** acts")
     for tier in sorted({r[0] for r in rows}):
         st.markdown(f"### Tier {tier} — {TIER_LABEL.get(tier, '?')}")
-        for (t_, title, date, n, stages, derived, ev,
+        for (_, title, date, n, stages, derived, ev,
              n_voided, locators, voided_on, voided_by) in [r for r in rows if r[0] == tier]:
             dead = " 🔴" if derived == "superseded" else ""
             partial = " ⚠️" if n_voided else ""
