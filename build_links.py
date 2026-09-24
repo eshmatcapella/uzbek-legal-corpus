@@ -619,6 +619,61 @@ def main() -> int:
     }
     re_civil_title = re.compile(r"fuqarolik kodeks", re.IGNORECASE)
 
+    # `date+civil-code-title` only fires when the amending act's own TITLE
+    # names the Civil Code — but most amending acts are omnibus bills
+    # ("ayrim qonun hujjatlariga ... kiritish toʻgʻrisida") that amend a dozen
+    # unrelated laws at once and never say "Fuqarolik kodeksi" in their
+    # title, capping that tier at 33/594 (5.6%, see DAILY_REVIEW.md
+    # 2026-09-11). But an omnibus act's own BODY is itself structured the
+    # same way `article_amendment`'s source (`amendment_note`) describes it:
+    # one top-level "<N>-modda." per law being amended, each opening with
+    # that law's full bibliographic citation before listing the changes. So
+    # the target CC article number should appear, inside the ONE block that
+    # also names the Civil Code, in that same candidate act's own text — a
+    # second, independent signal that doesn't need the title match at all.
+    # Measured 2026-09-24 (see DAILY_REVIEW.md): naively searching the whole
+    # act body for "<article>-modda" is NOT safe on its own — an omnibus
+    # act's own sequential numbering ("1-modda", "2-modda", ...) trivially
+    # contains small numbers unrelated to which CC article it discusses.
+    # Splitting on the act's own "<N>-modda." markers and requiring the CC
+    # mention and the target article to fall in the SAME block fixes that:
+    # tested against all 569 currently-unresolved clauses with a known
+    # amend_date, 413 resolve to exactly one candidate, zero are ambiguous
+    # (multiple candidates surviving the same-block check) — pushing overall
+    # amending-act resolution from 33/594 to 446/594 (75.1%).
+    text_by_doc: dict[int, str] = {
+        d_id: text or "" for d_id, text in con.execute("""
+            SELECT cr.doc_id, string_agg(sp.article_text, ' ')
+            FROM corpus_row cr JOIN src_provision sp ON sp.row_id = cr.row_id
+            GROUP BY cr.doc_id
+        """).fetchall()
+    }
+    re_own_modda_marker = re.compile(r"(?<![-\d])(\d{1,3})\s*-\s*modda\.\s")
+    blocks_by_doc: dict[int, list[str]] = {}
+
+    def cc_blocks(doc_id: int) -> list[str]:
+        if doc_id not in blocks_by_doc:
+            text = text_by_doc.get(doc_id, "")
+            marks = list(re_own_modda_marker.finditer(text))
+            if not marks:
+                blocks_by_doc[doc_id] = [text]
+            else:
+                blocks_by_doc[doc_id] = [
+                    text[m.start(): marks[i + 1].start() if i + 1 < len(marks) else len(text)]
+                    for i, m in enumerate(marks)
+                ]
+        return blocks_by_doc[doc_id]
+
+    def cc_clause_candidates(iso: str, article: str) -> list[int]:
+        out = []
+        for d_id, _nt in by_date.get(iso, []):
+            for block in cc_blocks(d_id):
+                if re_civil_title.search(block) and re.search(
+                        rf"\b{re.escape(article)}\s*-\s*modda", block):
+                    out.append(d_id)
+                    break
+        return out
+
     amend_rows: list[list] = []
     aid = 0
     n_clauses = 0
@@ -656,6 +711,12 @@ def main() -> int:
                                    if re_civil_title.search(nt_d)]
                     if len(civil_cands) == 1:
                         amending_doc_id, method = civil_cands[0], "date+civil-code-title"
+                    else:
+                        probe_art = target_arts[0] if target_arts[0] is not None else host_art
+                        if probe_art:
+                            block_cands = cc_clause_candidates(amend_date, probe_art)
+                            if len(block_cands) == 1:
+                                amending_doc_id, method = block_cands[0], "date+cc-clause-match"
                 amend_method_counts[method] = amend_method_counts.get(method, 0) + 1
                 # Only fall back to the host article's norm_id when the clause
                 # names no target of its own (a chapter/paragraph-level note);

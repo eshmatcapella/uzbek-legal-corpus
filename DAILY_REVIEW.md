@@ -22,6 +22,36 @@ How to use this file each session:
 
 ## Active threads
 
+- **Amending-act resolution: 5.6% -> 74.2%, built and closed 2026-09-24.**
+  Re-opened the "amending-act resolution caps at 5.6% because `act.doc_number`
+  is empty corpus-wide" residual left open since 2026-09-11 (see below) — the
+  empty-`doc_number` root cause was confirmed real (0/54,173 raw parquet rows
+  have one), but found an independent join key that doesn't need it: the
+  target Civil Code article number itself, cross-checked against each
+  same-date candidate act's own body text rather than its title. Naive
+  whole-body search looked like a huge win (435/569 unresolved rows) but was
+  mostly a false-positive artifact of omnibus acts' own sequential article
+  numbering ("1-modda", "2-modda", ...) coincidentally matching low target
+  article numbers — caught by manual inspection before shipping, not after.
+  Fixed by scoping the match to the same top-level "`<N>-modda.`" block as a
+  Civil Code mention (these omnibus acts are themselves structured "one
+  top-level article per law being amended"): 413 unique matches, zero
+  ambiguous, spot-checked by hand across ~10 different candidate acts and
+  dates. Shipped in `build_links.py` as a new `date+cc-clause-match` fallback
+  tier, additive only (no row-count changes anywhere). **Result: 43/612
+  (7.0%) -> 454/612 (74.2%)** amending-act resolution. Wired into both apps:
+  the amendment-history expander in `app_hierarchy.py`'s `page_article()` and
+  `app_llc.py`'s `page_norm()` now names the amending act, not just its bare
+  `OʻRQ-` number, whenever it resolves. Verified live in both apps via
+  Playwright. `verify_transfer.py` green, same INFO-line numbers as
+  2026-09-23. See Log for the full false-positive story and the residual
+  (158/612 still unresolved — chapter-level clauses with no article number to
+  probe, plus some same-date candidates whose body doesn't block-match for a
+  reason not yet diagnosed). This closes today's thread; the "Data currency"
+  angle it grew out of (checking the corpus's calendar-currency against
+  2026-09-24, not just its legal-currency signals) came back clean — see Log
+  — and isn't worth re-trying until a lot more real time has passed.
+
 - **`repeal_clause.target_locator` surfaced: built and closed 2026-09-21.**
   Picked up the Data currency backlog item flagged 2026-09-18 ("isn't
   surfaced anywhere yet") — every partial repeal-list item (an act that
@@ -274,7 +304,11 @@ How to use this file each session:
   occurrence originally spotted. (2) amending-act resolution still caps at
   5.6% (33/594 clauses) because `act.doc_number` is empty corpus-wide, same
   root cause as `repeal_clause`'s own unresolved tail — not a parsing gap, a
-  data-acquisition one, left as-is. **UI wiring done 2026-09-14** — see Log
+  data-acquisition one, left as-is. **Residual (2) fixed 2026-09-24** — see
+  Active threads and Log: a body-text join key (matching the target CC
+  article number to a same-date candidate's own Civil-Code-amending block)
+  doesn't need `doc_number` at all, taking resolution to 74.2%. **UI wiring
+  done 2026-09-14** — see Log
   for the full detail: `page_article()` in `app_hierarchy.py` and
   `page_norm()`/`page_skeleton()`/`page_currency()` in `app_llc.py` now
   surface `v_article_currency`/`article_amendment` directly (per-article
@@ -496,10 +530,13 @@ How to use this file each session:
   threads, Backlog, and Log; new combined score 217/218 = 99.5% precision
   and recall), Cleanup 09-23 (added `vulture` to the toolchain alongside
   `pyflakes`, found and fixed 6 real dead-code items pyflakes structurally
-  cannot catch — see Active threads and Log) — of the last five sessions
-  (09-19 through 09-23), Cleanup has two, Data currency has two, Extractor
-  has one; next session should prefer Extractor or Data currency over
-  Cleanup, which just went twice in five days.
+  cannot catch — see Active threads and Log), Data currency 09-24 (closed
+  the amending-act-resolution residual open since 2026-09-11: a new
+  `date+cc-clause-match` tier takes resolution from 7.0% to 74.2% without
+  needing `act.doc_number` — see Active threads and Log) — of the last five
+  sessions (09-20 through 09-24), Extractor has two, Cleanup has two, Data
+  currency has one; next session should prefer Extractor, which hasn't run
+  since 09-22.
 
 - **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
   four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -892,12 +929,18 @@ How to use this file each session:
   detail): (1) 5/594 clauses are chapter/paragraph-level (no article number
   at all, e.g. "42-bobning nomi ... tahririda") and get no
   `target_article_number` — correct behavior, just worth knowing if a future
-  session wants chapter-level currency too. (2) amending-act resolution
+  session wants chapter-level currency too. (2) ~~amending-act resolution
   (33/594 clauses) only fires when the amending act's own title names
-  "Fuqarolik kodeks" — most amendment acts are omnibus bills ("ayrim qonun
-  hujjatlariga oʻzgartirish...") that don't, and without `doc_number` there's
-  no safe way to disambiguate same-day candidates by number; not worth
-  chasing further without a corpus update that populates `doc_number`.
+  "Fuqarolik kodeks"~~ — **fixed 2026-09-24**: a new `date+cc-clause-match`
+  tier joins on the target article number appearing in a same-date
+  candidate's own Civil-Code-amending block instead of its title, taking
+  resolution from 43/612 (7.0%) to 454/612 (74.2%) without needing
+  `doc_number` at all. See Active threads and Log for the false-positive risk
+  that had to be ruled out first and the exact measurement. **New residual**:
+  158/612 (25.8%) still unresolved — some are the chapter-level clauses in
+  (1) above (no article number to probe), the rest are same-date candidates
+  whose body doesn't block-match for a reason not yet diagnosed; worth a
+  look if this thread is picked up again, but diminishing returns for now.
 - ~~**Propagate currency into the LLC dossier's implementing-acts list.**~~
   **Closed 2026-09-16.** Article-level currency was surfaced in both apps
   2026-09-14 (via `v_article_currency`). The remaining open half — whether
@@ -992,6 +1035,128 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-24 — Data currency rotation: built a new amending-act resolution tier, 33/594 (5.6%) -> 454/612 (74.2%)
+
+Rotation note from 09-23 flagged Extractor or Data currency as due (Cleanup
+had gone twice in five days: 09-19, 09-23). Picked Data currency.
+
+**Environment note** (same cold-start pattern as every session since
+09-19): fresh clone needed `duckdb`, `numpy`, `pandas`, `streamlit`,
+`playwright`, `pyflakes`, `vulture` reinstalled and `git-lfs` reinstalled +
+`git lfs pull` for the raw parquet (came down as a 134-byte pointer).
+Verified the pulled file before use: 163,356,047 bytes, sha256
+`e7a30c53...` matching the recorded oid, 54,173 rows — matches every prior
+session's same check.
+
+**Starting angle, and why it didn't pan out**: today's date is 2026-09-24,
+so before touching the backlog I checked how current the corpus actually
+is against that calendar date — a literal reading of "Data currency" the
+backlog hasn't tried before. `act.doc_date` runs through 2026-06-08 (June
+tapering to 12 acts vs. a ~100/month baseline, consistent with a mid-month
+export cutoff), so the corpus is genuinely only ~3.5 months stale, not the
+big gap I expected. Checked whether any 2026 act text actually *amends*
+the Civil Code (searched `src_provision.article_text` for "fuqarolik
+kodeks" in every act dated after 2025-07-01, 22 hits): all of them are
+mere citations ("in accordance with the Civil Code...", "the Civil Code
+approved by law No. 256-I...") — zero are real amendments the pipeline is
+missing. `-8151376` (2026-04-21, "Masʼuliyati cheklangan jamiyatlar
+toʻgʻrisida") turned up in that search too; double-checked it's not a new
+LLC Law the pipeline has failed to notice — it's already `LLC_LAW_CURRENT`
+in `app_llc.py`, correctly set since that constant was first written. No
+bug here; ruled out and moved on rather than forcing a result.
+
+**The real finding**: while reading those 22 hits, one — `-7773606`
+(2025-10-17, an omnibus consumer-protection/standards act) — visibly
+amends Civil Code Article 1018 in its own body text ("1018-moddasi
+quyidagi mazmundagi toʻrtinchi qism bilan toʻldirilsin"), and
+`article_amendment` already has a matching row for that exact date and
+article, but with `amending_doc_id NULL` — the "amending-act resolution
+caps at 5.6% because `act.doc_number` is empty corpus-wide" gap flagged in
+Active threads since 2026-09-11 and re-confirmed unfixable every time it
+came up since. **Confirmed `doc_number` really is empty everywhere in the
+raw parquet itself** (0/54,173 rows have a non-empty value) — the earlier
+sessions were right that this isn't a pipeline bug, it's LexUZ's own
+export. But `-7773606`'s own text names the *article* it changes, and
+`amendment_note`'s existing `amend_act_number` field (`OʻRQ-1088`, parsed
+straight from the CC's own annotation) gave a number to independently
+confirm the match — meaning the CC article number itself, not the missing
+doc_number, could be the join key.
+
+Measured before building anything: for all 569 currently-unresolved
+`article_amendment` rows with a known `amend_date`, does the target CC
+article number appear as "`<N>-modda`" anywhere in *some* same-date
+candidate act's own body text? **First pass: dangerous false-positive
+risk, caught before shipping.** A naive whole-body search "resolved" 435
+uniquely with zero ambiguous — but manual inspection showed most of that
+was a coincidence: omnibus acts number their *own* internal articles
+sequentially ("1-modda. ... 2-modda. ..."), so a target CC article number
+under ~30 trivially matches the candidate's own numbering regardless of
+what it's actually about (`-5388561`, one 31-article 2021 omnibus act,
+absorbed 271 of the 435 "matches" for target articles 1–15 this way).
+**Fix: split each candidate's body into blocks on its own top-level
+`<N>-modda.` markers, and only count a match when the Civil Code mention
+and the target article number fall in the *same* block** — exploiting the
+fact that these omnibus acts really are structured "one top-level article
+per law being amended, each opening with that law's full bibliographic
+citation." Re-measured with block-scoping: 413 unique, still zero
+ambiguous. Spot-checked ~10 cases by hand across different candidate acts
+and dates (not just the big 2021 one) before trusting it — every one held
+up, including `-5388561`'s own block-6 (marker "55-modda"), confirmed by
+inspection to be a genuine 248-article terminology-substitution clause
+("qonun hujjatlari" → "qonunchiligi") from the real `OʻRQ-683`, not a
+coincidence; and a `sha256`-independent case, `-1518988` (2009, an
+anti-money-laundering omnibus act), correctly resolved articles
+229/769/770/778/785 — all financial-obligations provisions, thematically
+consistent with the act's own subject.
+
+**Shipped** in `build_links.py` as a new fallback tier,
+`date+cc-clause-match`, tried only when the existing `date+civil-code-title`
+tier doesn't resolve uniquely (title-tier stays first and unchanged — 43
+resolve there, same as before this session). Ran against the existing
+`corpus.duckdb` (not a from-scratch rebuild): `link_edge` (9531),
+`repeal_clause` (885), `article_amendment` (612), `v_act_partial_repeal`
+(137) row counts all byte-identical to before — purely additive, only
+`amending_doc_id`/`match_method` values filled in on existing rows.
+**Result: amending-act resolution 43/612 (7.0%, this session's baseline —
+today's clause count differs slightly from the 33/594 figure logged
+2026-09-11 as the table grew since) -> 454/612 (74.2%)**, 411 newly
+resolved, zero ambiguous across all 569 candidates tried. `pyflakes *.py`
+and `vulture *.py --min-confidence 60` both clean; `verify_transfer.py`
+green with the same INFO-line numbers as 2026-09-23 (this doesn't touch
+`link_edge`, repeal resolution, or any AC1-AC7 check).
+
+**Wired into both apps**: `amend_act_number` was already shown next to
+each amendment event ("Law OʻRQ-1088") but as a bare number with no name
+attached three-quarters of the time it now resolves — added a `LEFT JOIN
+act` to the existing `article_amendment` query in `app_hierarchy.py`'s
+`page_article()` and `app_llc.py`'s `page_norm()` (same shared query
+shape both already use) and a new caption line, "Amending act: *{title}*",
+shown only when `amending_doc_id` resolved. Grepped both apps first for
+`doc_title` display conventions — found the existing pattern is verbatim,
+truncated-to-110-chars, no case transformation (`app_hierarchy.py`'s
+realization-pyramid list already does this) — and matched it, after first
+trying `.title()` and catching that Python's title-case mangles Uzbek
+apostrophe letters (`OʻZbekiston`, `QoʻShimchalar` — the modifier letter ʻ
+reads as a word boundary), which would have shipped visibly broken text.
+Verified live in both apps via Playwright: `app_hierarchy.py` Article 1's
+amendment history now shows "Amending act: *Oʻzbekiston Respublikasining
+ayrim qonun hujjatlariga oʻzgartishlar kiritish toʻgʻrisida*" under the
+`OʻRQ-683` entry; `app_llc.py`'s "Follow a norm down" page, stage 2
+("Jamiyatni taʼsis etish"), CC art. 44, shows the same act name under its
+own `OʻRQ-683` entry. `build_llc.py` doesn't read `article_amendment` at
+all (grepped to confirm) so it needed no re-run.
+
+**Decision and residual**: not chasing this further today — 158/612
+(25.8%) stay unresolved, split between genuine chapter/paragraph-level
+clauses with no article number to probe (can't apply this tier at all)
+and clauses where no same-date candidate's body contains a matching block
+(most likely candidates whose CC-amending block is itself malformed by
+some regex edge case in `re_own_modda_marker`, or dates where the
+omnibus act is a `code` type rather than `law` and structured
+differently — not investigated). Worth a future look if this thread is
+picked up again, but 74.2% from 5.6% in one session is a large, real,
+already-measured win; diminishing-returns territory for today.
 
 ### 2026-09-23 — Cleanup rotation: added `vulture` to the toolchain, found and fixed 6 real dead-code items pyflakes can't catch
 

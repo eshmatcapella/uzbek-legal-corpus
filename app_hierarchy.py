@@ -157,17 +157,20 @@ def page_article() -> None:
             line += "  · ⚠️ **part of this article has been removed/voided**"
         st.caption(line)
         with st.expander("Full amendment history (mined from LexUZ's amendment_note)"):
-            for date, ctype, locator, act_no, eff_date, evidence in q("""
-                SELECT amend_date, change_type, locator, amend_act_number,
-                       effective_date, evidence
-                FROM article_amendment
-                WHERE doc_id = ? AND coalesce(target_article_number, host_article_number) = ?
-                ORDER BY amend_date
+            for date, ctype, locator, act_no, eff_date, evidence, amend_title in q("""
+                SELECT am.amend_date, am.change_type, am.locator, am.amend_act_number,
+                       am.effective_date, am.evidence, a.doc_title
+                FROM article_amendment am
+                LEFT JOIN act a ON a.doc_id = am.amending_doc_id
+                WHERE am.doc_id = ? AND coalesce(am.target_article_number, am.host_article_number) = ?
+                ORDER BY am.amend_date
             """, [DOC_GENERAL, article_number]):
                 st.markdown(f"{CHANGE_BADGE.get(ctype, '')} **{ctype}** — {date}"
                             + (f" · Law {act_no}" if act_no else "")
                             + (f" · effective {eff_date}" if eff_date else ""))
                 st.caption(locator)
+                if amend_title:
+                    st.caption(f"Amending act: *{amend_title[:110]}*")
                 st.caption(evidence)
     else:
         st.caption("**Legislative history:** no amendment events recorded for this "
