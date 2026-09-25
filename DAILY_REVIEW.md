@@ -22,6 +22,92 @@ How to use this file each session:
 
 ## Active threads
 
+- **Signature-stratified gold sampling: built and run 2026-09-25, one real
+  bug found and fixed, methodology validated, thread open for continued use.**
+  Extractor's turn in the rotation (hadn't run since 2026-09-22). The
+  backlog's own suggestion was "draw another disjoint 50-window uniform
+  batch" — but 2026-09-20 and 2026-09-22's batches were the first two (of
+  11 total sampling sessions) not to find a real bug on the first try,
+  which read as diminishing returns from uniform sampling once ~100 windows
+  are already annotated. Built `build_gold_sample_novel.py`: instead of
+  drawing another uniform-random batch, it computes a cheap structural
+  *signature* per anchor window (which separators/unit-words/anchor-kind/
+  oddities the raw text contains — comma vs "va" vs "hamda" list joins,
+  dash type, qism-digit vs qism-ordinal, parens, roman numerals, etc.,
+  independent of what the extractor itself does with the text) and measures
+  which signatures the existing gold set has never once exercised. Measured
+  first, before drawing anything: of 451 distinct signatures across the
+  3251 real candidate windows, the 100-record gold set covers only 58 — 1456
+  windows (44.8% of the corpus's candidate windows) sit in a signature the
+  gold set has never annotated a single example of. This is itself a
+  finding: uniform random sampling was concentrating on the same common
+  shapes over and over, exactly explaining the two dry batches. Drew 40
+  windows prioritizing the rarest never-covered signatures (capped at 3
+  examples per signature so one common "novel" shape doesn't crowd out the
+  batch), read every one by hand against the raw Uzbek text.
+  **Result: found and fixed one real, live precision bug** — row 6071,
+  "...huquqlar toʻgʻrisida"gi qonun (35-modda) asosida qoʻllashlari lozim"
+  inside an FK-alias anchor's window: bare lowercase "qonun" immediately
+  followed by a parenthetical "(35-modda)" shorthand names the OTHER named
+  act's own article 35, not the Civil Code's — but nothing in `RE_STOP`
+  caught it, so `link_edge` carried a live wrong edge (edge_id 187,
+  article "35" misattributed to `DOC_GENERAL`) before today. Fixed by
+  adding a narrow `qonun\s*\(` alternative to `RE_STOP` — deliberately much
+  narrower than the general bare-lowercase-"qonun" stop already measured
+  and rejected 2026-09-05 (49484 generic occurrences vs. only 3 immediately
+  before a modda/bob clause, too high a false-negative risk to stop on
+  unconditionally): requiring the immediate open-paren is a nearly-zero-risk
+  shape — measured corpus-wide, exactly 6 bare "qonun(" occurrences exist
+  at all (any case), and only this one sits inside any Civil-Code/FK
+  anchor's window in the first place. 48/48 extractor self-tests pass (new
+  case added), `measure_extractor_recall.py` still 0 real misses,
+  `score_gold.py` unaffected on the pre-existing 100 records (217/218,
+  unchanged — the fix doesn't touch anything those windows exercise).
+  Re-ran `build_links.py` against the existing `corpus.duckdb`: `link_edge`
+  9531 -> 9530 (exactly the one bad edge removed, confirmed by direct
+  `WHERE src_row_id=6071` lookup before/after); re-ran `build_llc.py`
+  against a throwaway copy to confirm zero LLC-slice impact (132/132/8,
+  unchanged) without adding its own non-deterministic byte-churn to the
+  committed `corpus.duckdb` (see the 2026-09-23 Cleanup entry for why that
+  matters — `CREATE OR REPLACE TABLE` doesn't serialize deterministically
+  even for identical content). Also found, measured, but deliberately
+  **left unfixed** (same single-occurrence and low-priority-grain
+  precedents this project has applied before): (1) a Roman-numeral chapter
+  citation ("Fuqarolik kodeksi IV bobining 2 paragrafi") never gets the
+  paragraf/section lookahead the Arabic-numeral `bob` branch has, silently
+  losing the section grain (`dst_kind` would read `section` not `chapter`,
+  a real `link_edge` column — same class of gap as 2026-09-22's "paragrif"
+  spelling miss) — measured exactly 1 occurrence corpus-wide (row 15441),
+  recorded as a `known_gap` gold record rather than fixed; (2) the
+  already-known qism/band grain-collapse limitation (only the nearest
+  ordinal/digit before "qism"/"band" is kept) now also measured in
+  comma-separated LIST form, not just the previously-documented dash-RANGE
+  form — 14 digit-list ("1, 4-bandlari") and 68 ordinal-list ("ikkinchi,
+  toʻrtinchi, oltinchi qismlari") occurrences corpus-wide, still not
+  load-bearing (qism isn't consumed downstream) so left alone per the
+  existing decision. Merged all 40 annotated windows into
+  `gold_citations.json` as batch 3 (gold_id 100-139, `--seed 20260925`,
+  `method: "signature-stratified"` recorded in `_meta.batches` so future
+  scoring runs can tell this batch apart from the earlier uniform ones).
+  **New combined score: precision 297/299 (99.3%), recall 297/299 (99.3%)**
+  on 140 windows (the two known_gap mismatches: 2026-09-22's "paragrif" +
+  today's Roman-chapter+paragraf, both honestly scored as misses per this
+  project's established "record the true expected output" convention, not
+  silently marked correct). `verify_transfer.py`: all checks green,
+  `pyflakes`/`vulture --min-confidence 60` both clean including the new
+  script, `python -m unittest`/14/14 `test_transfer_e2e.py` tests pass,
+  both Streamlit apps smoke-tested live (HTTP 200, no exceptions — no
+  schema changed, so no query-level check was needed per the project's own
+  rule, just a load check). **Thread stays open, not closed**: this was one
+  batch under the new method, not a full re-sampling of the corpus under it
+  — next Extractor-rotation session should keep using
+  `build_gold_sample_novel.py` (it recomputes novelty coverage fresh each
+  run against whatever the gold set has grown to) rather than reverting to
+  a fifth uniform-random batch, and should watch whether the novel-signature
+  hit rate (1 real bug + 1 known_gap in 40, i.e. a materially higher yield
+  than the two most recent uniform batches' 0-and-1) holds up over a second
+  round or was partly luck from this specific batch.
+
 - **Amending-act resolution: 5.6% -> 74.2%, built and closed 2026-09-24.**
   Re-opened the "amending-act resolution caps at 5.6% because `act.doc_number`
   is empty corpus-wide" residual left open since 2026-09-11 (see below) — the
@@ -536,7 +622,13 @@ How to use this file each session:
   needing `act.doc_number` — see Active threads and Log) — of the last five
   sessions (09-20 through 09-24), Extractor has two, Cleanup has two, Data
   currency has one; next session should prefer Extractor, which hasn't run
-  since 09-22.
+  since 09-22. Extractor 09-25 (signature-stratified gold sampling instead
+  of a fourth uniform batch — see Active threads and Log; found and fixed
+  one real bug, a bare "qonun(" parenthetical-shorthand misattribution;
+  grew the gold set to 140 records, new combined score 297/299 = 99.3%
+  precision and recall) — of the last five sessions (09-21 through 09-25),
+  Data currency has two, Extractor has two, Cleanup has one; next session
+  should prefer Cleanup or Data currency.
 
 - **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
   four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -716,32 +808,49 @@ How to use this file each session:
 
 ### Extractor recall/precision
 - ~~**Build the gold set.**~~ **Scoring layer built 2026-09-20, grown to 100
-  records 2026-09-22** — see Active threads and Log for the full detail.
-  `gold_citations.json` (100 hand-verified anchor occurrences, two disjoint
-  50-window batches) + `score_gold.py` (the scorer) now exist; current
-  score **precision 217/218 (99.5%), recall 217/218 (99.5%)** — the one
-  mismatch is the documented "paragrif" spelling gap below, recorded with
-  its true expected output rather than silently marked correct. Not closed
-  outright — 100 windows is still two batches, not corpus-wide coverage
-  (2599 hit + 652 empty candidate windows exist). **Next step, whenever
-  Extractor rotation comes up again**: draw another disjoint batch with a
-  new `--seed`, hand-annotate it, and merge into `gold_citations.json` to
-  grow the set — or add a targeted record for any new bug a hypothesis-driven
-  session finds, so fixes become permanent regression checks instead of
-  one-time. What changed getting here: `build_gold_sample.py` (2026-09-15)
-  built the reusable, seeded, stratified sampler over real anchor windows
-  (half `extract()`-produced-a-citation, half empty); 2026-09-17's sample
-  found a false alarm — a citation that looked like a recall miss in one
-  anchor's *display* window but was actually caught by `extract()` via a
-  different, nearby anchor occurrence — which is why `score_gold.py` scores
-  recall against the whole field's `extract()` output rather than each
-  anchor's own local bucket (see Active threads for the full reasoning).
+  records 2026-09-22, grown to 140 via a new signature-stratified sampling
+  method 2026-09-25** — see Active threads and Log for the full detail.
+  `gold_citations.json` (140 hand-verified anchor occurrences, three
+  batches — two uniform-random, one signature-stratified) + `score_gold.py`
+  (the scorer) + `build_gold_sample.py`/`build_gold_sample_novel.py` (the
+  two samplers) now exist; current score **precision 297/299 (99.3%),
+  recall 297/299 (99.3%)** — the two mismatches are the documented
+  "paragrif" spelling gap and the 2026-09-25 Roman-chapter+paragraf gap
+  (both below), each recorded with its true expected output rather than
+  silently marked correct. Not closed outright — 140 windows is still a
+  small fraction of the 3251 real candidate windows corpus-wide (measured
+  precisely 2026-09-25, see below and Active threads: only 58/451 distinct
+  window *signatures* are covered at all). **Next step, whenever Extractor
+  rotation comes up again**: run `build_gold_sample_novel.py` again (not
+  `build_gold_sample.py` — see below for why) with a fresh `--n`/`--seed`,
+  hand-annotate the batch, and merge into `gold_citations.json` — or add a
+  targeted record for any new bug a hypothesis-driven session finds, so
+  fixes become permanent regression checks instead of one-time. What
+  changed getting here: `build_gold_sample.py` (2026-09-15) built the
+  reusable, seeded, stratified sampler over real anchor windows (half
+  `extract()`-produced-a-citation, half empty); 2026-09-17's sample found a
+  false alarm — a citation that looked like a recall miss in one anchor's
+  *display* window but was actually caught by `extract()` via a different,
+  nearby anchor occurrence — which is why `score_gold.py` scores recall
+  against the whole field's `extract()` output rather than each anchor's
+  own local bucket (see Active threads for the full reasoning).
   Hypothesis-driven sampling had found a real, fixable bug in every one of
   9 sessions running before 2026-09-20 (qism/band 09-04, Qonun 09-05, doc_id
   09-08, chapter+paragraph comma-attachment 09-10, qonunning 09-12, three on
   09-15, two more on 09-17); 2026-09-20's batch was the first to come back
-  clean (100/100); 2026-09-22's batch found one small real gap (see below) —
-  see Active threads for the full measurement of each.
+  clean (100/100); 2026-09-22's batch found one small real gap (see below).
+  **2026-09-25**: with two of the last three batches coming back clean or
+  near-clean, built `build_gold_sample_novel.py` instead of drawing a fourth
+  uniform batch — it signatures each candidate window's raw-text shape
+  (separator type, unit words, qism form, parens, roman numerals, anchor
+  kind, etc.) and samples from signatures the gold set has never annotated,
+  rather than uniform-random. Measured first: only 58/451 distinct
+  signatures were covered by the 100-record set, leaving 1456/3251 (44.8%)
+  of all candidate windows in never-annotated territory — this directly
+  explains why uniform sampling was running dry. The resulting 40-window
+  batch found 1 real bug (see below) + 1 known_gap, a higher yield than the
+  two most recent uniform batches — see Active threads and Log for the full
+  measurement and the decision to keep using this sampler going forward.
 - **LexUZ misspells "paragrafi" as "paragrifi" in one row — chapter+section
   grain silently lost.** Found 2026-09-22 while annotating the second
   gold-set batch (see Active threads): row 46605 (the Civil Code's own
@@ -766,6 +875,23 @@ How to use this file each session:
   If ever picked up: add `paragraf|paragrif` (or a small edit-distance
   tolerance) to both `RE_CLAUSE`'s unit alternation and the chapter+section
   lookahead's literal match inside `extract()`.
+- **Roman-numeral chapter citations never get the paragraf/section
+  lookahead.** Found 2026-09-25 via the new signature-stratified gold
+  sample (see Active threads): "Fuqarolik kodeksi IV bobining 2 paragrafi"
+  (row 15441) should produce `target_kind=section` (chapter 4, section 2)
+  the same way the Arabic-numeral "37-bobining 3-paragrafi" already does,
+  but `extract()`'s Roman-chapter fallback branch (only reached when the
+  main `RE_CLAUSE` loop finds nothing) never runs the paragraf lookahead the
+  `bob` branch has — it always emits a bare `chapter` citation, silently
+  losing the section grain. `dst_kind` is a real `link_edge` column (same
+  class of gap as the "paragrif" item above), so this is recorded as a
+  `known_gap` gold record (`gold_id` 123) with its true expected output
+  rather than scored as correct. Measured corpus-wide: exactly 1 occurrence
+  (checked every `RE_ROMAN_CHAPTER` match's 30-char tail for an immediately
+  following paragraf reference). Not fixed today, same single-occurrence
+  precedent as several items on this list — if ever picked up, port the
+  same `sec = re.match(r"\s*,?\s*(\d+)\s*-\s*paragraf", ...)` lookahead the
+  `bob` branch already uses into the Roman-chapter branch in `extract()`.
 - **`RE_STOP`'s `break`-vs-`continue` design.** Once a stop-word is found in
   the gap before a clause, `extract()` abandons the *rest* of that anchor's
   window, not just the one stopped clause — a deliberate, conservative
@@ -819,7 +945,23 @@ How to use this file each session:
   original scope decision (grain stays article-level) hasn't been
   revisited: worth a measurement pass on whether citing at the qism level
   would change which stage/institution the citation should attach to, now
-  that the underlying data is meaningfully more complete.
+  that the underlying data is meaningfully more complete. **2026-09-15**
+  measured the dash-RANGE collapse sub-form ("ikkinchi — toʻrtinchi
+  qismlarida" keeping only "toʻrtinchi"), not fixed given qism's
+  not-yet-load-bearing status. **2026-09-25** measured two more sub-forms
+  via the signature-stratified gold sample (row 21303, see Active
+  threads): a comma-separated DIGIT list ("11-moddasining 1, 4-bandlari",
+  keeping only "4-band") and a comma-separated ORDINAL-word list
+  ("377-moddasining ikkinchi, toʻrtinchi, oltinchi qismlari", keeping only
+  "oltinchi qism") — same root cause (`RE_QISM`'s tail search finds only
+  the one ordinal/digit immediately before "qism"/"band"), different
+  surface shape. Corpus-wide count inside anchor windows: 14 digit-list +
+  68 ordinal-list occurrences (regex-shape count, an upper bound on how
+  often this specific collapse actually fires — not all 82 necessarily hit
+  a case where the collapse changes anything visible). Still not fixed,
+  same "qism isn't consumed downstream" reasoning as always — worth
+  revisiting this whole item together if qism grain is ever wired into a
+  real table/view.
 - **One remaining chapter+paragraph-list attachment gap (single occurrence).**
   Found 2026-09-10 while fixing the comma-punctuated case (see Log): row
   25634's `cross_references` reads "Fuqarolik kodeksi 4-bobining 1
@@ -1035,6 +1177,178 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-25 — Extractor rotation: signature-stratified gold sampling instead of a fourth uniform batch, one real bug found and fixed
+
+Rotation note from 09-24 flagged Extractor as due (hadn't run since 09-22;
+Cleanup and Data currency had each run twice in the last five sessions).
+
+**Environment note** (same cold-start pattern as every session since
+09-19): fresh clone needed `duckdb`, `pytz`, `streamlit`, `pyflakes`,
+`vulture` installed and `git-lfs` installed + `git lfs install --local &&
+git lfs pull` for the raw parquet (came down as a 134-byte pointer file,
+`_duckdb.InvalidInputException: No magic bytes found` on the first
+`read_parquet` attempt). Verified the pulled file before use: 163,356,047
+bytes, sha256 `e7a30c5348e0eecfb81470b44c691b23226187800e0be8697019c307336d0d00`
+matching the recorded oid exactly — matches every prior session's same
+check.
+
+**Why not another uniform batch**: the backlog's own next step for the
+gold-set thread was "draw another disjoint 50-window batch with a new
+seed." But looking at the sampling history first: 2026-09-20 and
+2026-09-22's batches were the *first two* (of 9 before them) not to find a
+new bug on the first pass. That's not proof uniform sampling is exhausted,
+but it's a real signal worth checking rather than just re-rolling the same
+dice a fourth time and hoping.
+
+**Built `build_gold_sample_novel.py`**: computes a cheap structural
+*signature* per anchor window from the raw text alone (separator type —
+comma/"va"/"hamda"/ascii-hyphen/en-dash/doubled-dash — which unit words
+appear, qism-digit vs. qism-ordinal, parens, roman numerals, quote marks,
+4-digit runs, anchor kind, source field), deliberately not re-running any
+of `citation_extractor.py`'s own logic (that would just re-encode "what the
+extractor already handles" and miss exactly the shapes it doesn't). Then:
+recompute the signature of every one of the 100 already-annotated gold
+windows (from their own stored anchor position, same recompute pattern
+`score_gold.py` uses, so novelty is measured against what was actually
+read, not an approximation) and diff against the full candidate-window
+population.
+
+**Measurement (the methodology finding, independent of any bug)**: 3251
+real candidate windows corpus-wide carry 451 distinct signatures; the
+100-record gold set has exercised only 58 of them. 1456 windows (44.8% of
+all candidates) sit in a signature the gold set has *never* annotated a
+single example of. This directly explains the two dry batches: uniform
+random sampling keeps re-landing on the same common shapes (plain single-
+article, hyphen-separated, `fuqarolik_kodeksi`-anchored citations dominate
+the corpus by sheer count), so each additional uniform batch's marginal
+coverage of the *rare* shapes shrinks fast.
+
+**Drew 40 windows** from the never-covered signatures, capping at 3
+examples per signature (so one common "novel" combination doesn't crowd
+out the batch) and prioritizing the rarest signatures first, `--seed
+20260925`. Read every one by hand against the raw Uzbek text.
+
+**Found and fixed one real, live precision bug**: row 6071 (a Supreme
+Court plenum resolution on intellectual-property disputes), inside an
+`fk_alias`-anchored window: "...sudlar bunday muddatlarni FKning 60-bobi
+(1065-modda), "Mualliflik huquqi va turdosh huquqlar toʻgʻrisida"gi qonun
+(35-modda) asosida qoʻllashlari lozim" — "FK" (the Civil Code alias) names
+chapter 60/article 1065 correctly, but the *next* clause is a parenthetical
+shorthand for the Copyright Law's own article 35 ("...that law (article
+35)..."), not a continuation of the Civil Code citation. Nothing in
+`RE_STOP` caught bare lowercase "qonun" immediately followed by an open
+paren, so `extract()` kept scanning past it and attributed "35" to the
+Code too. This was already live in `corpus.duckdb`: `link_edge` edge_id 187
+carried `dst_article_number='35', dst_doc_id=-111189` (DOC_GENERAL) sourced
+from this exact clause — confirmed by direct lookup before touching
+anything, not assumed.
+
+Checked the risk before fixing: the general "stop on any bare lowercase
+qonun" fix was already measured and explicitly rejected 2026-09-05 (49484
+generic occurrences of the word vs. only 3 that happen to precede a
+modda/bob clause — stopping unconditionally would silently truncate real
+Code citations far more often than it would fix anything). So the fix here
+is deliberately narrower: `qonun\s*\(` — bare "qonun" immediately followed
+by "(", nothing else. Measured corpus-wide before shipping: exactly 6 bare
+"qonun(" occurrences exist in the whole corpus (any case), all 6 read by
+hand — every one is a parenthetical aside naming some OTHER act or
+provision, never a continuation of a real Civil Code citation — and only 1
+of the 6 (row 6071) sits inside any Civil-Code/FK anchor's window in the
+first place (the other 5 are nowhere near a `Fuqarolik kodeksi`/FK mention
+at all, so they're inert as far as `extract()` is concerned regardless).
+Zero collateral risk measured, one real bug fixed.
+
+Added one self-test case (`citation_extractor.py`, `stop_cases`) reproducing
+this exact shape. 48/48 self-tests pass (was 48 total after +1 case, was 47
+before). `measure_extractor_recall.py`: still 0 real misses on article and
+chapter recall (unchanged), qism/band attachment residual unchanged at
+7/630. `score_gold.py` on the pre-existing 100 records: unchanged at
+217/218 — none of those windows touch this pattern, confirming the fix is
+additive, not a regression.
+
+**Rebuilt only `build_links.py`** against the existing `corpus.duckdb` (no
+`build_corpus_db.py` rerun — the fix is purely in `citation_extractor.py`'s
+stop-word logic, not the base tables): `link_edge` 9531 -> 9530 (exactly the
+one bad edge removed; re-checked `WHERE src_row_id=6071 AND
+source_field='article_text' AND dst_article_number='35'` returns zero rows
+after, the correct `dst_article_number='1065'` edge is untouched). Re-ran
+`build_llc.py` against a throwaway copy of the post-fix `corpus.duckdb`
+(not the file being committed) purely to confirm zero LLC-slice impact
+without adding `build_llc.py`'s own non-deterministic `CREATE OR REPLACE
+TABLE` byte-churn to the diff for no reason (same discipline as the
+2026-09-23 Cleanup entry): `llc_implementing_act` 132/132, `llc_norm`
+100/100, `llc_stage` 8/8, all unchanged — row 6071 isn't in the LLC slice's
+scope. `verify_transfer.py`: all checks green, same structural INFO lines
+as 2026-09-24 (`link_edge` count line reads 9530 in place of 9531, nothing
+else moved). `pyflakes *.py` and `vulture *.py --min-confidence 60`: both
+clean, including the new `build_gold_sample_novel.py` (one initial vulture
+hit — an unused `STOP_NING` regex left over from an earlier draft of the
+signature function — fixed by deleting it, not by wiring it in for its own
+sake). `python -m unittest` on `test_transfer_e2e.py`: 14/14 pass. Both
+Streamlit apps smoke-tested live (`streamlit run` + `curl`, HTTP 200, no
+exceptions in either log) — no schema changed by this fix, so no query-level
+check was needed per the project's own rule, just a load check.
+
+**Found, measured, and deliberately left unfixed** (two more windows from
+the same batch, same single-occurrence and low-priority-grain precedents
+this project has applied repeatedly before):
+
+1. Row 15441: "Fuqarolik kodeksi IV bobining 2 paragrafi" — a Roman-numeral
+   chapter (IV) followed by a paragraf reference. `extract()`'s Roman-chapter
+   fallback branch (used only when the main Arabic-digit `RE_CLAUSE` loop
+   found nothing) never runs the paragraf/section lookahead the Arabic
+   `bob` branch has, so this always produces a bare chapter-4 citation,
+   losing the section-2 grain — `dst_kind` would read `section` not
+   `chapter`, a real `link_edge` column, the same class of gap as
+   2026-09-22's "paragrafi"/"paragrifi" miss (gold_id 52). Measured
+   corpus-wide: exactly 1 occurrence in the whole corpus (checked every
+   Roman-numeral-chapter match's tail for an immediately-following paragraf
+   reference). Recorded as a `known_gap` gold record (gold_id 123) with its
+   true expected output (`target_kind=section, struct_number=4,
+   section_number=2`) rather than silently scored as correct — same
+   "record the honest true value" convention gold_id 52 established. Not
+   fixed today, same single-occurrence-scope precedent as several existing
+   Backlog items (e.g. the 2026-09-15 chapter+paragraph space-separator gap,
+   also 1 occurrence, also left unfixed).
+2. Row 21303 (two separate anchor occurrences in the same row): the
+   already-known qism/band grain-collapse limitation (`RE_QISM`'s tail
+   search finds only the ONE ordinal/digit immediately before "qism"/"band",
+   silently dropping any others in a list or range — documented since
+   2026-09-15 for the dash-RANGE form, "ikkinchi — toʻrtinchi qismlarida")
+   now also measured in comma-separated LIST form: "11-moddasining 1,
+   4-bandlari" (band list, digits) and "377-moddasining ikkinchi,
+   toʻrtinchi, oltinchi qismlari" (qism list, ordinal words) both collapse
+   to just their last member today. Measured corpus-wide (regex-only, not
+   requiring a real `RE_QISM` match — an upper bound on how often the SHAPE
+   appears, not a claim every one is currently mishandled): 14 digit
+   comma-list and 68 ordinal comma-list occurrences inside anchor windows.
+   Still not load-bearing (qism isn't consumed by any downstream table/view
+   — see Backlog "Qism-level grain"), so left alone per the existing,
+   repeatedly-reaffirmed decision; the two counts are folded into that
+   Backlog item as newly-measured sub-forms rather than opening a new one.
+
+**Merged the batch into `gold_citations.json`** as batch 3 (gold_id
+100-139, 40 records, `_meta.batches` records `method:
+"signature-stratified"` so future readers can tell this batch apart from
+the three uniform-random ones). 38/40 `verdict: correct` (including
+gold_id 108, the row-6071 bug — recorded with its now-correct expected
+output, not its old wrong one), 2/40 `verdict: known_gap` (gold_id 123 —
+the Roman-chapter+paragraf miss above; gold_id 131 — the qism/band
+comma-list collapse, folded in as a documentation note since qism isn't
+scored). **New combined score across all 140 records: precision 297/299
+(99.3%), recall 297/299 (99.3%)** — the two mismatches are exactly the two
+known_gap records (2026-09-22's "paragrif" + today's Roman-chapter), both
+honest misses by design, not silent inflation.
+
+**Decision**: keep this thread open rather than closing it. One batch under
+a new method is a promising first result (1 real bug + 1 known_gap in 40,
+versus the two most recent uniform batches' 0-and-1), not proof the method
+is generally better — the next Extractor rotation should run
+`build_gold_sample_novel.py` again (it recomputes novelty coverage fresh
+against whatever the gold set has grown to, so it never goes stale the way
+a fixed sample would) and see whether the yield holds up over a second
+round.
 
 ### 2026-09-24 — Data currency rotation: built a new amending-act resolution tier, 33/594 (5.6%) -> 454/612 (74.2%)
 

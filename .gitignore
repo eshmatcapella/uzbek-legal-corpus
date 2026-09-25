@@ -3,3 +3,4 @@ __pycache__/
 .agents/
 .claude/
 gold_sample.json
+gold_sample_novel.json

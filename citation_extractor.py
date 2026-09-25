@@ -149,7 +149,26 @@ RE_STOP = re.compile(
     # Publication record of the act, e.g. "(Oliy Majlisining Axborotnomasi, 1997-yil,
     # № 2, 56-modda)".  There "56-modda" is item 56 of the gazette issue, not an
     # article of the Code — the single largest false-positive source in the corpus.
-    r"axborotnoma|vedomosti|toʻplam|toplam|№|-songa ilova)"
+    r"axborotnoma|vedomosti|toʻplam|toplam|№|-songa ilova|"
+    # Bare "qonun" immediately followed by an open parenthesis: LexUZ
+    # sometimes parenthetically cites another act's own provision right
+    # inside a Civil Code anchor's window — "...toʻgʻrisida"gi qonun
+    # (35-modda) asosida" means article 35 of THAT law, not the Code.
+    # Deliberately narrower than the general bare-lowercase-"qonun" gap
+    # already measured and left alone (2026-09-05: 49484 generic occurrences
+    # vs. only 3 immediately before a modda/bob clause, too high a
+    # false-negative risk to stop on unconditionally): requiring the
+    # immediate "(" is a much rarer, unambiguous shape (this alternative
+    # sits inside the case-insensitive group, so it also covers capitalized
+    # "Qonun(" — harmlessly redundant with "Qonun\b" below, which already
+    # stops there too). Measured 2026-09-25 (see DAILY_REVIEW.md): exactly 6
+    # bare "qonun(" occurrences (any case) exist corpus-wide at all, every
+    # one a parenthetical aside naming some OTHER act/provision, never a
+    # continuation of the Code's own citation — and only 1 of the 6
+    # (row 6071) sits inside any Civil-Code/FK anchor's window in the first
+    # place, where it was already live as a wrong `link_edge` row (article
+    # "35" misattributed to DOC_GENERAL) before this fix.
+    r"qonun\s*\()"
     r"|Qonun\b"
 )
 # Abbreviation of another code — FPK (Civil Procedure), JPK (Criminal Procedure),
@@ -490,6 +509,13 @@ def _selftest() -> int:
         ('Fuqarolik kodeksining 1048-moddasi, “Mualliflik huquqi toʻgʻrisida”gi '
          "qonunning 13-moddasi bilan tartibga solinadi", {},
          [("article", "1048", "single")]),
+        # bare lowercase "qonun" immediately followed by a "(N-modda)" shorthand
+        # names that OTHER act's own article, not the Code's — real corpus
+        # phrasing (2026-09-25, row 6071): must stop before the parenthetical
+        # number, distinct from (and much narrower than) the already-rejected
+        # blanket bare-lowercase-"qonun" stop.
+        ("FKning 60-bobi, “Mualliflik huquqi toʻgʻrisida”gi qonun (35-modda) asosida",
+         {"allow_fk_alias": True}, [("chapter", None, "single")]),
     ]
     for text, kwargs, expected in stop_cases:
         got = [(c.target_kind, c.article, c.listing) for c in extract(text, **kwargs)]
