@@ -61,7 +61,24 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _check_parquet_pulled() -> None:
+    """Fail fast, with an actionable message, if the raw parquet is still an
+    unpulled git-lfs pointer stub — every session's cold-start hits this
+    (`git-lfs` isn't preinstalled), and without this check the first symptom
+    is a DuckDB 'no magic bytes found' error that doesn't name the real
+    cause, from deep inside AC3 rather than before anything has run."""
+    size = PARQUET.stat().st_size
+    if size < 10_000:
+        head = PARQUET.read_bytes()[:200]
+        if head.startswith(b"version https://git-lfs"):
+            raise SystemExit(
+                f"{PARQUET} is a git-lfs pointer stub ({size} bytes), not the "
+                "real parquet file. Run: git lfs install && git lfs pull"
+            )
+
+
 def main() -> int:
+    _check_parquet_pulled()
     con = duckdb.connect(str(DB_PATH), read_only=True)
     run_id, parquet_sha_at_build, markdown_sha_at_build = con.execute(
         "SELECT run_id, parquet_sha256, markdown_sha256 FROM extraction_run ORDER BY started_at DESC LIMIT 1"

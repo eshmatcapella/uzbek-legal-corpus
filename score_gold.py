@@ -89,8 +89,8 @@ def main() -> int:
     row_ids = sorted({r["row_id"] for r in records})
     rows = {r[0]: r for r in con.execute(f"""
         SELECT file_row_number, article_text, cross_references, amendment_note
-        FROM {raw} WHERE file_row_number IN ({",".join(str(i) for i in row_ids)})
-    """).fetchall()}
+        FROM {raw} WHERE file_row_number IN (SELECT * FROM UNNEST(?))
+    """, [row_ids]).fetchall()}
 
     tp_p = fp = 0          # precision: per-anchor bucket vs expected
     tp_r = fn = 0          # recall: expected vs whole-field extract() output

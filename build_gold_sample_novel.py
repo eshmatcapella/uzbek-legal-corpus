@@ -168,8 +168,8 @@ def gold_signatures(con, gold_path: str) -> set[tuple]:
     row_ids = sorted({r["row_id"] for r in records})
     rows = {r[0]: r for r in con.execute(f"""
         SELECT file_row_number, article_text, cross_references, amendment_note
-        FROM {raw} WHERE file_row_number IN ({",".join(str(i) for i in row_ids)})
-    """).fetchall()}
+        FROM {raw} WHERE file_row_number IN (SELECT * FROM UNNEST(?))
+    """, [row_ids]).fetchall()}
     field_index = {"article_text": 0, "cross_references": 1, "amendment_note": 2}
     sigs = set()
     for rec in records:

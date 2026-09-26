@@ -250,11 +250,11 @@ def main() -> int:
         rec = hits.setdefault(doc_id, [0, ev])
         rec[0] += 1
     if hits:
-        meta = {r[0]: r for r in con.execute(f"""
+        meta = {r[0]: r for r in con.execute("""
             SELECT a.doc_id, a.tier, a.doc_title, a.doc_date, c.derived_status
             FROM act a JOIN v_act_currency c ON c.doc_id = a.doc_id
-            WHERE a.doc_id IN ({','.join(str(d) for d in hits)})
-        """).fetchall()}
+            WHERE a.doc_id IN (SELECT * FROM UNNEST(?))
+        """, [list(hits)]).fetchall()}
         con.executemany(
             "INSERT INTO llc_implementing_act VALUES (?, 'names_llc_law', ?, ?, ?, ?, NULL, ?, ?)",
             [[d, meta[d][1], meta[d][2], meta[d][3], v[0], meta[d][4], v[1]]

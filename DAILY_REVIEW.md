@@ -22,6 +22,86 @@ How to use this file each session:
 
 ## Active threads
 
+- **f-string SQL audit: built and closed 2026-09-26.** Cleanup's turn in the
+  rotation (data currency 09-24, extractor 09-25). The hard constraint this
+  project runs under bans "f-string SQL / string-interpolated queries with
+  any value that isn't a hardcoded constant you wrote," citing
+  `hierarchy_engine.py` (deleted 2026-09-07) as the known offender — but
+  that constraint had never actually been checked against the *rest* of the
+  codebase, only assumed clean once the one named file was gone. Audited
+  every `execute(f"...")` call across all 8 `.py` files that use one (29
+  call sites total: `build_corpus_db.py`, `build_gold_sample.py`,
+  `build_gold_sample_novel.py`, `build_links.py`, `build_llc.py`,
+  `measure_extractor_recall.py`, `score_gold.py`, `verify_transfer.py`) and
+  classified each interpolated value as either a hardcoded constant (the
+  fixed `read_parquet(...)` expression built from the `PARQUET` path
+  constant, or a doc-id constant like `CC_GENERAL_PART`/`CC_DOCS`/
+  `LLC_LAW_CURRENT` — allowed under the rule as written) or a genuine
+  runtime value. **Found 3 real violations**, all the same shape — a
+  dynamically-computed list of ints (`row_ids` from gold-set records, or
+  `hits` dict keys from a query result) joined into the SQL text with
+  `",".join(str(i) for i in ...)` instead of bound as a parameter:
+  `build_gold_sample_novel.py:169-172`, `score_gold.py:90-93`,
+  `build_llc.py:253-257`. None are exploitable today — every value is a
+  Python `int` produced by DuckDB's own typed columns, so `str()`-formatting
+  one can't smuggle SQL — but each one is a live violation of the project's
+  own written rule, and each is exactly the kind of code a future edit could
+  widen into a real hole (e.g. swapping the int list for a string list).
+  Also explicitly checked the actual user-facing surface — both
+  `app_hierarchy.py` and `app_llc.py` — and confirmed **zero** f-string SQL
+  there; every `con.execute()` call in either app already goes through
+  DuckDB's `?` parameter list. So the risk was already correctly quarantined
+  to batch/build scripts, not user input — lower severity than it first
+  looked, but still worth closing so the pattern stops getting copy-pasted
+  forward (this is exactly how `build_llc.py`'s violation was born: copied
+  from `build_gold_sample.py`'s own `alias_docs`/`rows` pattern, which
+  happened to only ever interpolate the hardcoded `raw` constant, not a
+  dynamic list). Fixed all 3 with DuckDB's array-parameter idiom —
+  `WHERE col IN (SELECT * FROM UNNEST(?))` with the list passed as a bound
+  parameter — rather than hand-building `?,?,?,...` placeholders, since
+  DuckDB accepts a Python list bound to a single `?` this way (measured
+  working in isolation first, then applied). **Verified behavior-preserving,
+  not just "looks equivalent"**: ran the *original* (unpatched) and *fixed*
+  `build_llc.py` each against its own fresh throwaway copy of
+  `corpus.duckdb`, then diffed `llc_implementing_act` row-for-row between
+  the two — 132/132 rows byte-identical. `score_gold.py` re-run: precision
+  and recall unchanged at 297/299 (99.3%)/297/299 (99.3%), matching
+  2026-09-25 exactly. `build_gold_sample_novel.py` re-run (`--n 3`): ran
+  clean, and its coverage measurement is itself a nice byproduct check —
+  98/451 signatures now covered (up from 58/451 on 2026-09-22), consistent
+  with yesterday's 40-record batch having landed. Did **not** touch the
+  committed `corpus.duckdb` — the fix is byte-identical in its output, so
+  re-running `build_llc.py` against the real database would only add the
+  non-deterministic serialization byte-churn the 2026-09-23/25 entries
+  already flagged, for zero actual change. `pyflakes`/`vulture
+  --min-confidence 60` both clean on the full `*.py` set (no new dead code
+  introduced by the fix). `python -m unittest test_transfer_e2e.py`: 14/14
+  pass. Both apps smoke-tested live (HTTP 200, no exceptions in logs) — no
+  schema change, load check only per the project's own rule.
+  **Same cold-start environment steps as every session since 09-19**
+  (`apt-get install -y git-lfs && git lfs pull` for the parquet pointer
+  stub; `pip install duckdb pandas pyarrow streamlit pyflakes vulture`) and
+  the same stale-detached-`HEAD`-vs-local-`main` check as most sessions
+  since 09-04 (fast-forwarded local `main` to the detached HEAD after
+  confirming with a fresh `git fetch origin main` that origin already had
+  both 09-24's and 09-25's commits — a stale local ref, not a real gap). No
+  new environment finding, but given how many log entries this exact "no
+  magic bytes found" gotcha has now cost across ~15 sessions with no fix
+  attempted, added a small guard to `verify_transfer.py` while already
+  touching the file for the f-string audit above: `_check_parquet_pulled()`
+  runs first thing in `main()`, checks the parquet's size against the
+  10KB LFS-pointer-file size (real file is 163,356,047 bytes; the pointer
+  is 134) and its content prefix, and raises a `SystemExit` naming the exact
+  fix (`git lfs install && git lfs pull`) instead of letting a bare DuckDB
+  `InvalidInputException` surface from deep inside AC3 with no hint at the
+  real cause. Verified both branches by hand: swapped the real parquet for
+  a synthetic 134-byte LFS-pointer stub and confirmed the new, clear error
+  fires before any DuckDB connection opens; restored the real file and
+  reran the full suite green. This doesn't remove the need to `git lfs
+  pull` each session (the container still starts without it pulled) — it
+  just turns next session's first failure from a 10-minute "why is DuckDB
+  saying no magic bytes" detour into an immediate, actionable message.
+
 - **Signature-stratified gold sampling: built and run 2026-09-25, one real
   bug found and fixed, methodology validated, thread open for continued use.**
   Extractor's turn in the rotation (hadn't run since 2026-09-22). The
@@ -1173,10 +1253,156 @@ How to use this file each session:
   see Active threads for the full cross-axis measurement). `vulture *.py
   --min-confidence 60` is now clean and is a second repeatable Cleanup check
   alongside `pyflakes`.
+- ~~**f-string SQL beyond the known `hierarchy_engine.py` offender.**~~
+  **Audited and fixed 2026-09-26**: swept all 29 `execute(f"...")` call
+  sites across the codebase (the `hierarchy_engine.py` deletion on
+  2026-09-07 closed the one *known* offender but nothing had checked for
+  others since). Found 3 real violations of the project's own rule —
+  `build_gold_sample_novel.py:169-172`, `score_gold.py:90-93`,
+  `build_llc.py:253-257`, all interpolating a runtime-computed int list into
+  an `IN (...)` clause instead of binding it — fixed with DuckDB's
+  `IN (SELECT * FROM UNNEST(?))` idiom. Confirmed `app_hierarchy.py`/
+  `app_llc.py` (the actual user input surface) already have zero f-string
+  SQL. See Active threads and Log for the full audit and the
+  byte-identical-output verification (`build_llc.py`: 132/132
+  `llc_implementing_act` rows unchanged between pre-fix and post-fix runs).
+  A repeatable third Cleanup check now exists alongside `pyflakes`/
+  `vulture`: `grep -n 'execute(f"' *.py` and re-classify anything new
+  against "hardcoded constant vs. runtime value" — cheap enough to re-run
+  every time this rotation comes up again, not just once.
+- **New, small paper cut found while fixing the above (not itself a
+  violation)**: the git-lfs-pointer-stub cold-start failure
+  (`verify_transfer.py`'s AC3 previously surfaced it as a bare DuckDB "no
+  magic bytes found" error, costing a diagnostic detour in roughly 15 prior
+  sessions per the Log) is now fixed too — `_check_parquet_pulled()` at the
+  top of `verify_transfer.py::main()` gives an immediate, actionable
+  `SystemExit` instead. This doesn't remove the actual cold-start step
+  (`git lfs pull` still has to run every session until the container image
+  preinstalls `git-lfs`, which is outside this project's control) — just
+  the diagnostic cost of that step failing silently-wrong instead of
+  loudly-right. Nothing left to do here; recorded for context only, in case
+  a future session wonders why this guard exists.
 
 ---
 
 ## Log
+
+### 2026-09-26 — Cleanup rotation: audited every f-string SQL call for the hard constraint's own rule, fixed 3 real violations, closed a 15-session-old environment paper cut
+
+Rotation: 09-24 was Data currency, 09-25 was Extractor, so today is Cleanup.
+The Cleanup backlog section had no open items left (everything in it is
+struck through as resolved) — invented a new angle instead of forcing a
+backlog item: actually check the codebase against the hard constraint this
+project runs under ("no f-string SQL with any value that isn't a hardcoded
+constant"), which had only ever been enforced reactively (deleting
+`hierarchy_engine.py` on 2026-09-07) rather than swept for elsewhere.
+
+**Environment**, same as most sessions since 09-19/09-04: `git-lfs` wasn't
+preinstalled (`articles/train-00000-of-00001.parquet` came down as a
+134-byte pointer stub, `git lfs pull` fixed it — confirmed the pulled file
+is exactly 163,356,047 bytes) and local `HEAD` was detached 2 commits ahead
+of local `main` (2026-09-24's and 2026-09-25's commits) — `git fetch origin
+main` confirmed origin already had both, so fast-forwarded local `main` and
+pushed (no-op, "Everything up-to-date": the previous two sessions had
+already pushed correctly; only the local ref was stale).
+
+**The audit.** Grepped every `.execute(f"..."` / `.cursor().execute(f"..."`
+call across the whole `*.py` set: 29 call sites in 8 files
+(`build_corpus_db.py`, `build_gold_sample.py`, `build_gold_sample_novel.py`,
+`build_links.py`, `build_llc.py`, `measure_extractor_recall.py`,
+`score_gold.py`, `verify_transfer.py`). Read every one and classified the
+interpolated value:
+- **allowed** (hardcoded constant): the fixed `raw = f"read_parquet('{PARQUET}', ...)"`
+  expression built from the `PARQUET` path constant (appears in most files);
+  doc-id constants like `CC_GENERAL_PART`, `CC_DOCS`, `LLC_LAW_CURRENT`/
+  `LLC_LAW_PRIOR` (appear in `build_corpus_db.py`, `build_links.py`,
+  `build_llc.py`, `verify_transfer.py`).
+- **violation**: a value computed at runtime from a query result, joined
+  into the SQL text with `",".join(str(i) for i in ...)` instead of bound as
+  a parameter. Found exactly 3, all the same shape:
+  - `build_gold_sample_novel.py:169-172` — `row_ids` (gold-set record row
+    numbers) into `file_row_number IN (...)`.
+  - `score_gold.py:90-93` — the identical pattern, same `row_ids` source
+    (both files recompute a gold window's signature from its stored anchor
+    position the same way — `build_gold_sample_novel.py`'s own docstring at
+    `gold_signatures()` says as much).
+  - `build_llc.py:253-257` — `hits` dict keys (`doc_id`s found by scanning
+    for acts that name the LLC Law) into `a.doc_id IN (...)`.
+
+  None are exploitable today: every interpolated value is a Python `int`
+  produced by DuckDB's own typed integer columns (`file_row_number`,
+  `doc_id`), and `str()` on an `int` can't contain SQL syntax. But each is a
+  live violation of the project's own written rule, and each is exactly the
+  shape that silently becomes exploitable the day someone interpolates a
+  string instead of an int into the same pattern — worth closing on
+  principle, not just on today's measured risk. Traced `build_llc.py`'s
+  violation back to its likely origin: it's a near-verbatim copy of
+  `build_gold_sample.py`'s own `alias_docs`/`rows` two-query pattern, which
+  only ever interpolates the hardcoded `raw` constant — the violation was
+  introduced when that pattern got reused with a *different*, dynamic
+  collection in the `IN (...)` clause. Also explicitly checked the actual
+  user-facing surface, `app_hierarchy.py` and `app_llc.py`: **zero**
+  f-string SQL in either — every `con.execute()` there already goes through
+  DuckDB's `?` parameter list (see `run_query`/`run_query_df` helpers in
+  each). So the real risk was already correctly quarantined to batch/build
+  scripts, never reaching anything a user's input could influence — lower
+  severity than "SQL injection" sounds, but still worth fixing so the
+  pattern doesn't get copy-pasted into a future script the way it already
+  was once.
+
+**The fix.** DuckDB accepts a Python list bound to a single `?` via
+`WHERE col IN (SELECT * FROM UNNEST(?))` — confirmed working in isolation
+first (`SELECT * FROM t WHERE id IN (SELECT * FROM UNNEST(?))` with
+`[[1, 3]]` bound, on a 3-row scratch table) before touching any real code.
+Applied to all 3 sites, replacing the f-string join with a bound parameter
+list; no other line in any of the 3 functions needed to change.
+
+**Verification, not just "looks equivalent."** `score_gold.py` re-run:
+precision 297/299 (99.3%), recall 297/299 (99.3%) — byte-identical to
+2026-09-25's number, same 2 mismatches (`gold_id` 52 and 123, the documented
+`known_gap` records). `build_gold_sample_novel.py --n 3 --seed 1`: ran
+clean; its own coverage measurement now reads 98/451 signatures covered
+(1419/3251 windows still novel), up from 58/451 on 2026-09-22 — consistent
+with 2026-09-25's 40-record batch having landed, not a symptom of the fix.
+`build_llc.py` got the most rigorous check since its fix touches an
+`INSERT` into `llc_implementing_act`, not just a read: ran the *original*
+(pre-fix, loaded from `git show HEAD:build_llc.py`) and the *fixed* version
+each against its own fresh throwaway copy of `corpus.duckdb`
+(`DB_PATH`/`PARQUET` monkeypatched, real code otherwise unchanged), then
+diffed `llc_implementing_act` row-for-row between the two — **132/132 rows
+byte-identical**. Did not touch the committed `corpus.duckdb` itself: since
+the fix is proven byte-identical in its output, re-running `build_llc.py`
+against the real database would only add the non-deterministic
+serialization byte-churn the 2026-09-23 and 2026-09-25 entries already
+flagged as a real cost, for zero actual change to any row. `pyflakes *.py`
+and `vulture *.py --min-confidence 60` both clean (no new dead code).
+`python -m unittest test_transfer_e2e.py`: 14/14 pass. Both Streamlit apps
+smoke-tested live via `streamlit run --server.headless`: HTTP 200 from
+both, no exceptions in either log — no schema changed, so this is the load
+check the project's own rule calls for, not a full query-level check.
+
+**Also fixed, same file already open for the audit above**: added
+`_check_parquet_pulled()` to the very top of `verify_transfer.py`'s
+`main()`. The "raw parquet is an unpulled LFS pointer stub" gotcha has now
+cost a paragraph in roughly 15 prior sessions' log entries (09-04 onward,
+by grep) with a bare `_duckdb.InvalidInputException: No magic bytes found`
+as the only symptom, surfacing deep inside AC3 rather than up front. The
+new check runs before any DuckDB connection opens: if the parquet is under
+10KB and its content starts with `version https://git-lfs`, it raises a
+`SystemExit` naming the exact fix (`git lfs install && git lfs pull`)
+instead. Verified both branches by hand — swapped the real 163MB file for a
+synthetic 134-byte pointer stub, confirmed the new clear message fires;
+restored the real file, confirmed the full suite is still green. This
+doesn't remove the need to `git lfs pull` each session (nothing can, short
+of the container image preinstalling `git-lfs`) — it just turns next
+session's first failure into an immediate, actionable one-liner instead of
+a detour into a cryptic DuckDB error.
+
+`verify_transfer.py`: all AC1-AC7 checks green (ran twice — once before any
+edit as a baseline, once after everything above). Files changed:
+`build_gold_sample_novel.py`, `score_gold.py`, `build_llc.py`,
+`verify_transfer.py`. `corpus.duckdb` untouched — no functional change to
+land, confirmed above.
 
 ### 2026-09-25 — Extractor rotation: signature-stratified gold sampling instead of a fourth uniform batch, one real bug found and fixed
 
