@@ -641,10 +641,27 @@ def main() -> int:
     # amend_date, 413 resolve to exactly one candidate, zero are ambiguous
     # (multiple candidates surviving the same-block check) — pushing overall
     # amending-act resolution from 33/594 to 446/594 (75.1%).
+    #
+    # Sourced from `src_provision` originally — but that table only holds rows
+    # that themselves produced a link_edge (see its own comment above: "citing
+    # provisions"), not every raw row belonging to a doc_id. A long omnibus act
+    # is scraped as several same-id "-full" pagination chunks (e.g. doc
+    # -6809366 is 9 separate raw rows under corpus_id "-6809366-full",
+    # 425-16061 chars each); only whichever chunk(s) happened to contain an
+    # extractable citation landed in src_provision, silently starving
+    # cc_clause_candidates of the other chunks' text. Measured 2026-09-27: of
+    # 158 residual `unresolved` clauses, 67 turned out to cite a target
+    # article that sits in a pagination chunk src_provision had dropped — e.g.
+    # doc -6809366's "2) quyidagi mazmundagi 261-modda bilan toʻldirilsin"
+    # (inserting Article 26-1) lives in a different chunk than the one row that
+    # made it into src_provision. Reading every raw row for the doc_id
+    # directly (ordered by file_row_number, i.e. document/page order) instead
+    # of going through src_provision fixes this without changing the matching
+    # logic at all — see DAILY_REVIEW.md for the full measurement.
     text_by_doc: dict[int, str] = {
-        d_id: text or "" for d_id, text in con.execute("""
-            SELECT cr.doc_id, string_agg(sp.article_text, ' ')
-            FROM corpus_row cr JOIN src_provision sp ON sp.row_id = cr.row_id
+        d_id: text or "" for d_id, text in con.execute(f"""
+            SELECT cr.doc_id, string_agg(p.article_text, ' ' ORDER BY p.file_row_number)
+            FROM corpus_row cr JOIN {raw} p ON p.file_row_number = cr.row_id
             GROUP BY cr.doc_id
         """).fetchall()
     }

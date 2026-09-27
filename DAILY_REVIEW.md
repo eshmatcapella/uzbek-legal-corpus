@@ -22,6 +22,84 @@ How to use this file each session:
 
 ## Active threads
 
+- **Amending-act resolution: 74.2% -> 85.1%, built and closed 2026-09-27.**
+  Data currency's turn in the rotation (Extractor had 09-22/09-25, Cleanup had
+  09-23/09-26, Data currency only 09-24 in the last five). Picked up the
+  158/612 (25.8%) residual left open by 2026-09-24's `date+cc-clause-match`
+  tier — that entry's own note flagged "some are same-date candidates whose
+  body doesn't block-match for a reason not yet diagnosed" as the next step.
+  Diagnosed it by reproducing `build_links.py`'s exact `by_date`/`cc_blocks`/
+  `cc_clause_candidates` logic in a standalone script and classifying all 158
+  unresolved rows. Root cause, found by hand-reading the first failing case
+  (doc -6809366, target article 26¹): `text_by_doc` was built by joining
+  `corpus_row` to `src_provision` — but `src_provision` only holds rows that
+  *themselves* produced a `link_edge` (a much narrower set than "every raw row
+  belonging to this doc_id"), and a long omnibus act is scraped as several
+  same-`id` "-full" pagination chunks (doc -6809366 alone is 9 separate raw
+  rows under corpus_id "-6809366-full", 425-16061 chars each, sharing one
+  logical document). Only whichever chunk(s) happened to contain an
+  extractable citation landed in `src_provision`; the rest of the act's text —
+  including, for -6809366, the exact clause "2) quyidagi mazmundagi 261-modda
+  bilan toʻldirilsin" that inserts Article 26¹ — was silently invisible to the
+  amending-act block-match. Fixed by reading every raw parquet row for the
+  doc_id directly (`corpus_row` joined straight to the raw `read_parquet(...)`
+  by `file_row_number`, ordered by `file_row_number` to preserve document/page
+  order) instead of routing through `src_provision`, in `build_links.py`'s
+  `text_by_doc` construction — same matching logic (same-block requirement,
+  same `\b<article>-modda` regex) untouched, just fed complete text.
+  **Measured, before touching the real database**: ran both the original and
+  fixed version against a throwaway copy of `corpus.duckdb`, diffed
+  `article_amendment` row-for-row by `event_id` — **0 regressions** (no
+  previously-resolved row went back to `unresolved`), **0 rows changed which
+  act they resolved to**, **67 newly resolved**, purely additive. Spot-checked
+  several by hand against the raw text (not just structurally): confirmed the
+  "925-modda" match for `OʻRQ-683` is the real target article (not a false
+  positive from "1925-moddaning" — verified the `\b` word boundary correctly
+  rejects that), and confirmed it sits inside the correct "55-modda." block
+  that opens with the Civil Code's own bibliographic citation. **Result:
+  454/612 (74.2%) -> 521/612 (85.1%)** amending-act resolution — `by
+  match_method`: `date+cc-clause-match` 411 -> 478, `unresolved` 158 -> 91,
+  `date+civil-code-title` unchanged at 43. Verified live in `app_hierarchy.py`
+  via Playwright: Article 384 (General Part), unresolved before today, now
+  shows "Amending act: *Oʻzbekiston Respublikasining ayrim qonun
+  hujjatlariga oʻzgartishlar kiritish toʻgʻrisida*" in its amendment-history
+  expander. Also checked `app_llc.py` live (CC art. 39, one of the *still*-
+  unresolved rows) to confirm the LEFT JOIN degrades gracefully — no crash,
+  the "Amending act:" line is simply absent, exactly as designed.
+  **Characterized, not chased, the new 91-row residual** (diminishing returns
+  past this point — each remaining case needs its own per-act forensic read,
+  not one shared root cause): 57/91 have a same-date candidate act that
+  mentions "Fuqarolik kodeks" *somewhere* in its full text but not inside the
+  same top-level block as the target article (often a passing descriptive
+  reference — e.g. "...Fuqarolik kodeksida belgilangan tartibda..." inside a
+  block that's actually amending a *different* named law, not the Code
+  itself — confirmed by hand for the OʻRQ-1025/2025-02-07 cluster, 36 of the
+  91); 34/91 have no same-date candidate mentioning the Civil Code at all
+  (likely a wrong/mistranscribed `amend_date` in the source `amendment_note`,
+  or the true amending act genuinely isn't in this corpus — same class of gap
+  as `repeal_clause`'s already-closed 45-item residual, not re-investigated
+  today). Re-ran `build_okoz.py` and `build_llc.py` against the real database
+  after `build_links.py` (both fully downstream of `link_edge`/
+  `article_amendment`): `llc_implementing_act` 132/132 and `llc_norm` 100/100
+  unchanged, confirming zero LLC-slice impact (expected — no foundation
+  mapping or LLC-specific logic was touched). `verify_transfer.py`: all
+  checks green, same INFO-line numbers as 2026-09-26 (`repeal_clause` is a
+  separate, earlier code path in `build_links.py`, untouched). `pyflakes
+  *.py`/`vulture *.py --min-confidence 60`: both clean. `python -m unittest
+  test_transfer_e2e.py`: 14/14. `score_gold.py`: unchanged at 297/299 (this
+  fix doesn't touch `citation_extractor.py` at all). This closes today's
+  thread — the residual is now honestly measured and categorized rather than
+  a bare "158 unresolved, cause unknown" count, matching this project's
+  established pattern for gaps below the diminishing-returns line (see the
+  2026-09-09 repeal-resolution closure for precedent). If picked up again:
+  the 57-row "CC mentioned elsewhere, not in the article's own block" cluster
+  is the more promising half — it means the *act* is very likely correct and
+  already found, just needs a smarter same-block heuristic (e.g. also
+  accepting a block whose own top-level clause names a *different* law but
+  whose government-citation preamble bibliographically references the Civil
+  Code's own gazette numbers) rather than the "no plausible candidate at all"
+  34-row half, which likely needs date-transcription forensics instead.
+
 - **f-string SQL audit: built and closed 2026-09-26.** Cleanup's turn in the
   rotation (data currency 09-24, extractor 09-25). The hard constraint this
   project runs under bans "f-string SQL / string-interpolated queries with
@@ -708,7 +786,18 @@ How to use this file each session:
   grew the gold set to 140 records, new combined score 297/299 = 99.3%
   precision and recall) — of the last five sessions (09-21 through 09-25),
   Data currency has two, Extractor has two, Cleanup has one; next session
-  should prefer Cleanup or Data currency.
+  should prefer Cleanup or Data currency. Cleanup 09-26 (audited every
+  f-string SQL call site for the project's own hard constraint, fixed 3 real
+  violations; also closed a 15-session-old cold-start environment paper cut —
+  see Active threads and Log). Data currency 09-27 (diagnosed and fixed the
+  74.2%-resolution residual's root cause: `text_by_doc` was reading amending
+  -act text through `src_provision`, which only holds already-cited rows, so
+  a multi-chunk paginated omnibus act's other chunks were invisible to the
+  block-match; reading the full raw parquet per doc_id instead took
+  resolution to 85.1% with zero regressions — see Active threads and Log) —
+  of the last five sessions (09-23 through 09-27), Cleanup has two, Extractor
+  has one, Data currency has two; next session should prefer Extractor,
+  which hasn't run since 09-25.
 
 - **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
   four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -1158,11 +1247,25 @@ How to use this file each session:
   candidate's own Civil-Code-amending block instead of its title, taking
   resolution from 43/612 (7.0%) to 454/612 (74.2%) without needing
   `doc_number` at all. See Active threads and Log for the false-positive risk
-  that had to be ruled out first and the exact measurement. **New residual**:
-  158/612 (25.8%) still unresolved — some are the chapter-level clauses in
-  (1) above (no article number to probe), the rest are same-date candidates
-  whose body doesn't block-match for a reason not yet diagnosed; worth a
-  look if this thread is picked up again, but diminishing returns for now.
+  that had to be ruled out first and the exact measurement. **Residual
+  158/612 diagnosed and mostly fixed 2026-09-27**: root cause was
+  `text_by_doc` sourcing an amending act's full text through
+  `src_provision` (which only holds rows that themselves produced a
+  `link_edge`), so a long omnibus act's OTHER pagination chunks — same
+  corpus_id, different raw rows — were invisible to the block-match. Reading
+  every raw row for the doc_id directly instead of routing through
+  `src_provision` fixed it with zero regressions: resolution
+  454/612 (74.2%) -> **521/612 (85.1%)**. See Active threads and Log for the
+  full measurement and the worked example (doc -6809366's Article 26¹
+  insertion clause, invisible in the one src_provision chunk kept, present in
+  a different one of its 9 raw pagination rows). **New residual**: 91/612
+  (14.9%) — 57 have a same-date candidate act that mentions the Civil Code
+  somewhere but not inside the target article's own block (often a
+  descriptive in-passing reference inside an unrelated law's own amending
+  block), 34 have no same-date candidate mentioning the Civil Code at all
+  (likely a source-data date/transcription issue, not a matching-logic gap).
+  Diminishing returns past this point — see Active threads for the two
+  clusters' different likely next steps if ever picked up again.
 - ~~**Propagate currency into the LLC dossier's implementing-acts list.**~~
   **Closed 2026-09-16.** Article-level currency was surfaced in both apps
   2026-09-14 (via `v_article_currency`). The remaining open half — whether
@@ -1286,6 +1389,182 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-27 — Data currency rotation: diagnosed the amending-act-resolution residual's real root cause, fixed it, resolution 74.2% -> 85.1%
+
+Rotation: 09-25 was Extractor, 09-26 was Cleanup, so today is Data currency
+(last five sessions 09-23..09-27 before today would have been Cleanup/Data
+currency/Extractor/Cleanup — Data currency had only one). Picked the
+highest-value open Data currency backlog item rather than inventing a new
+angle: 2026-09-24's `date+cc-clause-match` tier took amending-act resolution
+from 7.0% to 74.2%, but left 158/612 (25.8%) unresolved with an explicit
+note that "the rest are same-date candidates whose body doesn't block-match
+for a reason not yet diagnosed" — an open, named question, not a closed
+thread.
+
+**Environment**: same as every session since 09-19 — `apt-get install -y
+git-lfs && git lfs install && git lfs pull` (parquet came down as a 134-byte
+LFS pointer stub, confirmed the real 163,356,047-byte file after pulling;
+`verify_transfer.py`'s 2026-09-26 `_check_parquet_pulled()` guard would have
+caught this cleanly if I hadn't pulled first, but pulling first is still the
+right order) and `pip install duckdb pandas pyarrow streamlit pyflakes
+vulture playwright` (playwright wasn't in the standing toolchain list before
+today — needed it for live UI verification, see below). No stale-`HEAD`
+issue this session (local `main` and `origin/main` agreed from a fresh
+clone).
+
+**Diagnosing the residual.** Rather than guess, replicated
+`build_links.py`'s exact `by_date`/`cc_blocks`/`cc_clause_candidates` logic
+in a standalone read-only script and ran it against all 158 `unresolved`
+`article_amendment` rows, classifying each by exactly which step failed (no
+`amend_date`, no act at all on that date, ambiguous title match, zero
+block-match candidates, ambiguous block-match). Result: **156/158** fell
+into "acts exist on the clause's date, but none of them, in any modda-block,
+mention the target article" — a single dominant failure mode, not scattered
+noise. Read the first failing case by hand against the raw parquet text (not
+the derived `corpus.duckdb` tables) to find out why: clause `event_id=24`
+targets Article 26¹ (superscript), amending act "OʻRQ-911" dated
+2024-02-21. The only plausible same-date candidate, doc -6809366
+("Toʻlovga qobiliyatsizlik toʻgʻrisida"gi ... qabul qilinganligi munosabati
+bilan ... ayrim qonun hujjatlariga ... kiritish haqida"), genuinely *does*
+contain a Civil-Code-amending block reading "...Fuqarolik kodeksiga ...
+quyidagi oʻzgartirishlar va qoʻshimcha kiritilsin: 1) 26-modda quyidagi
+tahrirda bayon etilsin: ... 2) quyidagi mazmundagi 261-modda bilan
+toʻldirilsin: ..." — the exact clause that inserts Article 26¹ — but
+`corpus.duckdb`'s own `src_provision` table, queried directly, held only
+**2,482 characters** of this act's text, cut off mid-sentence right after
+"26-modda quyidagi tahrirda bayon etilsin:" and never reaching the 26¹
+insertion two sentences later.
+
+Traced why: queried the raw parquet directly for every row sharing this
+act's id (`-6809366-full`) and found **9 separate raw rows**, not one —
+lengths 477, 425, 3687, 2482, 1746, 2193, 16061, 756, 554 characters,
+clearly LexUZ's own pagination of one long act into several scraped chunks
+that all carry the same corpus id. `corpus_row` correctly has all 9 (plus 2
+numbered-article rows, matching `act.n_articles = 11` for this doc) — but
+`build_links.py`'s `text_by_doc` (used only by the amending-act
+block-match, introduced 2026-09-24) was built by joining `corpus_row` to
+`src_provision`, and `src_provision` is deliberately scoped narrower: "rows
+that themselves produced a link_edge" (its own comment: citing provisions,
+so the UI can show the actual citing rule, not just a pointer). Only
+whichever of the 9 chunks happened to contain an extractable citation
+landed in `src_provision` — for this doc, exactly one, the 2482-char chunk.
+The other 8 chunks, including the one with the Article 26¹ insertion, were
+never even queried by the amending-act resolver. Confirmed this isn't
+niche: only 647 of 24,267 acts have *any* row in `src_provision` at all
+(`src_provision` exists to hold citing provisions, not full act bodies) —
+`text_by_doc` was silently working with a near-empty or truncated text for
+the overwhelming majority of candidate acts.
+
+**The fix**, in `build_links.py`'s `text_by_doc` construction only: read
+every raw parquet row belonging to the doc_id directly (`corpus_row` joined
+to `read_parquet(...)` by `file_row_number`, `string_agg(... ORDER BY
+file_row_number)` to preserve document/page order) instead of routing
+through `src_provision`. No change to the matching logic itself — same
+same-block requirement, same `\b<article>\s*-\s*modda` regex, same
+"Fuqarolik kodeks" title check — just complete input text.
+
+**Measured, before touching the real `corpus.duckdb`**: copied the
+committed database to a throwaway file, ran the patched `build_links.py`
+against it, and diffed `article_amendment` row-for-row by `event_id`
+against the pre-fix table: **0 rows regressed** from resolved back to
+`unresolved`, **0 rows changed which act they resolved to** (pure
+addition, no re-adjudication), **67 rows newly resolved**. Spot-checked
+several by hand against the raw text rather than trusting the diff alone:
+for one newly-resolved case (article 925, act OʻRQ-683/doc -5388561),
+verified the regex's `\b` word boundary correctly distinguishes a genuine
+"925-modda" occurrence from the substring "1925-moddaning" earlier in the
+same document (both look identical to a naive substring search but the
+regex only fires on the real one — checked with `re.finditer` directly, one
+match, at the correct position), and confirmed that match sits inside the
+same "55-modda." block that opens with the Civil Code's own bibliographic
+citation, not a different law's block. **Result: 454/612 (74.2%) -> 521/612
+(85.1%)** amending-act resolution corpus-wide; `by match_method`:
+`date+cc-clause-match` 411 -> 478, `unresolved` 158 -> 91,
+`date+civil-code-title` unchanged at 43 (that tier doesn't touch
+`text_by_doc` at all).
+
+Applied the fix to the real `corpus.duckdb`: reran `build_links.py` (numbers
+matched the throwaway-copy test exactly), then `build_okoz.py` (unaffected,
+same 386/386 classified) and `build_llc.py` (`llc_implementing_act` 132/132,
+`llc_norm` 100/100, both unchanged — expected, since nothing about LLC
+foundation mapping or the LLC-specific query logic was touched, only the
+General/Special Part amending-act resolver). `repeal_clause` numbers also
+unchanged (840/885 resolved, same `by match_method` breakdown as
+2026-09-26) — it's a separate, earlier code path in the same file that
+never touches `text_by_doc`.
+
+**Verified live, not just in the diff.** Started both Streamlit apps and
+used Playwright (newly added to the toolchain this session — wasn't
+installed before) to check the actual rendered UI, not just HTTP 200:
+`app_hierarchy.py`'s Article 384 (General Part; `unresolved` before today)
+now shows "Amending act: *Oʻzbekiston Respublikasining ayrim qonun
+hujjatlariga oʻzgartishlar kiritish toʻgʻrisida*" inside its amendment-
+history expander, screenshotted directly from the running app. Also checked
+`app_llc.py`'s "Follow a norm down" page on CC art. 39 — one of the rows
+*still* unresolved after today's fix (a different, deeper gap, see below) —
+to confirm the `LEFT JOIN act a ON a.doc_id = am.amending_doc_id` degrades
+gracefully when `amending_doc_id` is NULL: no crash, the "Amending act:"
+line is simply omitted, exactly as the existing code already handles it.
+(Note: the two apps can't run concurrently against the same `corpus.duckdb`
+— `app_hierarchy.py` opens read-write first if the file is free, which then
+blocks `app_llc.py`'s read-only open with a DuckDB lock conflict; this is
+pre-existing, already-commented behavior in `app_hierarchy.py`'s `_connect`,
+not something today's change caused — tested each app one at a time to
+avoid it.)
+
+**Characterized, but did not chase, the new 91-row residual** — diminishing
+returns past this point, each case needs individual forensics rather than
+sharing one root cause the way the src_provision bug did. Reran the same
+classification script against the new residual: 57/91 have a same-date
+candidate act that mentions "Fuqarolik kodeks" *somewhere* in its full raw
+text but not inside the same `<N>-modda.` block as the target article.
+Read the dominant example by hand: the 2025-02-07 cluster (36 of the 91, all
+pointing at act "OʻRQ-1025") resolves its date to a real candidate, doc
+-7367697 ("Korporativ munosabatlarning huquqiy asoslari yanada
+takomillashtirilishi munosabati bilan ... ayrim qonun hujjatlariga ...
+kiritish toʻgʻrisida" — plausible by title, corporate-relations reform), and
+that doc does contain "Fuqarolik kodeks" — but only twice, both as a
+descriptive aside ("...ularning huquqlarini amalga oshirish toʻgʻrisida
+Oʻzbekiston Respublikasining Fuqarolik kodeksida belgilangan tartibda
+korporativ shartnoma tuzish") sitting inside an "8-modda." block that is
+actually amending the *Joint-Stock-Companies law*, not the Civil Code
+itself. Confirmed by listing every block in the document that mentions
+"Fuqarolik kodeks" (exactly 2, both this same descriptive block) — neither
+is a genuine CC-amending block, and neither contains "39-modda" nearby. So
+either this act genuinely doesn't touch CC article 39 despite the
+`amendment_note`'s date pointing at it (meaning doc -7367697 isn't really
+the target "OʻRQ-1025", and the true one is missing from the corpus or the
+`amend_date` itself is a transcription slip in the source), or the
+provision was later moved/renumbered in a way this document's text doesn't
+reflect. Either way it's a source-data question, not a `build_links.py`
+matching-logic gap — logged as a real, honestly-measured finding rather
+than force-fitting a fix. The other 34/91 have no same-date candidate
+mentioning the Civil Code at all, same "genuine corpus-coverage gap" shape
+as the already-closed 2026-09-09 repeal-resolution residual.
+
+**Full verification.** `python verify_transfer.py`: all checks green, same
+INFO-line numbers as 2026-09-26 (248 superseded acts, 494 stale edges, 372/386
+General Part articles cited — none of AC5/AC7's currency checks changed,
+since they don't inspect `article_amendment.match_method` directly).
+`pyflakes *.py` and `vulture *.py --min-confidence 60`: both clean.
+`python -m unittest test_transfer_e2e.py`: 14/14. `score_gold.py`: unchanged
+at precision 297/299, recall 297/299 (this fix never touches
+`citation_extractor.py`). Committing the `corpus.duckdb` diff this time
+(unlike several recent sessions) since the actual row-level content changed
+— 67 real new `amending_doc_id` values, not just non-deterministic
+serialization churn from an unrelated table.
+
+**Decision and thread status**: closing today's thread. The 91-row residual
+is now honestly characterized into two clusters with different likely next
+steps (see Backlog) rather than left as an opaque count — consistent with
+how this project has closed previous "still some % unresolved, but it's a
+genuine data-coverage gap" threads (e.g. repeal resolution, 2026-09-09).
+Next Data-currency rotation could pick up the "CC mentioned elsewhere, not
+in the article's own block" cluster specifically (the more promising half —
+the act is very likely already correctly identified, it just needs a
+smarter block-scoping heuristic), but that's a new, narrower investigation,
+not a continuation of today's src_provision fix.
 
 ### 2026-09-26 — Cleanup rotation: audited every f-string SQL call for the hard constraint's own rule, fixed 3 real violations, closed a 15-session-old environment paper cut
 
