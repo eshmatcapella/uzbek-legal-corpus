@@ -22,6 +22,49 @@ How to use this file each session:
 
 ## Active threads
 
+- **Gold set: 140 -> 220 records, two signature-stratified batches
+  2026-09-28, thread stays open.** Extractor's turn in the rotation (last
+  ran 09-25). Drew and hand-annotated batch 4 (`--seed 20260928 --n 40`,
+  novelty coverage 98/451 signatures): 38/40 correct, 2/40 known_gap — both
+  re-discoveries of already-documented backlog items never before
+  formalized as gold records (the "hamda" list-separator gap, row 24219;
+  the chapter+paragraph-list-with-parenthetical gap, row 25634), plus one
+  "correct" re-hit of the already-known "boʻlim" gap (row 32449, still 6
+  corpus-wide, not growth). Zero new bugs — but while formalizing "hamda",
+  found and corrected a factual error in the 2026-09-15 log entry's own
+  description of that gap (it claimed "11-12" was already partially
+  recovered; direct re-testing shows it's dropped entirely, same as "12" —
+  see Log and Backlog). Since batch 4 found nothing new, drew a second,
+  disjoint batch 5 the same day (`--seed 20260928002 --n 40`, novelty
+  coverage 138/451) rather than stopping at one dry batch: 37/40 correct,
+  3/40 known_gap — two more "boʻlim" re-hits (rows 35586, 38614), and **one
+  genuinely new finding**: row 37948 (an Oliy sud Plenumi resolution) three
+  times writes "Fuqarolik kodeksining 38, Oila kodeksining 228,
+  233-moddalari" — the bare "38" is unambiguously Civil Code Article 38 by
+  the parallel structure, but no unit word ever touches it directly (a
+  different code's own name interposes before any modda/bob/paragraf is
+  reached), so `RE_CLAUSE` never matches it and it's silently dropped to
+  the bare-act fallback. Measured corpus-wide: exactly 5 raw occurrences
+  across 3 rows (26159, 37948 ×3, 53186), all the same target article — a
+  recurring civil-registry citation idiom in these specific resolutions, not
+  a general grammar gap. Not fixed today (would need real cross-clause unit-
+  word inference, a materially bigger and riskier change than the existing
+  comma/va/hamda separator gaps, for a pattern that only ever names one
+  target so far); formalized as three known_gap records instead (`gold_id`
+  194-196) and a new Backlog item. **New combined score: precision 693/700
+  (99.0%), recall 693/703 (98.6%)** on 220 windows (up from 297/299 = 99.3%/
+  99.3% on 140) — the ratio drop is entirely the newly-formalized known_gaps
+  becoming countable, not a regression (`score_gold.py`: 0 drift).
+  `verify_transfer.py` green, same INFO-line numbers as 2026-09-27 (nothing
+  touched here feeds any of its checks); `pyflakes`/`vulture
+  --min-confidence 60`/`unittest test_transfer_e2e.py`/extractor self-tests
+  all clean, both apps smoke-tested live (HTTP 200, no exceptions). Thread
+  stays open — 220/3251 candidate windows and 138/451 signatures is still
+  partial coverage; next Extractor rotation should keep drawing fresh
+  `build_gold_sample_novel.py` batches, and consider repeating today's
+  "draw a second batch same-day if the first comes back clean" pattern
+  (anecdotally productive once, not yet a settled policy).
+
 - **Amending-act resolution: 74.2% -> 85.1%, built and closed 2026-09-27.**
   Data currency's turn in the rotation (Extractor had 09-22/09-25, Cleanup had
   09-23/09-26, Data currency only 09-24 in the last five). Picked up the
@@ -797,7 +840,11 @@ How to use this file each session:
   resolution to 85.1% with zero regressions — see Active threads and Log) —
   of the last five sessions (09-23 through 09-27), Cleanup has two, Extractor
   has one, Data currency has two; next session should prefer Extractor,
-  which hasn't run since 09-25.
+  which hasn't run since 09-25. Extractor 09-28 (two more signature-
+  stratified gold batches, seeds 20260928/20260928002; gold set 140 -> 220,
+  one new bug found — see Active threads and Log) — of the last five
+  sessions (09-24 through 09-28), Data currency has two, Cleanup has one,
+  Extractor has two; next session should prefer Cleanup or Data currency.
 
 - **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
   four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -977,20 +1024,24 @@ How to use this file each session:
 
 ### Extractor recall/precision
 - ~~**Build the gold set.**~~ **Scoring layer built 2026-09-20, grown to 100
-  records 2026-09-22, grown to 140 via a new signature-stratified sampling
-  method 2026-09-25** — see Active threads and Log for the full detail.
-  `gold_citations.json` (140 hand-verified anchor occurrences, three
-  batches — two uniform-random, one signature-stratified) + `score_gold.py`
-  (the scorer) + `build_gold_sample.py`/`build_gold_sample_novel.py` (the
-  two samplers) now exist; current score **precision 297/299 (99.3%),
-  recall 297/299 (99.3%)** — the two mismatches are the documented
-  "paragrif" spelling gap and the 2026-09-25 Roman-chapter+paragraf gap
-  (both below), each recorded with its true expected output rather than
-  silently marked correct. Not closed outright — 140 windows is still a
-  small fraction of the 3251 real candidate windows corpus-wide (measured
-  precisely 2026-09-25, see below and Active threads: only 58/451 distinct
-  window *signatures* are covered at all). **Next step, whenever Extractor
-  rotation comes up again**: run `build_gold_sample_novel.py` again (not
+  records 2026-09-22, to 140 via signature-stratified sampling 2026-09-25,
+  to 220 via two more signature-stratified batches 2026-09-28** — see Active
+  threads and Log for the full detail. `gold_citations.json` (220
+  hand-verified anchor occurrences, five batches — two uniform-random,
+  three signature-stratified) + `score_gold.py` (the scorer) +
+  `build_gold_sample.py`/`build_gold_sample_novel.py` (the two samplers)
+  now exist; current score **precision 693/700 (99.0%), recall 693/703
+  (98.6%)** — the five mismatches are the documented "paragrif" spelling
+  gap, the 2026-09-25 Roman-chapter+paragraf gap, the 2026-09-28 "hamda"
+  list-separator gap, the 2026-09-28 chapter+paragraph-list-with-
+  parenthetical gap, and the new 2026-09-28 "bare article number before an
+  interposed different code name" gap (see below), each recorded with its
+  true expected output rather than silently marked correct. Not closed
+  outright — 220 windows is still a small fraction of the 3251 real
+  candidate windows corpus-wide (98/451 distinct window *signatures*
+  covered after 2026-09-28's first batch, 138/451 after the second — see
+  Active threads). **Next step, whenever Extractor rotation comes up
+  again**: run `build_gold_sample_novel.py` again (not
   `build_gold_sample.py` — see below for why) with a fresh `--n`/`--seed`,
   hand-annotate the batch, and merge into `gold_citations.json` — or add a
   targeted record for any new bug a hypothesis-driven session finds, so
@@ -1144,7 +1195,38 @@ How to use this file each session:
   (searched for `bob\w*\s+\d+\s*\(.{0,40}\)\s*va\s*\d+\s*-\s*paragraf`-shaped
   text), so not fixed today given the single-occurrence scope and the
   parenthetical-skipping complexity a real fix would need — worth a look if
-  a future corpus update introduces more of these.
+  a future corpus update introduces more of these. **Formalized 2026-09-28**:
+  the signature-stratified sampler independently re-drew this exact row
+  (`gold_id` 148) — merged as a permanent `gold_citations.json` known_gap
+  record with the true two-section expected output instead of leaving it as
+  a bare backlog line with no regression check.
+- **Bare article number before an interposed different code's own name
+  loses its unit word entirely.** Found 2026-09-28 via the second
+  signature-stratified gold batch of the day (see Log): row 37948 (an
+  amending Oliy sud Plenumi resolution) contains, three separate times,
+  "Fuqarolik kodeksining 38, Oila kodeksining 228, 233-moddalari" — "38" is
+  a genuine elliptical citation to Civil Code Article 38 (the parallel
+  structure with "Oila kodeksining 228, 233-moddalari" makes this
+  unambiguous to a human reader), but no unit word (`modda`/`bob`/`paragraf`)
+  ever touches "38" directly — the immediately-following different code's
+  own name breaks `RE_CLAUSE`'s contiguous digit run before any unit word is
+  reached, and the citation falls all the way through to the bare-act
+  fallback, dropping article 38 entirely rather than just losing a grain.
+  Unlike the comma/va-list gaps on this list, this isn't a missing
+  separator — the shared unit word actually lives in a *different* code's
+  own clause later in the sentence, which would need real cross-clause
+  inference to generalize safely (a materially bigger, riskier change than
+  adding "hamda" to a separator alternation). Measured corpus-wide (regex:
+  `Fuqarolik\s+kodeksi(?:ning|)\s+(\d+)\s*,\s*` not immediately followed by
+  a unit word, then another code's own "...kodeks...ning"): exactly 5 raw
+  occurrences across 3 distinct rows (26159, 37948 ×3, 53186) — all five
+  name the identical target, Civil Code Article 38, a civil-registry
+  cross-reference that recurs verbatim across several related Oliy sud
+  Plenumi resolutions on establishing vital-record facts, not a general
+  grammar pattern. Not fixed today given the narrow, single-target,
+  cross-clause-inference scope; formalized as three permanent
+  `gold_citations.json` known_gap records instead (`gold_id` 194-196, one
+  per anchor occurrence in row 37948).
 - **"hamda" not recognized as a list conjunction, only "va".** Found
   2026-09-15 while fixing the space-separator gap (see Log): row 24219 reads
   "Fuqarolik kodeksining 11-12 hamda 14 moddalari" — `_expand`'s top-level
@@ -1154,8 +1236,21 @@ How to use this file each session:
   (like the "14" here) still comes through fine only because it's the last
   item before the unit word, not because "hamda" is understood — a case
   shaped like "14 hamda 20-moddasi" (hamda-joined, nothing after) would
-  still lose "14". **Measured corpus-wide 2026-09-22** (regex search for
-  `\d+(?:\s*[-–—]\s*\d+)?\s+hamda\s+\d+\s*[-–—]?\s*(modda|bob|paragraf)`
+  still lose "14". **Correction, 2026-09-28**: re-verified this description
+  directly (`citation_extractor.extract()` on the exact row 24219 text, plus
+  the module's own self-test at the "hamda" case) and it's wrong about
+  "11-12" — nothing recovers it. `RE_CLAUSE`'s `nums` group stops extending
+  the moment it hits "hamda" (only `,`/`va`/a dash continue it), so the
+  whole match backtracks past "11-12" entirely and only re-matches at the
+  bare "14" that directly touches "moddalari" — **both "11" and "12" are
+  silently dropped, not just "14" degraded to a weaker listing tag**. The
+  session that wrote this apparently reasoned about what the 2026-09-15
+  sub-range fix *would* do if "hamda" reached `_expand` at all, not what
+  actually happens today. Formalized as a permanent `gold_citations.json`
+  known_gap record today (`gold_id` 140) with the true three-article
+  expected output, so this won't silently drift back into "described but
+  unverified" — see Log. **Measured corpus-wide 2026-09-22** (regex search
+  for `\d+(?:\s*[-–—]\s*\d+)?\s+hamda\s+\d+\s*[-–—]?\s*(modda|bob|paragraf)`
   across all three source fields): 3 raw occurrences total, of which 2 are
   inside `Fuqarolik protsessual kodeksi` (FPK) text — already correctly
   excluded entirely by `RE_STOP_ABBR`, not this project's Code at all — and
@@ -1203,6 +1298,15 @@ How to use this file each session:
   corpus update raises that count, or if the Qism-level-grain backlog item
   above is ever picked up (same "is a coarser-than-article grain worth
   modeling" question, one level up the hierarchy instead of down).
+  **Re-confirmed 2026-09-28**: the signature-stratified sampler independently
+  redrew 3 of the 6 already-known occurrences (rows 32449, 35586, 38614) in
+  two batches the same day — re-ran the same corpus-wide regex and count is
+  still exactly 6, so this is re-discovery of the existing gap, not growth.
+  Scored as `verdict: correct` in `gold_citations.json` (not `known_gap`)
+  for all 3, since — unlike qism, which has a real field the schema tracks
+  and excludes from scoring — there is no `target_kind` for "boʻlim" at all,
+  so there's no field to record an honest expected/actual mismatch against;
+  everything the schema *can* express for those windows is correct. See Log.
 
 ### Data currency
 - ~~**175/885 repeal items still unresolved.**~~ **Fixed 2026-09-06, residual
@@ -1389,6 +1493,85 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-28 — Extractor rotation: two more signature-stratified gold batches, gold set 140 -> 220, one new bug found, one existing backlog claim corrected
+
+Rotation: of the last five sessions (09-23..09-27), Cleanup had two,
+Extractor one, Data currency two — Extractor hadn't run since 09-25, so
+today is Extractor's turn. Followed the established next-step
+(`build_gold_sample_novel.py` with a fresh seed) rather than inventing a
+new angle, since that thread is explicitly still open.
+
+**Batch 4** (`--seed 20260928 --n 40`): novelty coverage was 98/451
+signatures (up from 58/451 on 09-25, since batches 3 grew the set since
+then). Read all 40 windows by hand against the raw text. Result: 38/40
+correct, 2/40 known_gap — but **both known_gaps were re-discoveries of
+already-documented backlog items that had never actually been formalized
+into `gold_citations.json`** (the "hamda" list-separator gap, row 24219;
+the chapter+paragraph-list-with-parenthetical gap, row 25634) plus one more
+"correct" re-hit of the already-known "boʻlim" gap (row 32449). Zero new
+bugs. While formalizing the "hamda" record, **found the 2026-09-15 log
+entry's own description of that gap was factually wrong**: it claims "the
+fix already recovers '11-12' as an embedded sub-range independently," but
+directly re-running `citation_extractor.extract()` on the exact row 24219
+text shows only "14" is produced — "11" and "12" are dropped entirely, not
+degraded. Confirmed against the module's own self-test comment ("hamda
+isn't a recognized list separator") too. Corrected the Backlog wording
+rather than leaving a false claim standing (see Backlog, "hamda" item) —
+this is exactly the "say so, don't silently revert" case the brief asks
+for, though here there was nothing to revert, just a description to fix.
+Formalized the true three-article expected output (`gold_id` 140) so this
+won't drift back into "described but unverified."
+
+**Batch 5** (`--seed 20260928002 --n 40`, drawn after batch 4 found nothing
+new, specifically to get a second independent read before concluding the
+day was a dry run): novelty coverage 138/451 after batch 4's merge. Result:
+37/40 correct, 3/40 known_gap. Two are more "boʻlim" re-hits (rows 35586,
+38614 — corpus-wide count re-measured, still exactly 6, same 6 as
+2026-09-17, not growth). **One is a genuinely new finding**: row 37948 (an
+Oliy sud Plenumi resolution amending several older resolutions) contains,
+three times, "Fuqarolik kodeksining 38, Oila kodeksining 228,
+233-moddalari" — the bare number "38" is unambiguously Civil Code Article
+38 by the parallel structure with the Family Code citation right after it,
+but no unit word (`modda`/`bob`/`paragraf`) ever touches "38" directly (the
+interposed different code's own name breaks `RE_CLAUSE`'s digit run before
+any unit word is reached), so it falls through to the bare-act fallback and
+is silently dropped rather than just losing grain. Measured corpus-wide
+(regex for the shape, checked against all three source fields): exactly 5
+raw occurrences across 3 distinct rows (26159, 37948 ×3, 53186), all naming
+the identical target article — a recurring civil-registry cross-reference
+idiom in these Plenum resolutions, not a general list-grammar gap. Not
+fixed today: fixing it properly would mean inferring that a bare number's
+unit word lives in a *different* code's own clause later in the sentence —
+a materially harder and riskier generalization than the comma/va/hamda
+separator gaps already on this list, for a pattern that (so far) always
+resolves to the same single target number. Formalized as three known_gap
+records (`gold_id` 194-196, one per anchor occurrence in the row) and a new
+Backlog item instead.
+
+**Net for the day**: `gold_citations.json` grown from 140 to 220 records
+across two disjoint batches; score moved from precision 297/299 (99.3%) /
+recall 297/299 (99.3%) to **precision 693/700 (99.0%) / recall 693/703
+(98.6%)** — the drop is entirely the newly-formalized known_gaps becoming
+countable, not a regression (0 drift, confirmed by `score_gold.py`
+re-running clean against the exact windows recorded). Did not touch
+`citation_extractor.py`, `build_links.py`, or any other pipeline file —
+`gold_citations.json` isn't consumed by the build pipeline or either app
+(confirmed by grep), so no `corpus.duckdb` rebuild or app-schema check was
+needed; ran `pyflakes *.py`/`vulture *.py --min-confidence 60`/
+`python -m unittest test_transfer_e2e.py`/`citation_extractor._selftest()`
+anyway as a baseline sanity check (all clean/48-48/14-14/0) and smoke-tested
+both `app_hierarchy.py`/`app_llc.py` live (HTTP 200, no exceptions in
+either log). `verify_transfer.py`: all checks green, same INFO-line numbers
+as 2026-09-27 (nothing touched here feeds any of its checks).
+
+Thread stays open (220/3251 candidate windows, 138/451 signatures is still
+partial coverage) — next Extractor rotation should keep using
+`build_gold_sample_novel.py` with a fresh seed. Today's two-batches-in-one-
+day pattern (draw again immediately if the first batch comes back clean,
+rather than concluding "no bug today" after one batch) seemed to pay off —
+worth repeating if a future Extractor session's first batch is also clean,
+though this is anecdotal (n=1) rather than a settled policy.
 
 ### 2026-09-27 — Data currency rotation: diagnosed the amending-act-resolution residual's real root cause, fixed it, resolution 74.2% -> 85.1%
 

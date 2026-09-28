@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Hand-verified ground truth for citation_extractor.py, scored by score_gold.py. 'expected' is what extract() SHOULD produce for this exact anchor occurrence; qism is recorded for documentation but is NOT part of score_gold.py's headline precision/recall (qism isn't consumed by any downstream table/view yet -- see DAILY_REVIEW.md backlog 'Qism-level (article-part) grain'). Batch 1 (gold_id 0-49, seed 20260920, built 2026-09-20): read window-by-window against the raw Uzbek text and citation_extractor.py's own stop-word/anchor rules (see DAILY_REVIEW.md 2026-09-20 log entry for the reasoning behind each verdict, especially the self_reference-without-article-number 'correctly empty' cases and the gazette-locator 'correctly bare act' cases). Every record is 'verdict: correct' -- this batch found no new extractor bug (the first sample in this project's 9-session sampling history not to). Batch 2 (gold_id 50-99, seed 20260922, built 2026-09-22, disjoint from batch 1): same read-by-hand method. 49/50 records are 'verdict: correct'; one (gold_id 52, row 46605) is 'verdict: known_gap' -- a documented, unfixed extractor limitation (a LexUZ 'paragrafi'->'paragrifi' misspelling isn't recognized as the paragraf unit word) recorded with its true expected output so it scores as an honest recall miss rather than being silently marked correct. See DAILY_REVIEW.md 2026-09-22 log entry and Backlog. Batch 3 (gold_id 100-139, built 2026-09-25, drawn by build_gold_sample_novel.py's signature-stratified sampler instead of a fourth uniform-random batch -- see DAILY_REVIEW.md 2026-09-25 for why): 38/40 'verdict: correct' (including one real bug this batch found and fixed at the source, gold_id 108), 2/40 'verdict: known_gap' (a Roman-numeral chapter+paragraf section-grain loss, gold_id 123; the pre-existing qism-grain limitation now also measured in comma-list form, not just the previously-known dash-range form, gold_id 131).",
+    "description": "Hand-verified ground truth for citation_extractor.py, scored by score_gold.py. 'expected' is what extract() SHOULD produce for this exact anchor occurrence; qism is recorded for documentation but is NOT part of score_gold.py's headline precision/recall (qism isn't consumed by any downstream table/view yet -- see DAILY_REVIEW.md backlog 'Qism-level (article-part) grain'). Batch 1 (gold_id 0-49, seed 20260920, built 2026-09-20): read window-by-window against the raw Uzbek text and citation_extractor.py's own stop-word/anchor rules (see DAILY_REVIEW.md 2026-09-20 log entry for the reasoning behind each verdict, especially the self_reference-without-article-number 'correctly empty' cases and the gazette-locator 'correctly bare act' cases). Every record is 'verdict: correct' -- this batch found no new extractor bug (the first sample in this project's 9-session sampling history not to). Batch 2 (gold_id 50-99, seed 20260922, built 2026-09-22, disjoint from batch 1): same read-by-hand method. 49/50 records are 'verdict: correct'; one (gold_id 52, row 46605) is 'verdict: known_gap' -- a documented, unfixed extractor limitation (a LexUZ 'paragrafi'->'paragrifi' misspelling isn't recognized as the paragraf unit word) recorded with its true expected output so it scores as an honest recall miss rather than being silently marked correct. See DAILY_REVIEW.md 2026-09-22 log entry and Backlog. Batch 3 (gold_id 100-139, built 2026-09-25, drawn by build_gold_sample_novel.py's signature-stratified sampler instead of a fourth uniform-random batch -- see DAILY_REVIEW.md 2026-09-25 for why): 38/40 'verdict: correct' (including one real bug this batch found and fixed at the source, gold_id 108), 2/40 'verdict: known_gap' (a Roman-numeral chapter+paragraf section-grain loss, gold_id 123; the pre-existing qism-grain limitation now also measured in comma-list form, not just the previously-known dash-range form, gold_id 131). Batch 4 (gold_id 140-179, seed 20260928, built 2026-09-28): second signature-stratified round. 38/40 verdict: correct, 2/40 known_gap -- both reconfirmations of already-documented backlog gaps rather than new bugs (the “hamda” list-separator gap, row 24219; the chapter+paragraph-list-with-parenthetical gap, row 25634), each formalized here for the first time as a permanent regression record. One more window (gold_id 170) also re-hit the already-known “boʻlim”-not-a-recognized-unit gap but is scored ’correct’, not ’known_gap’, since the schema has no field at all to record an honest mismatch against (same treatment as qism). Batch 5 (gold_id 180-219, seed 20260928002, built 2026-09-28): a second, disjoint draw the same day after batch 4 found nothing new, to give the “no new bug” result a second, independent check. 37/40 correct, 3/40 known_gap: one NEW gap found and formalized (gold_id 194-196, row 37948 -- a bare article number immediately followed by a different code’s own name loses its unit word to that other code’s clause, silently dropping Civil Code Article 38; measured corpus-wide at exactly 5 raw occurrences across 3 rows, all the same target article -- see Backlog), plus two more ’correct’ boʻlim re-hits (gold_id 186 and 200, same schema-cannot-express reasoning as batch 4’s).",
     "batches": [
       {
         "gold_id_range": [
@@ -29,6 +29,26 @@
         "n": 40,
         "built": "2026-09-25",
         "method": "signature-stratified (build_gold_sample_novel.py), not uniform random"
+      },
+      {
+        "gold_id_range": [
+          140,
+          179
+        ],
+        "seed": 20260928,
+        "n": 40,
+        "built": "2026-09-28",
+        "method": "signature-stratified (build_gold_sample_novel.py), not uniform random"
+      },
+      {
+        "gold_id_range": [
+          180,
+          219
+        ],
+        "seed": 20260928002,
+        "n": 40,
+        "built": "2026-09-28",
+        "method": "signature-stratified (build_gold_sample_novel.py), not uniform random; second disjoint draw of the day"
       }
     ]
   },
@@ -4516,6 +4536,4438 @@
       "verdict": "correct",
       "notes": "",
       "gold_id": 139
+    },
+    {
+      "gold_id": 140,
+      "row_id": 24219,
+      "doc_id": -3088008,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 70,
+      "anchor_end": 91,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 11-12 hamda 14 moddalari.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "11",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "12",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "14",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "known_gap",
+      "notes": "LexUZ writes “11-12 hamda 14 moddalari” -- \"hamda\" (\"as well as\") isn't a recognized list separator in _expand's top-level split (only \",\"/\"va\" are), so the whole clause fails to match at the \"11-12\" position (no unit word immediately follows \"11-12\"; \"hamda 14\" sits between) and RE_CLAUSE only re-matches starting at the bare \"14\" that IS immediately followed by \"moddalari\" -- articles 11 and 12 are silently dropped, not just mis-grained. This is the exact case already measured and left unfixed in the 2026-09-22 gold session and DAILY_REVIEW.md's \"hamda\" backlog item (corpus-wide: 3 raw occurrences, 2 inside Fuqarolik protsessual kodeksi text already correctly excluded by RE_STOP_ABBR, exactly 1 in-scope -- this row). Not fixed again today, same single-occurrence precedent; formalized here as a permanent known_gap regression record instead of a bare backlog line."
+    },
+    {
+      "gold_id": 141,
+      "row_id": 24276,
+      "doc_id": -3115385,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 983,
+      "anchor_end": 1002,
+      "is_the_code": false,
+      "window": "ing umumiy asoslari Fuqarolik kodeksida (14-moddasi, 57-bobi) belgilangan. Chunonchi, FK 14-moddasiga koʻra, zarar deganda, quyidagilar tushuniladi: huquqi buzilgan shaxs oʻzining buzilgan huquqini tiklash uchun qilgan yoki qilishi lozim boʻlgan xarajatlari, uning mol-mulki yoʻqolishi yoki shikastl",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "14",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        },
+        {
+          "target_kind": "chapter",
+          "article": null,
+          "struct_number": 57,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "14",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 142,
+      "row_id": 25011,
+      "doc_id": -2931253,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 192,
+      "anchor_end": 213,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 30 va 31-moddalari, Oʻzbekiston Respublikasi Jinoyat kodeksining 78 va 79-moddalari. LexUZ sharhiQarang: Oʻzbekiston Respublikasi “Oʻzbekiston Respublikasining Markaziy banki toʻgʻrisida”gi (yangi tahriri) Qonuni 61-moddasi ikkinchi qismining oʻn uchinchi xat",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "30",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "31",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 143,
+      "row_id": 25029,
+      "doc_id": -2931253,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 96,
+      "anchor_end": 117,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 42–46-moddalari, 74-moddasi, Oʻzbekiston Respublikasi “Oʻzbekiston Respublikasida jamoat birlashmalari toʻgʻrisida”gi Qonunining 2-bobi (“Jamoat birlashmalarining tuzilishi va ular faoliyatining toʻxtatilishi”) va Oʻzbekiston Respublikasi “Nodavlat notijorat ",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "42",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "43",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "44",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "45",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "46",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "74",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 144,
+      "row_id": 25212,
+      "doc_id": -2876354,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 70,
+      "anchor_end": 91,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 587 –– 599-moddalari, Oʻzbekiston Respublikasining “Lizing toʻgʻrisida”gi Qonuni. Oldingi tahrirga qarang.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "587",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "588",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "589",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "590",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "591",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "592",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "593",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "594",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "595",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "596",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "597",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "598",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "599",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 145,
+      "row_id": 25237,
+      "doc_id": -2876354,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 120,
+      "anchor_end": 141,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 587 –– 599-moddalari, Oʻzbekiston Respublikasining “Lizing toʻgʻrisida”gi Qonuni. Oldingi tahrirga qarang. LexUZ sharhiQarang: mazkur Kodeksning VIII boʻlimi. Oldingi tahrirga qarang. Oldingi tahrirga qarang. Oldingi tahrirga qarang.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "587",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "588",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "589",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "590",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "591",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "592",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "593",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "594",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "595",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "596",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "597",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "598",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "599",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 146,
+      "row_id": 25313,
+      "doc_id": -2876354,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 45,
+      "anchor_end": 66,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 49 –– 57-moddalari. LexUZ sharhiQarang: Vazirlar Mahkamasining 2017-yil 9-fevraldagi 66-sonli qarori bilan tasdiqlangan Tadbirkorlik subyektlarini davlat roʻyxatidan oʻtkazish tartibi toʻgʻrisida nizom. LexUZ sharhiQarang: Oʻzbekiston Respublikasi Fuqarolik p",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "49",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "50",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "51",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "52",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "53",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "54",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "55",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "56",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "57",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 147,
+      "row_id": 25511,
+      "doc_id": -2876354,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 45,
+      "anchor_end": 66,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 2-bob, 2-paragrafi. Oldingi tahrirga qarang. LexUZ sharhiQarang: Vazirlar Mahkamasining 2024 yil 30 dekabrdagi 916-son “Oʻzbekiston Respublikasi hududida chiqindilar, ayrim turdagi xavfli mahsulot va kimyoviy moddalar muomalasi bilan bogʻliq nazoratni yanada ",
+      "expected": [
+        {
+          "target_kind": "section",
+          "article": null,
+          "struct_number": 2,
+          "section_number": 2,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 148,
+      "row_id": 25634,
+      "doc_id": -2856464,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 45,
+      "anchor_end": 62,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksi 4-bobining 1 (“Umumiy qoidalar”) va 2-paragraflari (“Tijorat tashkilotlari”), Oʻzbekiston Respublikasi Vazirlar Mahkamasining 2017-yil 12-maydagi “Farmatsevtika faoliyatini litsenziyalash tartibini yanada takomillashtirish chora-tadbirlari toʻgʻrisida” 284-so",
+      "expected": [
+        {
+          "target_kind": "section",
+          "article": null,
+          "struct_number": 4,
+          "section_number": 1,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "section",
+          "article": null,
+          "struct_number": 4,
+          "section_number": 2,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "known_gap",
+      "notes": "LexUZ writes “Fuqarolik kodeksi 4-bobining 1 (“Umumiy qoidalar”) va 2-paragraflari” -- a list of two paragraphs (sections 1 and 2) of chapter 4, with a parenthetical section title sitting between the first paragraph number and the \"va\" introducing the second. extract()'s chapter+section lookahead only tries a single \\d+-paragraf immediately after the bob match, so the parenthetical breaks it and the citation falls back to a bare chapter-4 citation, losing both paragraph numbers (dst_kind reads chapter, not section -- a real link_edge column). This is the exact case already measured and left unfixed in the 2026-09-10 investigation (DAILY_REVIEW.md backlog, \"chapter+paragraph-list attachment gap\", confirmed exactly 1 occurrence corpus-wide). Not fixed again today given the parenthetical-skipping complexity a real fix would need for a single row; formalized here as a permanent known_gap regression record."
+    },
+    {
+      "gold_id": 149,
+      "row_id": 25641,
+      "doc_id": -2856464,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 45,
+      "anchor_end": 66,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 57-bobi (“Zarar yetkazishdan kelib chiqadigan majburiyatlar”), Oʻzbekiston Respublikasi Maʼmuriy javbgarlik toʻgʻrisidagi kodeksining 164, 1651-moddalari, Oʻzbekiston Respublikasi Jinoyat kodeksining 186, 1863-moddalari.",
+      "expected": [
+        {
+          "target_kind": "chapter",
+          "article": null,
+          "struct_number": 57,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 150,
+      "row_id": 26026,
+      "doc_id": -2731863,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 96,
+      "anchor_end": 117,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 39-moddasi, 40-moddasi birinchi qismi, 42 — 44-moddalari, 49-moddasi, Oʻzbekiston Respublikasi “Aksiyadorlik jamiyatlari va aksiyadorlarning huquqlarini himoya qilish toʻgʻrisida” (yangi tahriri)gi Qonunining 3-moddasining ikkinchi qismi, 2-bobi (“Jamiyatni t",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "39",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "40",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": "birinchi qism"
+        },
+        {
+          "target_kind": "article",
+          "article": "42",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "43",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "44",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "49",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 151,
+      "row_id": 26029,
+      "doc_id": -2731863,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 196,
+      "anchor_end": 217,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 49 va 53-moddalari, Oʻzbekiston Respublikasining “Aksiyadorlik jamiyatlari va aksiyadorlarning huquqlarini himoya qilish toʻgʻrisida”gi Qonunining (Yangi tahriri) 92 — 96, 98 — 101-moddalari.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "49",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "53",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 152,
+      "row_id": 26655,
+      "doc_id": -2535141,
+      "field": "article_text",
+      "anchor_kind": "fk_alias",
+      "anchor_start": 1359,
+      "anchor_end": 1365,
+      "is_the_code": false,
+      "window": "qilish asoslari esa FKning 382-383-moddalarida nazarda tutilgan; bitimning haqiqiy emasligiga uning gʻayriqonuniyligi, bekor qilinishiga esa shartnomani bekor qilishga olib keladigan holatlarning yuzaga kelishi asos boʻladi, bunda uning qonuniyligi nizolashilmaydi; haqiqiy boʻlmagan bi",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "382",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "383",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 153,
+      "row_id": 26716,
+      "doc_id": -2501481,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 7263,
+      "anchor_end": 7280,
+      "is_the_code": false,
+      "window": "on Respublikasining Fuqarolik kodeksi va “Tadbirkorlik faoliyati erkinligining kafolatlari toʻgʻrisida”gi Oʻzbekiston Respublikasining Qonuni asosiy huquqiy manba boʻlib hisoblanadi”; ikkinchi va uchinchi xatboshilaridagi “1998-yil 30-apreldagi” degan soʻzlar chiqarib tashlansin; quyidagi mazmund",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 154,
+      "row_id": 27447,
+      "doc_id": -2307826,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 45,
+      "anchor_end": 66,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 57 bobi (“Zarar yetkazishdan kelib chiqadigan majburiyatlar”), Oʻzbekiston Respublikasi Vazirlar Mahkamasining 2014-yil 22-sentabrdagi 269-sonli qarori bilan tasdiqlangan “Vasiylik va homiylik toʻgʻrisida”gi nizomning 96 va 97-bandlari.",
+      "expected": [
+        {
+          "target_kind": "chapter",
+          "article": null,
+          "struct_number": 57,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 155,
+      "row_id": 29007,
+      "doc_id": -2006789,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 74,
+      "anchor_end": 91,
+      "is_the_code": false,
+      "window": "on Respublikasining Fuqarolik kodeksi, Oʻzbekiston Respublikasining “Oʻzbekiston Respublikasi Prezidenti huzuridagi Tadbirkorlik subyektlarining huquqlari va qonuniy manfaatlarini himoya qilish boʻyicha vakil toʻgʻrisida”gi Qonuni, Oʻzbekiston Respublikasining “Oilaviy tadbirkorlik toʻgʻrisida”gi",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 156,
+      "row_id": 29021,
+      "doc_id": -2006789,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 351,
+      "anchor_end": 372,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 292 — 298 va 744 — 748-moddalari. Oldingi tahrirga qarang. LexUZ sharhiQarang: Oʻzbekiston Respublikasi Prezidentining 2023-yil 31-yanvardagi PQ-39-sonli “Oilaviy tadbirkorlikni rivojlantirish dasturlari doirasida aholining biznes tashabbuslarini qoʻllab-quvv",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "292",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "293",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "294",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "295",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "296",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "297",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "298",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "744",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "745",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "746",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "747",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "748",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 157,
+      "row_id": 29029,
+      "doc_id": -2006789,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 390,
+      "anchor_end": 411,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 172-173-moddalari. LexUZ sharhiQarang: Oʻzbekiston Respublikasi “Oʻzbekiston Respublikasida mulkchilik toʻgʻrisida”gi Qonunining 34-moddasi, Oʻzbekiston Respublikasi ",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "172",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "173",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 158,
+      "row_id": 29093,
+      "doc_id": -2004956,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 245,
+      "anchor_end": 266,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 292—298 va 744—748-moddalari, Oʻzbekiston Respublikasining “Tadbirkorlik faoliyati erkinligining kafolatlari toʻgʻrisida”gi Qonunining 29-moddasi.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "292",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "293",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "294",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "295",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "296",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "297",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "298",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "744",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "745",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "746",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "747",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "748",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 159,
+      "row_id": 29543,
+      "doc_id": -1878083,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 70,
+      "anchor_end": 91,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 49—55 moddalari, Oʻzbekiston Respublikasi Markaziy banki boshqaruvining 2018-yil 28-apreldagi 16/23-sonli qarori bilan tasdiqlangan Kredit byurolarini roʻyxatga olish va ularning faoliyatini litsenziyalash tartibi toʻgʻrisidagi nizom (roʻyxat raqami 3042, 25.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "49",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "50",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "51",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "52",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "53",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "54",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "55",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 160,
+      "row_id": 29750,
+      "doc_id": -2414320,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 7268,
+      "anchor_end": 7287,
+      "is_the_code": false,
+      "window": "lamagan, shuningdek Fuqarolik kodeksida nazarda tutilgan boshqa hollarda kelib chiqadi. Qonun boʻyicha merosxoʻrlarga FK 1135 — 1141-moddalarida koʻrsatilgan va navbat tartibida vorislikka chaqiriladigan shaxslar kiradi. Qonunda (FK 1138-moddasi) toʻrtinchi navbatda vorislikka chaqiriluvchi shaxsla",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 161,
+      "row_id": 29841,
+      "doc_id": -1809655,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 13066,
+      "anchor_end": 13087,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 1134 — 1147-moddalari bilan aniqlanadigan qonun boʻyicha vorislari doirasi bilan tanishtiradi va unga quyidagilarni: a) oʻzining barcha mol-mulkini yoki uning muayyan qismini (jumladan, oddiy uy-jihozlari va roʻzgʻor buyumlari, banklardagi omonatlarini) qonun",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "1134",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1135",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1136",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1137",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1138",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1139",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1140",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1141",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1142",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1143",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1144",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1145",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1146",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1147",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 162,
+      "row_id": 30209,
+      "doc_id": -1714042,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 70,
+      "anchor_end": 91,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 39 –– 48, 74-moddalari.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "39",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "40",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "41",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "42",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "43",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "44",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "45",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "46",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "47",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "48",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "74",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 163,
+      "row_id": 30287,
+      "doc_id": -1947974,
+      "field": "article_text",
+      "anchor_kind": "fk_alias",
+      "anchor_start": 7761,
+      "anchor_end": 7767,
+      "is_the_code": false,
+      "window": " agar egalik qilish FKning 187-moddasida nazarda tutilgan muddat davomida uzluksiz boʻlsa. Mol-mulkning boshqa shaxsga vaqtincha egalik qilish uchun berilishi mazkur muddatning uzilishiga olib kelmaydi; –– mol-mulkka oʻziniki kabi egalik qilish shartnomasiz egalik qilishni anglatadi. S",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "187",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 164,
+      "row_id": 30762,
+      "doc_id": -1616727,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 37912,
+      "anchor_end": 37933,
+      "is_the_code": false,
+      "window": " vasiyat qiluvchiga Fuqarolik kodeksining 1127 va 1142-moddalari mazmunini tushuntirishi va bu haqda vasiyatnoma matnida koʻrsatib oʻtishi lozim. Fuqarolar yigʻinining raisi (oqsoqoli) tomonidan vasiyatnoma tasdiqlangandan keyin vasiyat qiluvchining familiyasi, ismi, otasining ismi, vasiyatnomani tas",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "1127",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1142",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 165,
+      "row_id": 30948,
+      "doc_id": -2026051,
+      "field": "article_text",
+      "anchor_kind": "fk_alias",
+      "anchor_start": 1146,
+      "anchor_end": 1148,
+      "is_the_code": false,
+      "window": "oblanadi. Shartnoma FK 2 va 354-moddalarining (shartnoma tuzish erkinligi prinsipi), 102-moddasi uchinchi qismining (shartnoma tuzish uchun taraflarning kelishilgan xohishi mavjudligi), 105, 107, 108, 110, 111-moddalarining (tegishli shakllarga rioya qilish), 364-moddasining (shart",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "2",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "354",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "102",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": "uchinchi qism"
+        },
+        {
+          "target_kind": "article",
+          "article": "105",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "107",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "108",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "110",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "111",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "364",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 166,
+      "row_id": 30948,
+      "doc_id": -2026051,
+      "field": "article_text",
+      "anchor_kind": "fk_alias",
+      "anchor_start": 9181,
+      "anchor_end": 9187,
+      "is_the_code": false,
+      "window": "berish shartnomasi (FKning 457-459-moddalari) va h.k. 11. IPK 26-moddasining 1-bandiga muvofiq tuzilishi qonunda nazarda tutilgan shartnoma yuzasidan kelib chiqqan kelishmovchiliklar yoki shartnoma yuzasidan kelib chiqqan boʻlib, hal etish uchun iqtisodiy sudga topshirish haqida tarafl",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "457",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "458",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "459",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 167,
+      "row_id": 30948,
+      "doc_id": -2026051,
+      "field": "article_text",
+      "anchor_kind": "fk_alias",
+      "anchor_start": 16713,
+      "anchor_end": 16715,
+      "is_the_code": false,
+      "window": "oʻlsalar, shartnoma FK 383-moddasi uchinchi qismining 1-4-bandlarida sanab oʻtilgan barcha shartlar bir vaqtda mavjud boʻlgan holdagina bekor qilinishi (oʻzgartirilishi) mumkin. Mazkur nizolarning sudlar tomonidan koʻrib chiqilishi ",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "383",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": "uchinchi qism"
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 168,
+      "row_id": 32047,
+      "doc_id": -1391728,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 70,
+      "anchor_end": 91,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 42, 49, 50 va 53-moddalari hamda Qarang: Oʻzbekiston Respublikasi Vazirlar Mahkamasining 2010-yil 12-apreldagi 68-son qarori bilan tasdiqlangan “Muzeylarni tashkil etish, qayta tashkil etish va tugatish tartibi toʻgʻrisida”gi nizom. Oldingi tahrirga qarang.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "42",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "49",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "50",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "53",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 169,
+      "row_id": 32298,
+      "doc_id": -1368843,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 34661,
+      "anchor_end": 34680,
+      "is_the_code": false,
+      "window": "icha berish tartibi Fuqarolik kodeksiga va “Lizing toʻgʻrisida”gi Oʻzbekiston Respublikasi Qonuniga muvofiq belgilanadi 21. Kasanachilar va korxona oʻrtasida kelib chiqadigan nizolar sud tartibida koʻrib chiqiladi. 1. Quyidagilar: GOST 12.01.007-76 boʻyicha xavflilikning I—III klasslariga mansub bo",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 170,
+      "row_id": 32449,
+      "doc_id": -1342474,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 70,
+      "anchor_end": 87,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksi III-boʻlimining 2-kichik boʻlimi (“Shartnoma toʻgʻrisida umumiy qoidalar”) va 927, 929-931-moddalari.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "927",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "929",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "930",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "931",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": "Window also contains “Fuqarolik kodeksi III-boʻlimining 2-kichik boʻlimi (…)” -- a Part-III/subdivision-2 citation that extract() silently drops entirely (no target_kind exists for \"boʻlim\" at all, unlike qism -- see DAILY_REVIEW.md backlog \"'boʻlim' is never a recognized citation unit\", measured 2026-09-17 at 6 corpus-wide occurrences; re-confirmed today still exactly 6, this row already one of them, not a new occurrence). Scored 'correct' here because the Citation schema has no field to express a part/subdivision-level target at all -- same treatment as the qism-grain limitation, which the schema DOES have a field for but excludes from headline scoring; there is no field here to even record an honest expected/actual mismatch against. Everything the schema can express for this window (the four article citations 927/929/930/931) is correct."
+    },
+    {
+      "gold_id": 171,
+      "row_id": 32779,
+      "doc_id": -1286558,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 206,
+      "anchor_end": 227,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 156 — 160-moddalari, Oʻzbekiston Respublikasi Oliy xoʻjalik sudi Plenumining 2010-yil 18-iyundagi 210-sonli “Iqtisodiy sudlar tomonidan Oʻzbekiston Respublikasi Soliq kodeksi Umumiy qismini qoʻllashning ayrim masalalari haqida”gi qarori 7-bandining birinchi v",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "156",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "157",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "158",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "159",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "160",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 172,
+      "row_id": 33044,
+      "doc_id": -1286558,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 344,
+      "anchor_end": 365,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 482-moddasi. LexUZ sharhiQarang: Oʻzbekiston Respublikasi Yer kodeksining 18-moddasi birinchi, uchinchi qismlari. LexUZ sharhiQarang: Oʻzbekiston Respublikasi Yer kodeksining 23-24-moddalari. Oldingi tahrirga qarang.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "482",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 173,
+      "row_id": 33123,
+      "doc_id": -1286558,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 45,
+      "anchor_end": 66,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 42-moddasi, Oʻzbekiston Respublikasi Vazirlar Mahkamasining 2012-yil 28-avgustdagi 253-son qarori bilan tasdiqlangan Oʻzbekiston Respublikasi bozorlarida savdo faoliyatini tashkil etish Qoidalarining 4 — 9-bandlari. LexUZ sharhiQarang: mazkur Kodeksning 385-m",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "42",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 174,
+      "row_id": 33290,
+      "doc_id": -1254490,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 45,
+      "anchor_end": 66,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 57-bobi. Oldingi tahrirga qarang. LexUZ sharhiQarang: Oʻzbekiston Respublikasi Maʼmuriy javobgarlik toʻgʻrisidagi kodeksining 148-149-moddalari.",
+      "expected": [
+        {
+          "target_kind": "chapter",
+          "article": null,
+          "struct_number": 57,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 175,
+      "row_id": 33494,
+      "doc_id": -1637719,
+      "field": "article_text",
+      "anchor_kind": "fk_alias",
+      "anchor_start": 13333,
+      "anchor_end": 13339,
+      "is_the_code": false,
+      "window": "bul qilishga haqli (FKning 384-moddasi). 11. XPK 23-moddasi birinchi qismining 2-bandiga muvofiq xoʻjalik sudiga yuridik ahamiyatga ega boʻlgan faktlarni aniqlash toʻgʻrisidagi ishlar taalluqlidir. Xoʻjalik sudi tomonidan aniqlanadigan yuridik faktlarga, xususan: bino yoki yer maydonin",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "384",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 176,
+      "row_id": 33495,
+      "doc_id": -1636810,
+      "field": "article_text",
+      "anchor_kind": "fk_alias",
+      "anchor_start": 5686,
+      "anchor_end": 5692,
+      "is_the_code": false,
+      "window": " qilishga haqli. 7. FKning 327-moddasida nazarda tutilgan foizlar boshqa shaxslarning pul mablagʻlari shartnomaga asosan yoxud shartnomaviy munosabatlarsiz qabul qilinganligidan qatʼi nazar, toʻlanishi shart, ushbu qarorning 6-bandida nazarda tutilgan hollar bundan mustasno. 8. Sudlar ",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "327",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 177,
+      "row_id": 33615,
+      "doc_id": -1183667,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 71,
+      "anchor_end": 92,
+      "is_the_code": false,
+      "window": "odeksining 21-bobi, Fuqarolik kodeksining 32, 1174-moddalari. LexUZ sharhiQarang: ushbu Qonunning 17-18-moddalari.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "32",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1174",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 178,
+      "row_id": 33789,
+      "doc_id": -1267903,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 2224,
+      "anchor_end": 2245,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 135 va 138-moddalari oʻrtasida nomuvofiqlik mavjudligi va bu nomuvofiqlik amaliyotda jiddiy qiyinchiliklarga sabab boʻlayotganligi koʻrsatib oʻtilgan. “Aksiyadorlik jamiyatlari va aksiyadorlarning huquqlarini himoya qilish toʻgʻrisida”gi Oʻzbekiston Respublik",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "135",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "138",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 179,
+      "row_id": 33789,
+      "doc_id": -1267903,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 5663,
+      "anchor_end": 5684,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining normalariga muvofiqlashtirilishi lozim. Bayon qilinganlarga asoslanib va “Oʻzbekiston Respublikasining Konstitutsiyaviy sudi toʻgʻrisida”gi Oʻzbekiston Respublikasi Qonunining 10, 25, 26, 27-moddalariga, “Qonunlar loyihalarini tayyorlash va Oʻzbekiston Respub",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 180,
+      "row_id": 34003,
+      "doc_id": -1086564,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 134,
+      "anchor_end": 153,
+      "is_the_code": false,
+      "window": "on Respublikasining Fuqarolik kodeksiga va “Notariat toʻgʻrisida”gi Oʻzbekiston Respublikasi Qonuniga oʻzgartirish va qoʻshimchalar kiritish haqida”gi Qonuni, Oʻzbekiston Respublikasi Vazirlar Mahkamasining 2001-yil 18-maydagi “Yoʻl harakati xavfsizligini taʼminlash choralari toʻgʻrisida”gi 221-37-",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 181,
+      "row_id": 34246,
+      "doc_id": -1063359,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 70,
+      "anchor_end": 91,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 2-paragrafi, Oʻzbekiston Respublikasining “Koʻchmas mulkka boʻlgan huquqlarni davlat roʻyxatidan oʻtkazish toʻgʻrisida”gi Qonuni. LexUZ sharhiQarang: Oʻzbekiston Respublikasi ",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 182,
+      "row_id": 34362,
+      "doc_id": -1055517,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 70,
+      "anchor_end": 91,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 862 — 874 va 1036-moddalari.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "862",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "863",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "864",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "865",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "866",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "867",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "868",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "869",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "870",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "871",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "872",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "873",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "874",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1036",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 183,
+      "row_id": 34704,
+      "doc_id": -1004687,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 70,
+      "anchor_end": 91,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 26-bobi, 386-moddasining toʻrtinchi qismi.",
+      "expected": [
+        {
+          "target_kind": "chapter",
+          "article": null,
+          "struct_number": 26,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "386",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": "toʻrtinchi qism"
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 184,
+      "row_id": 34711,
+      "doc_id": -1004687,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 70,
+      "anchor_end": 91,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 2-paragrafi, Oʻzbekiston Respublikasi Oliy sudi Plenumining, Oliy xoʻjalik sudi Plenumining 2006-yil 22-dekabrdagi 13/150-son “Kredit shartnomalaridan kelib chiqadigan majburiyatlar bajarilishini taʼminlash toʻgʻrisidagi fuqarolik qonun hujjatlarini qoʻllashn",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 185,
+      "row_id": 35445,
+      "doc_id": -415135,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 100,
+      "anchor_end": 121,
+      "is_the_code": false,
+      "window": "ining 86-moddasi va Fuqarolik kodeksining 14, 985-moddalari. Oldingi tahrirga qarang. LexUZ sharhiBatafsil maʼlumot uchun Oʻzbekiston Respublikasi Soliq kodeksining XVI boʻlimi (“Yer soligʻi”)ga qarang. Oldingi tahrirga qarang. LexUZ sharhiBatafsil maʼlumot uchun Oʻzbekiston Respublikasi Yer kodeksin",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "14",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "985",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 186,
+      "row_id": 35586,
+      "doc_id": -390573,
+      "field": "amendment_note",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 222,
+      "anchor_end": 243,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining V-boʻlimi .",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": "Window also cites a Part-level (\"boʻlim\") provision that extract() silently drops entirely -- no target_kind exists for \"boʻlim\" at all (see DAILY_REVIEW.md backlog \"'boʻlim' is never a recognized citation unit\", measured 2026-09-17 at 6 corpus-wide occurrences). Re-confirmed today still exactly 6 occurrences corpus-wide, this row already one of them -- not a new occurrence. Scored 'correct' because the Citation schema has no field to record an honest mismatch against (same treatment as gold_id 30 in the 2026-09-28 batch, and the same reasoning as the qism-grain exclusion)."
+    },
+    {
+      "gold_id": 187,
+      "row_id": 35672,
+      "doc_id": -1455965,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 20815,
+      "anchor_end": 20834,
+      "is_the_code": false,
+      "window": "rda qabul qilingan “Fuqarolik kodeksini tatbiq qilishda sud amaliyotida vujudga keladigan ayrim masalalar toʻgʻrisida”gi qarorining (Oliy sud Plenumining 2003-yil 19-dekabrdagi qarori asosida kiritilgan oʻzgartirishlar bilan) 9 va 10-bandlari oʻz kuchini yoʻqotgan deb topilsin.",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 188,
+      "row_id": 36337,
+      "doc_id": -2506968,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 2867,
+      "anchor_end": 2886,
+      "is_the_code": false,
+      "window": "yil 24-sentabrdagi “Fuqarolik kodeksini tatbiq qilishda sud amaliyotida vujudga keladigan ayrim masalalar toʻgʻrisida”gi 16-sonli qarori: a) 6, 7, 8-bandlari chiqarilsin; b) 9-bandining ikkinchi va uchinchi xatboshilari chiqarilsin; v) 9-bandi toʻrtinchi xatboshisidagi “Nizo boʻlmagan hollarda” soʻ",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 189,
+      "row_id": 36579,
+      "doc_id": -246039,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 34940,
+      "anchor_end": 34961,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 324-339-moddalari talablariga muvofiq belgilanadi. 67. Qishloq xoʻjaligi mahsulotlarini kontraktatsiya shartnomasida belgilangan assortiment va turlarda, muddatlarda topshirishdan asossiz boʻyin tovlagan xoʻjalik tayyorlovchiga topshirilmagan mahsulot qiymati",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "324",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "325",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "326",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "327",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "328",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "329",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "330",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "331",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "332",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "333",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "334",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "335",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "336",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "337",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "338",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "339",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 190,
+      "row_id": 36618,
+      "doc_id": -41760,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 45,
+      "anchor_end": 62,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksi 786-moddasining uchinchi qismi, 985-moddasi, Maʼmuriy javobgarlik toʻgʻrisidagi kodeksining 46, 1793-moddalari.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "786",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": "uchinchi qism"
+        },
+        {
+          "target_kind": "article",
+          "article": "985",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 191,
+      "row_id": 37352,
+      "doc_id": -55080,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 765,
+      "anchor_end": 782,
+      "is_the_code": false,
+      "window": "on Respublikasining Fuqarolik kodeksi (Oʻzbekiston Respublikasi Oliy Majlisining Axborotnomasi, 1996-yil, 2-songa ilova, № 11-12; 1997-yil, № 2, 56-modda, № 9, 241-modda; 1998-yil, № 5-6, 102-modda; 1999-yil, № 1, 20-modda; № 9, 229-modda; 2001-yil, № 1-2, 23-modda, № 9–10, 182-modda; 2002-yil, №",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 192,
+      "row_id": 37722,
+      "doc_id": -1453232,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 5903,
+      "anchor_end": 5924,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 100-moddasining 9-qismi va “Tadbirkorlik faoliyati erkinligining kafolatlari toʻgʻrisida”gi Qonunining 35-moddasi 3-qismiga muvofiq, kichik va oʻrta tadbirkorlik subyektlari, dehqon va fermer xoʻjaliklariga yetkazilgan maʼnaviy zararni qoplash haqidagi daʼvo ",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "100",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": "9-qism"
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 193,
+      "row_id": 37887,
+      "doc_id": -69237,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 120,
+      "anchor_end": 141,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 1035, 1036-moddalari, V-boʻlimi. Oldingi tahrirga qarang.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "1035",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1036",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 194,
+      "row_id": 37948,
+      "doc_id": -6936801,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 1577,
+      "anchor_end": 1598,
+      "is_the_code": false,
+      "window": "ri (FHDY) tomonidan Fuqarolik kodeksining 38, Oila kodeksining 228, 233-moddalari va fuqarolik holati dalolatnomalarini qayd etish Qoidalarining 139-140, 154-155, 185-bandlarida belgilangan tartibda amalga oshiriladi. Agarda tegishli hujjatlarga ega boʻlmagan yoki ularda yoshi haqidagi maʼlumot boʻlm",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "38",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "known_gap",
+      "notes": "New finding, 2026-09-28: \"Fuqarolik kodeksining 38, Oila kodeksining 228, 233-moddalari\" -- a bare article number (\"38\") immediately followed by a DIFFERENT code's own name before any unit word appears, relying on the later \"-moddalari\" (attached to the second code's numbers) to retroactively cover the first code's number too. _expand()/RE_CLAUSE require a contiguous digit/comma/va run ending in an explicit unit word, so \"38\" is never matched as a clause at all (no unit word touches it) and the anchor falls through to the bare-act fallback, silently dropping the citation to Civil Code Article 38 entirely. Measured corpus-wide (regex: 'Fuqarolik kodeksi(?:ning|) <digits>,' NOT followed by modda/bob/paragraf, then another code name ending 'kodeks...ning'): exactly 5 raw occurrences across 3 distinct rows (26159, 37948 x3, 53186) -- all five name the identical target, Civil Code Article 38 (a civil-registry cross-reference that recurs verbatim across several Oliy sud Plenumi resolutions on establishing vital-record facts). Not fixed today: unlike the comma/va list-joining gaps, this isn't a missing separator -- it requires inferring that a bare number's unit word lives in a *different* code's own clause later in the sentence, which is a materially harder, riskier pattern to generalize (and here always resolves to the same single target number, suggesting a recurring drafting idiom rather than a general grammar). Recorded as a new known_gap regression record and a new Backlog item rather than special-cased into the regex."
+    },
+    {
+      "gold_id": 195,
+      "row_id": 37948,
+      "doc_id": -6936801,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 2254,
+      "anchor_end": 2275,
+      "is_the_code": false,
+      "window": " soʻzlaridan keyin “Fuqarolik kodeksining 38,” soʻzlari bilan toʻldirilsin; g) 21-bandining birinchi xatboshisidagi “FPKning 274-275-moddalari” soʻzlari “",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "38",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "known_gap",
+      "notes": "New finding, 2026-09-28: \"Fuqarolik kodeksining 38, Oila kodeksining 228, 233-moddalari\" -- a bare article number (\"38\") immediately followed by a DIFFERENT code's own name before any unit word appears, relying on the later \"-moddalari\" (attached to the second code's numbers) to retroactively cover the first code's number too. _expand()/RE_CLAUSE require a contiguous digit/comma/va run ending in an explicit unit word, so \"38\" is never matched as a clause at all (no unit word touches it) and the anchor falls through to the bare-act fallback, silently dropping the citation to Civil Code Article 38 entirely. Measured corpus-wide (regex: 'Fuqarolik kodeksi(?:ning|) <digits>,' NOT followed by modda/bob/paragraf, then another code name ending 'kodeks...ning'): exactly 5 raw occurrences across 3 distinct rows (26159, 37948 x3, 53186) -- all five name the identical target, Civil Code Article 38 (a civil-registry cross-reference that recurs verbatim across several Oliy sud Plenumi resolutions on establishing vital-record facts). Not fixed today: unlike the comma/va list-joining gaps, this isn't a missing separator -- it requires inferring that a bare number's unit word lives in a *different* code's own clause later in the sentence, which is a materially harder, riskier pattern to generalize (and here always resolves to the same single target number, suggesting a recurring drafting idiom rather than a general grammar). Recorded as a new known_gap regression record and a new Backlog item rather than special-cased into the regex."
+    },
+    {
+      "gold_id": 196,
+      "row_id": 37948,
+      "doc_id": -6936801,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 2388,
+      "anchor_end": 2409,
+      "is_the_code": false,
+      "window": "oddalari” soʻzlari “Fuqarolik kodeksining 38, Fuqarolik protsessual kodeksining 274-275-moddalari” soʻzlari bilan almashtirilsin; d) 21-bandining ikkinchi xatboshisidagi “xalq deputatlari Kengashi tomonidan tasdiqlangan” soʻzlari chiqarilsin. 2. Oliy sud Plenumining 1992-yil 13-noyabrdagi (1998-yil 1",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "38",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "known_gap",
+      "notes": "New finding, 2026-09-28: \"Fuqarolik kodeksining 38, Oila kodeksining 228, 233-moddalari\" -- a bare article number (\"38\") immediately followed by a DIFFERENT code's own name before any unit word appears, relying on the later \"-moddalari\" (attached to the second code's numbers) to retroactively cover the first code's number too. _expand()/RE_CLAUSE require a contiguous digit/comma/va run ending in an explicit unit word, so \"38\" is never matched as a clause at all (no unit word touches it) and the anchor falls through to the bare-act fallback, silently dropping the citation to Civil Code Article 38 entirely. Measured corpus-wide (regex: 'Fuqarolik kodeksi(?:ning|) <digits>,' NOT followed by modda/bob/paragraf, then another code name ending 'kodeks...ning'): exactly 5 raw occurrences across 3 distinct rows (26159, 37948 x3, 53186) -- all five name the identical target, Civil Code Article 38 (a civil-registry cross-reference that recurs verbatim across several Oliy sud Plenumi resolutions on establishing vital-record facts). Not fixed today: unlike the comma/va list-joining gaps, this isn't a missing separator -- it requires inferring that a bare number's unit word lives in a *different* code's own clause later in the sentence, which is a materially harder, riskier pattern to generalize (and here always resolves to the same single target number, suggesting a recurring drafting idiom rather than a general grammar). Recorded as a new known_gap regression record and a new Backlog item rather than special-cased into the regex."
+    },
+    {
+      "gold_id": 197,
+      "row_id": 38072,
+      "doc_id": -42423,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 95,
+      "anchor_end": 116,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 165-moddasi ikkinchi qismi, Oʻzbekiston Respublikasi Maʼmuriy javobgarlik toʻgʻrisidagi kodeksining 91, 911 va 913-moddalari.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "165",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": "ikkinchi qism"
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 198,
+      "row_id": 38217,
+      "doc_id": -1643248,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 1621,
+      "anchor_end": 1642,
+      "is_the_code": false,
+      "window": " 10 — 15-moddalari, Fuqarolik kodeksining 364—385-moddalariga muvofiq, shartnoma tuzish haqidagi tarafning taklifi (oferta)ga javob toʻliq va pisandasiz boʻlgandagina aksept hisoblanishiga eʼtibor berishlari kerak. Agarda ikkinchi taraf ofertani baʼzi bir eʼtirozlar bilan yoki qisman qabul qilsa, u h",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "364",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "365",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "366",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "367",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "368",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "369",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "370",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "371",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "372",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "373",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "374",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "375",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "376",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "377",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "378",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "379",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "380",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "381",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "382",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "383",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "384",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "385",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 199,
+      "row_id": 38378,
+      "doc_id": -22525,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 70,
+      "anchor_end": 91,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 44-moddasi, Vazirlar Mahkamasining 2017-yil 9-fevraldagi 66-son qarori bilan tasdiqlangan Tadbirkorlik subyektlarini davlat roʻyxatidan oʻtkazish tartibi toʻgʻrisidagi nizomning 3, 4-boblari. LexUZ sharhiQarang: Oʻzbekiston Respublikasi ",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "44",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 200,
+      "row_id": 38614,
+      "doc_id": -26477,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 62,
+      "anchor_end": 83,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 50-moddasi (Yuridik shaxslarni qayta tashkil etishda huquqiy vorislik), 23-bobi (majburiyatdagi shaxslarning oʻzgarishi) hamda V boʻlimiga (vorislik huquqi) qarang.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "50",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        },
+        {
+          "target_kind": "chapter",
+          "article": null,
+          "struct_number": 23,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": "Window also cites a Part-level (\"boʻlim\") provision that extract() silently drops entirely -- no target_kind exists for \"boʻlim\" at all (see DAILY_REVIEW.md backlog \"'boʻlim' is never a recognized citation unit\", measured 2026-09-17 at 6 corpus-wide occurrences). Re-confirmed today still exactly 6 occurrences corpus-wide, this row already one of them -- not a new occurrence. Scored 'correct' because the Citation schema has no field to record an honest mismatch against (same treatment as gold_id 30 in the 2026-09-28 batch, and the same reasoning as the qism-grain exclusion)."
+    },
+    {
+      "gold_id": 201,
+      "row_id": 38618,
+      "doc_id": -26477,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 221,
+      "anchor_end": 242,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 36 va 37-moddalari hamda Fuqarolik protsessual kodeksining 30-bobida belgilangan.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "36",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "37",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 202,
+      "row_id": 38838,
+      "doc_id": -350147,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 4648,
+      "anchor_end": 4669,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 353-381, 631-655, 703-708-moddalariga, “Xoʻjalik yurituvchi subyektlar faoliyatining shartnomaviy-huquqiy bazasi toʻgʻrisida”gi Oʻzbekiston Respublikasi Qonuniga, shuningdek boshqa qonun hujjatlariga muvofiq belgilanadi. Tomonlar Shartnomalarni tuzishda oʻzla",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "353",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "354",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "355",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "356",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "357",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "358",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "359",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "360",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "361",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "362",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "363",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "364",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "365",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "366",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "367",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "368",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "369",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "370",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "371",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "372",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "373",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "374",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "375",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "376",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "377",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "378",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "379",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "380",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "381",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "631",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "632",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "633",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "634",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "635",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "636",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "637",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "638",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "639",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "640",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "641",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "642",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "643",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "644",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "645",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "646",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "647",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "648",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "649",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "650",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "651",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "652",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "653",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "654",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "655",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "703",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "704",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "705",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "706",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "707",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "708",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 203,
+      "row_id": 38838,
+      "doc_id": -350147,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 9371,
+      "anchor_end": 9392,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 324-339-moddalari talablariga muvofiq belgilanadi. 19. Mazkur Nizomning 2-bandida koʻrsatilgan moddiy-texnika resurslari yetkazib berish va xizmatlar koʻrsatish (ishlarni bajarish) boʻyicha shartnomalar Shartnoma majburiyatlari bajarilishini nazorat qilish tu",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "324",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "325",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "326",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "327",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "328",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "329",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "330",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "331",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "332",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "333",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "334",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "335",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "336",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "337",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "338",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "339",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 204,
+      "row_id": 39095,
+      "doc_id": -1450968,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 5913,
+      "anchor_end": 5934,
+      "is_the_code": false,
+      "window": " tushuntirilsin. 4. Fuqarolik kodeksining 1139, 1141-moddalarida koʻrsatilgan meros qoldiruvchining mehnatga qobiliyatsiz boqimlarini uch toifasini bir-biridan ajratish lozim. ",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "1139",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1141",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 205,
+      "row_id": 39095,
+      "doc_id": -1450968,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 6463,
+      "anchor_end": 6484,
+      "is_the_code": false,
+      "window": "uchun, birinchidan, Fuqarolik kodeksining 1136—1138-moddalarida koʻrsatilgan merosxoʻrlar jumlasiga mansub boʻlgan meros qoldiruvchining ikkinchi, uchinchi, toʻrtinchi navbatdagi merosxoʻrlari boʻlishi, ikkinchidan meros qoldiruvchining vafotiga qadar kamida bir yil uning qaramogʻida boʻlishi, uchinc",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "1136",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1137",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1138",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 206,
+      "row_id": 39136,
+      "doc_id": -29526,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 88,
+      "anchor_end": 109,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 57-bobi (“Zarar yetkazishdan kelib chiqadigan majburiyatlar”) va Oʻzbekiston Respublikasi Jinoyat-protsessual kodeksining beshinchi boʻlimiga (“Jinoyat natijasida yetkazilgan mulkiy ziyonni qoplash”) qarang.",
+      "expected": [
+        {
+          "target_kind": "chapter",
+          "article": null,
+          "struct_number": 57,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 207,
+      "row_id": 39613,
+      "doc_id": -776103,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 43,
+      "anchor_end": 64,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 313 — 323 va 749 — 758-moddalariga, “Oʻzbekiston Respublikasining Markaziy banki toʻgʻrisida”, “Banklar va bank faoliyati toʻgʻrisida”, “Tashqi iqtisodiy faoliyat toʻgʻrisida”gi Oʻzbekiston Respublikasi qonunlariga, Oʻzbekiston Respublikasi Prezidentining 199",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "313",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "314",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "315",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "316",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "317",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "318",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "319",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "320",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "321",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "322",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "323",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "749",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "750",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "751",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "752",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "753",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "754",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "755",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "756",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "757",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "758",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 208,
+      "row_id": 39792,
+      "doc_id": -32924,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 242,
+      "anchor_end": 263,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 50-bobi (Kompleks tadbirkorlik litsenziyasi) hamda 1036-moddasi.",
+      "expected": [
+        {
+          "target_kind": "chapter",
+          "article": null,
+          "struct_number": 50,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1036",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 209,
+      "row_id": 39909,
+      "doc_id": -1449509,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 1204,
+      "anchor_end": 1225,
+      "is_the_code": false,
+      "window": "unining 38-moddasi, Fuqarolik kodeksining 11, 99, 100, 163, 1021 va 1022-moddalari, 1998-yil 29-avgustdagi “Avtomobil transporti toʻgʻrisida”gi Qonunining 19-moddasi va boshqa qonun hujjatlari bilan tartibga solinishiga eʼtibor qaratilsin. Kelib chiqqan nizolarni toʻgʻri va oʻz vaqtida hal qilish uch",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "11",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "99",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "100",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "163",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1021",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "1022",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 210,
+      "row_id": 39909,
+      "doc_id": -1449509,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 5918,
+      "anchor_end": 5939,
+      "is_the_code": false,
+      "window": "losani bildirmaydi. Fuqarolik kodeksining 989-moddasi 1-qismiga muvofiq yuridik shaxs yoxud fuqaro oʻz xodimi mehnat (xizmat, lavozim) majburiyatlarini bajarib turgan vaqtida yetkazilgan zararni qoplaydi. Qonunda koʻrsatilgan bu qoida maʼnaviy zarar yetkazilgan holatlarga ham tatbiq qilinadi. 6. Mehn",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "989",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": "1-qism"
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 211,
+      "row_id": 40343,
+      "doc_id": -24703,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 45,
+      "anchor_end": 66,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 14, 985, 992-moddalari, 57-bobining 3-paragrafi. LexUZ sharhiQarang: Oʻzbekiston Respublikasi ",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "14",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "985",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "992",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "section",
+          "article": null,
+          "struct_number": 57,
+          "section_number": 3,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 212,
+      "row_id": 40570,
+      "doc_id": -13081,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 320,
+      "anchor_end": 341,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 324 — 339, 718 — 721, 725-moddalari, 57-bobiga qarang.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "324",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "325",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "326",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "327",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "328",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "329",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "330",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "331",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "332",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "333",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "334",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "335",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "336",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "337",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "338",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "339",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "718",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "719",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "720",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "721",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "725",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "chapter",
+          "article": null,
+          "struct_number": 57,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 213,
+      "row_id": 40572,
+      "doc_id": -13081,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 62,
+      "anchor_end": 83,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 724-moddasiga qarang. LexUZ sharhiQarang: Oʻzbekiston Respublikasi Vazirlar Mahkamasining 2008-yil 23-oktabrdagi 232-sonli qarori bilan tasdiqlangan Oʻzbekiston Respublikasi Temir yoʻl ustavining IX bobi.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "724",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 214,
+      "row_id": 40766,
+      "doc_id": -85259,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 229,
+      "anchor_end": 248,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksiga muvofiq avtomototransport vositalari va koʻchmas mulk bilan bogʻliq alohida bitimlarning notarial tasdiqlanishi talab etiladi (386, 488, 490, 497, 504, 513, 531, 565, 580-moddalar). Oldingi tahrirga qarang. Oldingi tahrirga qarang. Oldingi tahrirga qarang.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "386",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "488",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "490",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "497",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "504",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "513",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "531",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "565",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "580",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 215,
+      "row_id": 40767,
+      "doc_id": -85259,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 220,
+      "anchor_end": 237,
+      "is_the_code": false,
+      "window": " ravishda buzsa; 2) Fuqarolik kodeksi, boshqa qonunlar va shartnomada nazarda tutilgan oʻzga hollarda (Oʻzbekiston Respublikasi ",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 216,
+      "row_id": 40991,
+      "doc_id": -106136,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 299,
+      "anchor_end": 316,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksi 600-moddasining birinchi qismi, 601 — 603-moddalari. LexUZ sharhiQarang: Oʻzbekiston Respublikasi ",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "600",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": "birinchi qism"
+        },
+        {
+          "target_kind": "article",
+          "article": "601",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "602",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "603",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 217,
+      "row_id": 40994,
+      "doc_id": -106136,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 150,
+      "anchor_end": 171,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 182 — 187-moddalari, Oʻzbekiston Respublikasining “Davlat uy-joy fondini xususiylashtirish toʻgʻrisida”gi Qonunining 10-moddasi. Oldingi tahrirga qarang. Oldingi tahrirga qarang. Oldingi tahrirga qarang. LexUZ sharhiQarang: mazkur Kodeksning III-boʻlimi (“Dav",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "182",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "183",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "184",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "185",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "186",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "187",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 218,
+      "row_id": 40997,
+      "doc_id": -106136,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 435,
+      "anchor_end": 456,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 164-moddasi, 207-moddasining birinchi qismi, Oʻzbekiston Respublikasi Vazirlar Mahkamasining 2009-yil 30-apreldagi 127-sonli “Yakka tartibda uy-joy qurish (rekonstruksiya qilish)ni amalga oshirishga ruxsatnomalarni rasmiylashtirishning, loyihalarni vakolatli ",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "164",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "207",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": "birinchi qism"
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 219,
+      "row_id": 41000,
+      "doc_id": -106136,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 1472,
+      "anchor_end": 1489,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksi 210-moddasining uchinchi qismi, Oʻzbekiston Respublikasining “Davlat uy-joy fondini xususiylashtirish toʻgʻrisida”gi Qonunining 4-5, 7, 8, 16 — 22-moddalari, Oʻzbekiston Respublikasi Vazirlar Mahkamasining 1993-yil 1-martdagi 114-sonli “Oʻzbekiston Respublika",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "210",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": "uchinchi qism"
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
     }
   ]
 }
