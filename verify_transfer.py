@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import re
 import sys
 import unicodedata
 from pathlib import Path
@@ -278,13 +279,36 @@ def main() -> int:
                   "SELECT count(*) FROM link_edge WHERE hierarchy_rel = 'below' AND src_tier <= 2"
               ).fetchone()[0] == 0,
               "no edge claims realization from an act at or above the Code's tier")
-        # The gazette-citation false positive class must stay eradicated.
-        gazette = con.execute(r"""
-            SELECT count(*) FROM link_edge
+        # The gazette-citation false positive class must stay eradicated: an
+        # article number that is itself one of a gazette's own item locators
+        # (e.g. "56-modda" inside "(...Axborotnomasi, 1997-yil, № 2, 56-modda)")
+        # must never be mined as a Code article. A plain "does the evidence
+        # TEXT mention a gazette record nearby" check is too blunt once
+        # citation_extractor.py correctly recovers a REAL citation that
+        # legitimately sits right after the Code's own bibliographic
+        # parenthetical (2026-09-29 fix, see DAILY_REVIEW.md): that evidence
+        # snippet's 90-char padding still mentions "Axborotnomasi"/"№" as
+        # nearby context even though the matched digits themselves are
+        # outside the parenthetical. So check precisely: strip every
+        # *balanced* publication-record parenthetical out of the evidence
+        # text first, then see if the cited article number + "modda" still
+        # survives outside it -- if it does, the match was never inside the
+        # parenthetical in the first place, and it's not a gazette citation.
+        pub_paren_re = re.compile(
+            r"\([^()]*(?:axborotnomasi|vedomosti|to[ʻ']?plam|№)[^()]*\)", re.IGNORECASE)
+        candidates = con.execute(r"""
+            SELECT dst_article_number, evidence FROM link_edge
             WHERE dst_kind = 'article'
               AND regexp_matches(lower(evidence), 'axborotnomasi, \d{4}-yil')
               AND regexp_matches(lower(evidence), '№')
-        """).fetchone()[0]
+        """).fetchall()
+        gazette = 0
+        for article, evidence in candidates:
+            stripped = pub_paren_re.sub(" ", evidence)
+            still_present = re.search(
+                rf"\b{re.escape(article)}\s*-?\s*modda", stripped, re.IGNORECASE)
+            if not still_present:
+                gazette += 1
         check(gazette == 0, "no article edge mined from an act's publication record",
               f"{gazette} suspected gazette citation(s)" if gazette else "")
 

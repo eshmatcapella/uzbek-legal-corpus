@@ -189,6 +189,25 @@ RE_QISM = re.compile(
 # (e.g. "185-moddasi, 186-moddasi toʻqqizinchi qismi" — the ninth part is
 # 186's, not 185's). Gates the non-"sining" qism/band attachment below.
 RE_QISM_BLOCK = re.compile(r",|\d+\s*-\s*(?:modda|bob)", re.IGNORECASE)
+# The Code's OWN bibliographic/publication-record parenthetical, when it sits
+# immediately after the anchor -- e.g. "Fuqarolik kodeksi (Oʻzbekiston
+# Respublikasi Oliy Majlisining Axborotnomasi, 1996-yil, 2-songa ilova; ...
+# 1997-yil, № 2, 56-modda, № 9, 241-modda) 292-moddasiga muvofiq". The
+# parenthetical's own gazette-item locators ("56-modda") are themselves
+# RE_CLAUSE matches, and the very first one's gap contains "Axborotnomasi" --
+# RE_STOP's deliberately whole-window `break` (see the "break-vs-continue"
+# backlog note) then discards the REAL citation that follows the closing
+# paren too, not just the gazette-locator false match. Measured 2026-09-29:
+# 9 rows corpus-wide lose their Code citation entirely this way. Deliberately
+# scoped to ONLY a parenthetical that starts right at the anchor (mirroring
+# exactly the measured shape) and that is itself balanced (no nested parens,
+# so a clause match starting inside an unclosed paren is never exposed) --
+# an "axborotnoma"/"№" mention anywhere else in the window still triggers the
+# full, conservative break, since that's different, unmeasured territory
+# (the citing act's own gazette record vs. some other act just being named).
+RE_LEADING_PUB_PAREN = re.compile(
+    r"^\s*\((?P<body>[^()]*(?:[Aa]xborotnoma|[Vv]edomosti|to[ʻ']?plam|№)[^()]*)\)"
+)
 
 
 @dataclass
@@ -302,6 +321,13 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
         # Never scan past the next anchor: its numbers belong to it.
         limit = min(a_end + WINDOW, anchors[i + 1][0] if i + 1 < len(anchors) else len(text))
         window = text[a_end:limit]
+
+        pub_paren = RE_LEADING_PUB_PAREN.match(window)
+        if pub_paren:
+            # Blank it out in place (same length) so every later offset into
+            # `window` -- and hence abs_start/abs_end into the untouched
+            # `text` -- stays correct.
+            window = window[:pub_paren.start()] + " " * len(pub_paren.group(0)) + window[pub_paren.end():]
 
         consumed_to = 0
         produced = False
@@ -523,6 +549,33 @@ def _selftest() -> int:
         if got != want:
             failures += 1
             print(f"FAIL(stop) {text[:64]!r}\n     got  {got}\n     want {want}")
+    # A publication-record parenthetical right after the anchor is the
+    # Code's OWN bibliographic citation, not another act being named -- must
+    # NOT trigger RE_STOP's whole-window break, real corpus phrasing
+    # (2026-09-29, 9 rows corpus-wide): the real article after the closing
+    # paren must still be found, even when the parenthetical itself contains
+    # several gazette-item "N-modda" locators that would otherwise look like
+    # (and, before this fix, break scanning as) real clauses.
+    pub_paren_cases: list[tuple[str, dict, list[tuple]]] = [
+        ("Fuqarolik kodeksining (Oʻzbekiston Respublikasi Oliy Majlisining "
+         "Axborotnomasi, 1996-y., 2-songa ilova) 292-moddasiga muvofiq", {},
+         [("article", "292", "single")]),
+        ("Fuqarolik kodeksi (Oʻzbekiston Respublikasi Oliy Majlisining "
+         "Axborotnomasi, 1996-yil, 2-songa ilova; № 11-12; 1997-yil, № 2, "
+         "56-modda, № 9, 241-modda) 1015-moddasining uchinchi qismidagi",
+         {}, [("article", "1015", "single")]),
+        # a leading paren that's the "bundan buyon matnda FK deb yuritiladi"
+        # alias declaration (no pub-record signal) must be left alone --
+        # not this fix's concern, and RE_CLAUSE never matches inside it anyway.
+        ("Fuqarolik kodeksi (bundan buyon matnda FK deb yuritiladi) 99-moddasi",
+         {}, [("article", "99", "single")]),
+    ]
+    for text, kwargs, expected in pub_paren_cases:
+        got = [(c.target_kind, c.article, c.listing) for c in extract(text, **kwargs)]
+        want = [(k, a, l) for k, a, l in expected]
+        if got != want:
+            failures += 1
+            print(f"FAIL(pub_paren) {text[:64]!r}\n     got  {got}\n     want {want}")
     # doc_id must reclassify superscript articles by their base number, not the
     # concatenated citation string (measured gap, see DAILY_REVIEW.md
     # 2026-09-08): a General Part superscript (173-7) and a Special Part one
@@ -561,7 +614,7 @@ def _selftest() -> int:
             failures += 1
             print(f"FAIL(section_comma) {text[:64]!r}\n     got  {got}\n     want {expected}")
 
-    total = (len(cases) + len(qism_cases) + len(stop_cases) + len(docid_cases)
+    total = (len(cases) + len(qism_cases) + len(stop_cases) + len(pub_paren_cases) + len(docid_cases)
              + len(section_comma_cases))
     print(f"{total - failures}/{total} extractor self-tests passed")
     return 1 if failures else 0

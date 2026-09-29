@@ -22,6 +22,95 @@ How to use this file each session:
 
 ## Active threads
 
+- **Gold set: 220 -> 260 records, third signature-stratified batch
+  2026-09-29, one real bug found and fixed, thread stays open.**
+  Continued yesterday's still-open Extractor thread rather than rotating
+  (the brief's own priority order: continue a mid-flight thread before
+  pulling a fresh backlog item) — drew one more `build_gold_sample_novel.py`
+  batch (`--seed 20260929 --n 40`, signature coverage 178/451 before
+  drawing), hand-read all 40 against the raw text. **Found and fixed one
+  real, live recall bug**: gold_id 234 (row 43534) and gold_id 237 (row
+  44469) both showed `extract()` falling back to a bare `act` citation
+  where the raw text plainly names a specific article — "Fuqarolik kodeksi
+  (Oʻzbekiston Respublikasi Oliy Majlisining Axborotnomasi, 1996-yil, №
+  11-12) 775-moddasining ikkinchi qismidagi ... soʻzlar chiqarib
+  tashlansin" should resolve to Article 775, part 2. Root cause: `RE_STOP`'s
+  `axborotnoma` branch exists specifically to stop the scan on the Code's
+  own gazette *publication-record* parenthetical (so a locator like
+  "56-modda" inside "(...Axborotnomasi, 1997-yil, № 2, 56-modda)" is never
+  mistaken for a Code article) — but the stop is a whole-window `break`
+  (see the pre-existing "break-vs-continue" backlog note), and when a real
+  article citation legitimately follows the closing paren, the very first
+  `RE_CLAUSE` candidate inside the parenthetical (one of its own gazette
+  locators) trips the break before the real citation downstream is ever
+  reached, discarding it too. **Measured corpus-wide before fixing**: 25
+  anchor windows start with a balanced, signal-bearing publication-record
+  parenthetical; of those, 9 are immediately followed by a real modda/bob/
+  paragraf clause once the paren closes, and all 9 were losing their
+  citation entirely (articles 15, 38, 43, 48, 53, 292, 775, 788, 1015).
+  Fixed in `citation_extractor.py` by blanking out (same length, offsets
+  preserved) a leading balanced pub-record parenthetical before the clause
+  scan starts (`RE_LEADING_PUB_PAREN`), scoped deliberately narrowly to
+  only the parenthetical sitting immediately at the anchor — an
+  `axborotnoma` mention anywhere else in the window still triggers the
+  full, conservative break, unchanged. Added 3 self-test cases (51/51
+  passing, up from 48/48) including a guard that the *unrelated* "(bundan
+  buyon matnda FK deb yuritiladi)" alias-declaration parenthetical (33
+  corpus occurrences, no publication-record signal) is correctly left
+  alone. **Verified corpus-wide after fixing**: all 9 rows now resolve to
+  the correct article (hand-confirmed each against the raw text: e.g. row
+  43534's exact matched span is "775-moddasining", outside the closing
+  paren, not one of the gazette's own locators). Re-ran the full
+  pipeline: `build_links.py` — 9530 edges (same total; 9 useless bare-`act`
+  fallback edges converted in place to real, resolved `article` edges, one
+  of which duplicates an edge already present from a second occurrence of
+  the same citation elsewhere in that row, hence the total not moving by
+  the full +9); `build_okoz.py` unchanged (386/386 classified, same
+  mappings); `build_llc.py` — `llc_implementing_act` 132 -> 135 (**3 new,
+  real implementing acts found**: doc -36953/-42953/-44853, each citing
+  Civil Code articles 48/53/43 that were previously invisible to the LLC
+  foundation-citation scan), `llc_norm` unchanged at 100/100 (no LLC
+  foundation-mapping logic touched). Merged the fixed batch into
+  `gold_citations.json` as gold_id 220-259 (all "correct", including the
+  2 that depended on today's fix), `score_gold.py`: 260 records, 0 drift,
+  **precision 926/933 (99.2%), recall 926/936 (98.9%)** — same 5
+  pre-existing known_gap mismatches, 0 new ones, confirming no collateral
+  regression from the fix. `verify_transfer.py` **initially FAILED** after
+  the fix: its AC5 "no article edge mined from an act's publication
+  record" check is a blunt heuristic (does the edge's 90-char-padded
+  evidence *text* mention "Axborotnomasi, YYYY-yil" and "№" anywhere
+  nearby) built as a permanent regression guard for exactly the bug class
+  this fix touches — and 2 of the 9 newly-correct edges (articles 53, 775)
+  have short enough gazette records that the padding reaches back across
+  the closing paren, tripping the same substring match even though the
+  actual matched digits are provably outside the parenthetical (checked
+  `ev_start`/`ev_end` by hand: "775-moddasining", "53-moddasi", both
+  outside). This is the check's own imprecision surfacing, not a reason to
+  revert a well-measured, zero-regression fix — refined it in
+  `verify_transfer.py` to strip every balanced pub-record parenthetical out
+  of the evidence text first and only flag an edge if its article+"modda"
+  citation doesn't survive outside that stripped text (tested against both
+  a synthetic true-positive, still correctly flagged, and the 2 real
+  false-positives, now correctly cleared). `verify_transfer.py` green
+  again after the refinement, same INFO-line numbers elsewhere.
+  `pyflakes`/`vulture --min-confidence 60` clean on both changed files (same
+  2 pre-existing dataclass-field warnings in `citation_extractor.py`, same
+  2 pre-existing `art_no` warnings in `verify_transfer.py` — confirmed via
+  `git stash` diff, nothing new). `python -m unittest test_transfer_e2e.py`:
+  14/14. Both apps smoke-tested live (HTTP 200, no exceptions in logs; no
+  schema change, so a load check is sufficient per the project's own rule).
+  The other 38/40 batch-6 windows all read correct against the raw text —
+  no other new gaps found this round. **New signature coverage: 218/451
+  (up from 178/451)**, 1299/3251 candidate windows still sit in
+  never-annotated territory. Thread stays open — next Extractor rotation
+  should keep drawing fresh `build_gold_sample_novel.py` batches; consider
+  also, at some point, tightening `RE_STOP`'s `break` for the `axborotnoma`
+  branch specifically (continue past just the stopped clause instead of the
+  whole window) now that this session's fix handles the *leading* case —
+  a publication-record parenthetical appearing *mid-window*, after some
+  other citation was already found, is still unmeasured territory the same
+  way the general "break-vs-continue" backlog item flagged.
+
 - **Gold set: 140 -> 220 records, two signature-stratified batches
   2026-09-28, thread stays open.** Extractor's turn in the rotation (last
   ran 09-25). Drew and hand-annotated batch 4 (`--seed 20260928 --n 40`,
@@ -1025,22 +1114,25 @@ How to use this file each session:
 ### Extractor recall/precision
 - ~~**Build the gold set.**~~ **Scoring layer built 2026-09-20, grown to 100
   records 2026-09-22, to 140 via signature-stratified sampling 2026-09-25,
-  to 220 via two more signature-stratified batches 2026-09-28** — see Active
-  threads and Log for the full detail. `gold_citations.json` (220
-  hand-verified anchor occurrences, five batches — two uniform-random,
-  three signature-stratified) + `score_gold.py` (the scorer) +
-  `build_gold_sample.py`/`build_gold_sample_novel.py` (the two samplers)
-  now exist; current score **precision 693/700 (99.0%), recall 693/703
-  (98.6%)** — the five mismatches are the documented "paragrif" spelling
-  gap, the 2026-09-25 Roman-chapter+paragraf gap, the 2026-09-28 "hamda"
-  list-separator gap, the 2026-09-28 chapter+paragraph-list-with-
-  parenthetical gap, and the new 2026-09-28 "bare article number before an
+  to 220 via two more signature-stratified batches 2026-09-28, to 260 via
+  a third 2026-09-29** — see Active threads and Log for the full detail.
+  `gold_citations.json` (260 hand-verified anchor occurrences, six batches —
+  two uniform-random, four signature-stratified) + `score_gold.py` (the
+  scorer) + `build_gold_sample.py`/`build_gold_sample_novel.py` (the two
+  samplers) now exist; current score **precision 926/933 (99.2%), recall
+  926/936 (98.9%)** — the five mismatches are the documented "paragrif"
+  spelling gap, the 2026-09-25 Roman-chapter+paragraf gap, the 2026-09-28
+  "hamda" list-separator gap, the 2026-09-28 chapter+paragraph-list-with-
+  parenthetical gap, and the 2026-09-28 "bare article number before an
   interposed different code name" gap (see below), each recorded with its
-  true expected output rather than silently marked correct. Not closed
-  outright — 220 windows is still a small fraction of the 3251 real
-  candidate windows corpus-wide (98/451 distinct window *signatures*
-  covered after 2026-09-28's first batch, 138/451 after the second — see
-  Active threads). **Next step, whenever Extractor rotation comes up
+  true expected output rather than silently marked correct — the
+  2026-09-29 batch found and fixed a sixth real gap (the "axborotnoma"
+  publication-record parenthetical swallowing a real citation, see Active
+  threads) *before* merging, so it shows up as a fix, not a new mismatch.
+  Not closed outright — 260 windows is still a small fraction of the 3251
+  real candidate windows corpus-wide (218/451 distinct window *signatures*
+  covered as of 2026-09-29, up from 98/451 after 2026-09-28's first batch
+  — see Active threads). **Next step, whenever Extractor rotation comes up
   again**: run `build_gold_sample_novel.py` again (not
   `build_gold_sample.py` — see below for why) with a fresh `--n`/`--seed`,
   hand-annotate the batch, and merge into `gold_citations.json` — or add a
@@ -1493,6 +1585,147 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-09-29 — Extractor thread continued: gold set 220 -> 260, real "axborotnoma" recall bug found+fixed (9 rows, +3 LLC implementing acts), verify_transfer.py's own gazette check tightened
+
+Continued yesterday's still-open Extractor thread (the brief's priority
+order: finish a mid-flight thread before rotating to a fresh backlog item)
+rather than picking Data currency or Cleanup next. Also spent real time at
+the start of the session on an environment check inherited from prior
+days' pattern: `git status` showed HEAD detached 5 commits ahead of the
+local `main` ref; `git fetch origin main` showed origin/main was actually
+already at that same commit (962a84d) — a stale local ref only, not lost
+work — so this was just `git checkout main && git merge --ff-only`, no
+push needed. Also re-ran the by-now-standard cold-start steps: `apt-get
+install -y git-lfs && git lfs install && git lfs pull` (parquet was still
+the 134-byte LFS pointer stub) and `pip install duckdb pandas pyarrow
+streamlit pyflakes vulture`.
+
+Drew batch 6 with `build_gold_sample_novel.py --seed 20260929 --n 40`
+(signature coverage 178/451 before drawing) and hand-read all 40 windows
+against the raw Uzbek text. Two of them (row 43534, row 44469) exposed the
+same real bug: `extract()` returned a bare `act` fallback where the text
+plainly names a specific article and part — e.g. row 43534's "Fuqarolik
+kodeksi (Oʻzbekiston Respublikasi Oliy Majlisining Axborotnomasi,
+1996-yil, № 11-12) 775-moddasining ikkinchi qismidagi ... soʻzlar chiqarib
+tashlansin" should resolve to Article 775, part 2, not to a bare act
+citation. Root-caused it to `RE_STOP`'s `axborotnoma` branch: that branch
+exists on purpose, to stop the scan on the Code's own gazette
+*publication-record* parenthetical (e.g. "(...Axborotnomasi, 1997-yil, №
+2, 56-modda)"), so a gazette item locator like "56-modda" is never
+mistaken for a Code article — a measured, deliberate design from the
+pipeline's original build. But the stop is a whole-window `break` (the
+pre-existing "break-vs-continue" backlog item's subject), and when a real
+article citation legitimately follows the closing paren, the very first
+`RE_CLAUSE` candidate *inside* the parenthetical (one of the gazette's own
+locators) trips the break before the real citation downstream is ever
+reached — discarding it too, not just the false one.
+
+**Measured corpus-wide before fixing**: reimplemented the anchor+window
+walk standalone to find every anchor window that starts with a balanced,
+signal-bearing (`axborotnoma`/`vedomosti`/`toʻplam`/`№`) parenthetical: 25
+such windows exist. Of those, 9 are immediately followed by a real
+modda/bob/paragraf clause once the parenthetical closes, and *all 9* were
+losing their citation entirely under the then-current code (articles 15,
+38, 43, 48, 53, 292, 775, 788, 1015 — hand-confirmed each against the raw
+text, all genuine Civil Code citations, several inside long omnibus
+amending acts that also touch the Criminal Code, the Administrative
+Liability Code, etc. earlier in the same very long row). This directly
+contradicts the 2026-09-12 backlog note's claim that all 552
+`break`-triggering windows with clauses remaining afterward were checked
+and found safe — that measurement evidently didn't include (or predates)
+these 9 `axborotnoma`-triggered rows; flagging the discrepancy here per
+the project's own rule about not silently overriding a documented
+decision, rather than re-asserting the old "not a live bug" claim.
+
+**Fixed** in `citation_extractor.py`: added `RE_LEADING_PUB_PAREN`, a
+regex matching a balanced parenthetical (no nested parens — confirmed none
+of the 25 have any) starting right at the anchor and containing one of the
+publication-record signal words. When it matches, the parenthetical is
+blanked out in place (replaced with spaces of the same length, so every
+downstream character offset into the untouched original `text` stays
+correct) before the clause-scanning loop starts. Deliberately scoped to
+only the parenthetical sitting *immediately* at the anchor, mirroring
+exactly the measured shape — an `axborotnoma` mention anywhere else in the
+window (after some other citation was already found) still triggers the
+full, conservative break, unchanged; that's different, unmeasured
+territory, noted as a fresh sub-item on the "break-vs-continue" backlog
+entry rather than touched today. Checked for collateral risk before
+committing to the fix: 58 anchor windows corpus-wide start with *some*
+leading parenthetical; 33 of those are the unrelated "(bundan buyon matnda
+FK deb yuritiladi)" FK-alias declaration (no publication-record signal
+word, so `RE_LEADING_PUB_PAREN` correctly never touches them — added as an
+explicit self-test guard) — only the 25 signal-bearing ones are affected.
+Added 3 new self-test cases (`citation_extractor.py`, now 51/51 passing,
+up from 48/48): the two-locator case, the single-locator case, and the
+FK-alias-declaration non-match guard.
+
+**Verified corpus-wide after fixing**: re-ran the same standalone
+measurement — all 9 rows now resolve to their correct article, and
+`ev_start`/`ev_end` on each new edge points precisely at the real citation
+text ("775-moddasining", "53-moddasi", etc.), never at one of the
+gazette's own locators. Re-ran the pipeline: `build_links.py` — 9530
+edges total (unchanged; the 9 useless bare-`act` edges were converted in
+place to real, resolved `article` edges, one of which duplicates an edge
+already present at that row from a second, separate occurrence of the
+same citation, hence the total count not moving by the full +9 even
+though 9 real citations were recovered — confirmed by diffing `link_edge`
+row-for-row between a pre-fix copy of `corpus.duckdb` and the fixed
+rebuild); `build_okoz.py` unchanged (386/386 classified, same mappings,
+expected — no citation-extraction logic feeds OKOZ); `build_llc.py` —
+**`llc_implementing_act` grew 132 -> 135**, three new, real implementing
+acts found (doc -36953, -42953, -44853, each an omnibus amending act
+citing Civil Code articles 48, 53, and 43 respectively, all newly visible
+to the LLC foundation-citation scan now that the underlying `link_edge`
+carries the real article instead of a bare `act` fallback) — hand-checked
+each: all three genuinely cite one of the LLC foundation articles.
+`llc_norm` unchanged at 100/100 (no foundation-mapping logic touched, as
+expected). Merged batch 6 into `gold_citations.json` as gold_id 220-259
+(all "correct" — including the 2 that only score correct because of
+today's fix, regenerated against the fixed extractor before merging, not
+the pre-fix snapshot). `score_gold.py`: 260 records, 0 drift, **precision
+926/933 (99.2%), recall 926/936 (98.9%)** — same 5 pre-existing known_gap
+mismatches as 2026-09-28, 0 new ones.
+
+**`verify_transfer.py` initially FAILED** after the fix, on its own AC5
+"no article edge mined from an act's publication record" check — a
+permanent regression guard, present since the pipeline's original build,
+for exactly this false-positive class. Its heuristic checks whether an
+edge's 90-char-padded evidence *text* mentions "Axborotnomasi, YYYY-yil"
+and "№" *anywhere nearby*, which is too blunt now that real citations
+legitimately sit close enough to a closed gazette parenthetical for the
+padding to still catch both signal words even though the matched digits
+themselves are provably outside it (2 of the 9 recovered edges, articles
+53 and 775, both have a short enough gazette record for this to happen).
+This is the check's own imprecision surfacing, not a reason to revert a
+fix that's zero-regression on every other measure — refined the check in
+`verify_transfer.py` instead: strip every *balanced* publication-record
+parenthetical out of the evidence text first, then only flag an edge if
+its `dst_article_number` + "modda" citation does *not* survive outside
+that stripped text (i.e. it only ever existed inside the parenthetical).
+Tested the refined logic standalone against both a synthetic true-positive
+(article number only inside the paren — still correctly flagged) and the
+2 real false positives (now correctly cleared) before trusting it.
+`verify_transfer.py` green again, same INFO-line numbers elsewhere.
+`pyflakes` clean on both changed files; `vulture --min-confidence 60`:
+same pre-existing warnings only (2 dataclass-field ones in
+`citation_extractor.py`, 2 `art_no` ones in `verify_transfer.py` —
+confirmed via `git stash` that neither is new). `python -m unittest
+test_transfer_e2e.py`: 14/14. Both apps smoke-tested live (`streamlit run`
++ `curl`: HTTP 200 from both, no errors/tracebacks in either log; no
+schema change, so a load check is sufficient per the project's own rule).
+
+The other 38/40 batch-6 windows all read correct against the raw text —
+no other new gaps found this round (spot-checked the ones with the most
+unusual shapes: multi-range-plus-list clauses like "236 — 258 va
+784-moddalari" correctly expand all 24 values, though worth noting for
+future reference that `_expand()`'s single `listing` tag covers the whole
+clause, not per-value, so a range combined with a plain list via "va" is
+tagged "list" throughout rather than "range" for the range portion — this
+matches `_expand()`'s own documented, deliberate whole-clause granularity,
+not a bug). **New signature coverage: 218/451 (up from 178/451)**,
+1299/3251 candidate windows still sit in never-annotated territory. See
+Active threads for the full detail and the specific next steps.
 
 ### 2026-09-28 — Extractor rotation: two more signature-stratified gold batches, gold set 140 -> 220, one new bug found, one existing backlog claim corrected
 
