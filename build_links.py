@@ -420,6 +420,13 @@ def main() -> int:
             by_date_title[(iso_d, nt_d)] = d_id
             by_date.setdefault(iso_d, []).append((d_id, nt_d))
 
+    # Used by the amending-act resolution's `date+sole-law-cc-mention` tier
+    # below (see its docstring) — every amending act `re_amend_event` cites is
+    # a `Qonun` by the citing grammar itself, so restricting that tier to
+    # `doc_type='law'` candidates matches the ground truth structurally, not
+    # an arbitrary filter.
+    doc_type_by_id: dict[int, str] = dict(con.execute("SELECT doc_id, doc_type FROM act").fetchall())
+
     # The clause item's quoted title is only ever a *substring* of the resolved
     # act's own title when the item is really citing an amending act ("...gi
     # Qonuniga oʻzgartishlar va qoʻshimchalar kiritish toʻgʻrisida"): the quote
@@ -691,6 +698,53 @@ def main() -> int:
                     break
         return out
 
+    # `date+cc-clause-match`'s same-block requirement still leaves 91/612
+    # unresolved (see DAILY_REVIEW.md 2026-09-27's residual). Root-caused
+    # 2026-09-30 by reading the raw parquet directly for the biggest cluster
+    # (36 of the 91, all one omnibus act — OʻRQ-1025, 2025-02-07): the act's
+    # own text_by_doc is missing its first ~17 numbered items entirely — LexUZ's
+    # per-provision scrape only captured item 18 onward, so neither the
+    # Civil-Code-amending block's own header (which would name "Fuqarolik
+    # kodeksi") nor the target articles it touches (39, 40, 42, 43, 46, 48, 55,
+    # 58, ...) exist ANYWHERE in this act's raw text — a genuine source-scrape
+    # gap, not a matching-heuristic one. No smarter same-block check can find
+    # text that was never scraped. But the act IS still identifiable: every
+    # amending act `re_amend_event` extracts is, by the citing grammar itself
+    # ("...son(?:li)? Qonun\w*..."), always a `doc_type='law'` act — and on
+    # this act's date, it is the ONLY `law`-type candidate, and the only one
+    # whose (however incomplete) captured text mentions "Fuqarolik kodeks"
+    # anywhere at all (the other 5 same-date acts are an unrelated decree, a
+    # ceremonial resolution, a monitoring methodology, and two repeals — none
+    # mention the Code). Measured corpus-wide before shipping: applied to all
+    # 62 (date, resolved-doc) pairs already resolved by the two tiers above,
+    # it agrees on 53, is silent (ambiguous or no CC-mentioning law) on 8, and
+    # disagrees on exactly 1 (2022-03-29, where the true amending act is
+    # itself titled "...Fuqarolik kodeksiga...") — LexUZ's own source
+    # doc_type tags that one 'code', not 'law' (doc_type is copied straight
+    # from the raw parquet, not derived from the title by this project — see
+    # build_corpus_db.py's `act` INSERT), so this tier's `doc_type='law'`
+    # filter excludes it. Already caught by `date+civil-code-title` before
+    # this tier would ever run, so not a real collision in the pipeline — but
+    # worth remembering that doc_type='code' isn't reliably "this act IS a
+    # code" in the source data. Verified each of the 4 dates this
+    # newly resolves by hand against the raw text: -55080 (2002-12-13) contains
+    # exact "587-moddasining"/"589-moddasining"/"595-moddasi"/
+    # "597-moddasining" matches for all 4 of that date's target articles;
+    # -2388207 (2014-05-14, OʻRQ-372) contains "65 va 66-moddalar chiqarib
+    # tashlansin" verbatim — the exact voiding of Articles 65/66 that
+    # verify_transfer.py's own reconciliation has listed as an unexplained
+    # md_only gap since the project's first sessions; -6643526 (2023-10-23,
+    # OʻRQ-871) is a land-legislation omnibus act plausibly touching the
+    # 173-1..173-7 superscript range it's cited for; -7367697 (2025-02-07,
+    # OʻRQ-1025) is corroborated independently by three of its own raw rows
+    # being full quoted insertions of new Civil Code articles 181, 358-1 and
+    # 962-1 — all real corpus superscript articles this exact reform created.
+    def sole_law_cc_mention(iso: str) -> int | None:
+        law_cands = [d_id for d_id, _nt in by_date.get(iso, [])
+                     if doc_type_by_id.get(d_id) == "law"]
+        mentioning = [d_id for d_id in law_cands if re_civil_title.search(text_by_doc.get(d_id, ""))]
+        return mentioning[0] if len(mentioning) == 1 else None
+
     amend_rows: list[list] = []
     aid = 0
     n_clauses = 0
@@ -734,6 +788,10 @@ def main() -> int:
                             block_cands = cc_clause_candidates(amend_date, probe_art)
                             if len(block_cands) == 1:
                                 amending_doc_id, method = block_cands[0], "date+cc-clause-match"
+                        if amending_doc_id is None:
+                            sole = sole_law_cc_mention(amend_date)
+                            if sole is not None:
+                                amending_doc_id, method = sole, "date+sole-law-cc-mention"
                 amend_method_counts[method] = amend_method_counts.get(method, 0) + 1
                 # Only fall back to the host article's norm_id when the clause
                 # names no target of its own (a chapter/paragraph-level note);
