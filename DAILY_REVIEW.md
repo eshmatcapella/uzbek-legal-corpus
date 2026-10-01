@@ -22,6 +22,85 @@ How to use this file each session:
 
 ## Active threads
 
+- **Cleanup: `bandit` added to the toolchain 2026-10-01, found and fixed one
+  real semantic-dead-path bug in `test_transfer_e2e.py`, closed.** Cleanup's
+  turn in the rotation (09-30's own note: "next session should prefer
+  Cleanup, whose own repeatable checks haven't been re-run since 09-26").
+  Re-ran all three existing repeatable checks first — `pyflakes *.py` (0
+  issues), `vulture *.py --min-confidence 60` (0 issues), the `execute(f"...")`
+  grep (31 call sites, up from 29 at 09-26 — the one new site, `build_links.py`
+  line 669, interpolates only the same hardcoded `raw`/`PARQUET` constant
+  every other site already uses, added by 09-27's `text_by_doc` fix; not a
+  violation) — all clean, matching the established "widen the toolchain when
+  the existing checks stay clean" pattern from 09-23/09-26. Installed
+  `bandit` (a security linter neither prior tool overlaps with — it does
+  flow-sensitive pattern matching for known-risky constructs, not
+  import/scope analysis like `pyflakes` or whole-repo symbol-reachability
+  like `vulture`) and ran it repo-wide (excluding `articles/`, `documents/`,
+  `okoz/`, `structure/` — data directories, not code). **3 issue classes, 61
+  total findings**: 57 `B608` (hardcoded-SQL-expression) hits are bandit's
+  own blunter, type-blind re-discovery of the exact same `execute(f"...")`
+  call sites the 09-26 manual audit already individually classified
+  constant-vs-runtime — not a new finding, bandit just can't tell a
+  hardcoded `PARQUET` path from a runtime value the way the manual audit
+  did; 3 `B311` (non-cryptographic `random.sample`) in `verify_transfer.py`
+  are a standard bandit false-positive class (this project's sampling is
+  for spot-check verification, not security, so cryptographic strength is
+  irrelevant) — reviewed, not fixed. **The 1 `B110`
+  (`except Exception: pass`) finding was real and worth chasing**:
+  `test_transfer_e2e.py`'s `parse_markdown_articles()` tries several
+  `parser.py` function names and silently falls back to its own from-scratch
+  reimplementation (`parse_internal_markdown_articles`) if the external
+  result isn't a bare `list`. Traced why the except fires in practice (it
+  doesn't — see Log) and, in the course of that, found a **separate, more
+  consequential bug the bandit finding led to, not the finding itself**:
+  parser.py's real `parse_markdown()` returns `{"metadata": ..., "articles":
+  [...]}`, never a bare list, so the "prefer the external result" branch in
+  `parse_markdown_articles()` has been structurally unreachable since the
+  project's first commit (`e96fb5c`) — confirmed by instrumenting both the
+  real and a monkeypatched `parser.py` and tracing which branch actually
+  returns. That's *correct* for `self.extracted_articles` (Tier 1's own
+  docstring wants it independent of `parser.py`, so never preferring the
+  external result is the right behavior there) — but `test_r1_markdown_extraction`
+  separately re-calls the same function and asserts on its result labeled
+  "External parser.py extracted N articles," which was **always silently
+  re-testing the internal reimplementation under a false label**, never
+  parser.py's real output, for the test's entire history. Verified this
+  isn't theoretical: monkeypatched `parser.py`'s own `parse_markdown()` to
+  drop one article (394 -> 393) and ran `test_r1_markdown_extraction` against
+  both the original and fixed code — **original: still passes (blind to the
+  regression)**; **fixed: fails with the correct `393 != 394`**. Fixed by
+  having that one assertion call `parser.py`'s function directly and unwrap
+  its `"articles"` key instead of routing through `parse_markdown_articles()`
+  — `self.extracted_articles`'s independence is untouched (same function,
+  same behavior, nothing else calls it differently), only the one
+  previously-inert assertion now does what its own docstring claims. This
+  matters beyond a lint nit: `parser.py --verify` (its own 10/10-check CLI)
+  is the only thing that currently exercises parser.py's real article count,
+  and it's never invoked by any automated check — `test_r1_markdown_extraction`
+  was the one place that looked like it did, and didn't. Now it does.
+  Verified: `pyflakes`/`vulture --min-confidence 60` clean on the changed
+  file; `python -m unittest test_transfer_e2e.py` 14/14; re-ran `bandit`
+  after the fix — `B110` count unchanged at 1 (the *other*
+  `except Exception: pass`, inside `load_external_parser()` itself, left
+  alone deliberately — it's the one that actually guards the independence
+  property, reviewed and judged intentional, not touched); `verify_transfer.py`
+  all green, same INFO-line numbers as 09-30 (this change has zero pipeline/
+  `corpus.duckdb` surface — `test_transfer_e2e.py` reads the raw parquet
+  directly for its own Tier 3 checks but writes nothing); `score_gold.py`
+  unchanged at 926/933 (99.2%) / 926/936 (98.9%) (doesn't touch
+  `citation_extractor.py`). Both apps smoke-tested live (HTTP 200, no
+  exceptions — no schema change, so a load check is sufficient). This closes
+  the thread: the `B110` finding itself didn't need a code change (the flagged
+  except is fine), but chasing *why* it never fires surfaced a real,
+  verified, previously-invisible test-suite blind spot, fixed with a
+  reproduced-before/confirmed-after regression proof — a new bug class
+  neither `pyflakes` nor `vulture` could structurally see (the code was
+  syntactically live and "used," just semantically inert due to a return-type
+  mismatch). `bandit` is now a fourth repeatable Cleanup check alongside
+  `pyflakes`/`vulture`/the f-string grep — next Cleanup rotation should
+  re-run all four before deciding whether to widen the toolchain again.
+
 - **Amending-act resolution: 85.1% -> 93.6%, new `date+sole-law-cc-mention`
   tier built and closed 2026-09-30.** Data currency's turn in the rotation
   (Extractor had 09-25/09-28/09-29 — three of the last five sessions — so
@@ -1044,6 +1123,12 @@ How to use this file each session:
   (09-26 through 09-30), Cleanup has one, Extractor has two, Data currency
   has two; next session should prefer Cleanup, whose own repeatable checks
   (pyflakes/vulture/f-string grep) haven't been re-run since 09-26.
+  Cleanup 10-01 (re-ran all three existing checks clean, widened the
+  toolchain with `bandit` — found and fixed one real test-suite blind spot
+  in `test_transfer_e2e.py`, see Active threads and Log) — of the last five
+  sessions (09-27 through 10-01), Data currency has two, Extractor has one,
+  Cleanup has two; next session should prefer Extractor, which hasn't run
+  since 09-29.
 
 - **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
   four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
@@ -1708,10 +1793,208 @@ How to use this file each session:
   the diagnostic cost of that step failing silently-wrong instead of
   loudly-right. Nothing left to do here; recorded for context only, in case
   a future session wonders why this guard exists.
+- ~~**A fourth static-analysis tool class beyond pyflakes/vulture/f-string
+  grep.**~~ **Added 2026-10-01**: `bandit` (security-pattern linter) found 3
+  issue classes — 57 `B608` (re-discovery of already-audited f-string SQL,
+  not new), 3 `B311` (non-cryptographic-random false positives in
+  `verify_transfer.py`'s sampling, reviewed and left alone), and 1 `B110`
+  (`except Exception: pass`) that led to finding a real bug: one assertion
+  in `test_transfer_e2e.py`'s `test_r1_markdown_extraction` claimed to test
+  `parser.py`'s real output but was structurally incapable of doing so since
+  the project's first commit (a dict-vs-list shape mismatch), silently
+  re-testing the internal reimplementation under a misleading label instead.
+  Fixed and proved with a before/after regression (393-vs-394 count,
+  undetected before the fix, correctly caught after). See Active threads and
+  Log for the full trace. `bandit -r . -x ./articles,./documents,./okoz,./structure`
+  is now a fourth repeatable Cleanup check; next rotation should re-run all
+  four (pyflakes/vulture/f-string grep/bandit) before deciding whether a
+  fifth is worth adding.
 
 ---
 
 ## Log
+
+### 2026-10-01 — Cleanup rotation: re-confirmed pyflakes/vulture/f-string grep clean, added `bandit`, found and fixed a real test-suite blind spot in `test_transfer_e2e.py`
+
+Cleanup's turn (09-30's own note: prefer Cleanup next, repeatable checks not
+re-run since 09-26). Cold-start: `apt-get install -y git-lfs` was already
+present; `git lfs pull` (parquet was the 134-byte pointer stub, confirmed by
+`verify_transfer.py`'s own `_check_parquet_pulled()` guard — it's been there
+since 09-26 for exactly this); `pip install duckdb pandas pyarrow streamlit
+pyflakes vulture`. `git status`/`git log` showed local `main` already
+up to date with `origin/main` at `209c62f` (no detached-HEAD gotcha this
+time).
+
+**Re-ran the three existing repeatable checks first**, before deciding
+whether to widen the toolchain:
+- `python3 -m pyflakes *.py` — 0 issues.
+- `python3 -m vulture *.py --min-confidence 60` — 0 issues.
+- `grep -c 'execute(f"' *.py` — 31 call sites total (was 29 at 09-26's
+  audit). Diffed against `git show 74b4574:build_links.py` (the 09-26
+  commit) to find exactly what changed: one new site at `build_links.py:669`
+  (`text_by_doc`'s dict comprehension, added by 09-27's fix for the
+  `src_provision`-pagination-chunk bug — see Active threads). Classified it
+  the same way the 09-26 audit classified every other site: it interpolates
+  `{raw}`, which is `f"read_parquet('{PARQUET.as_posix()}', ...)"` —
+  the same hardcoded `PARQUET`-path constant every other call site in the
+  file already uses, not a runtime value. Not a violation.
+
+All three clean — third time in a row (09-19 pyflakes, 09-23 vulture, 09-26
+f-string grep each stayed clean on re-run before that session widened the
+toolchain). Followed the same established pattern: **installed `bandit`**
+(a security-pattern linter — genuinely different analysis from the other
+three: `pyflakes` does per-scope import/variable-usage analysis, `vulture`
+does whole-repo symbol-reachability, the f-string grep is a single targeted
+regex; `bandit` pattern-matches known-risky constructs like string-built SQL,
+weak randomness, bare excepts). Ran `bandit -r . -x
+./articles,./documents,./okoz,./structure` (excluded the four data
+directories — not code).
+
+**61 findings across 3 rule IDs**:
+- **`B608` (hardcoded SQL expression), 57 hits.** Every single one is a
+  `execute(f"...")` call site the 09-26 manual audit already individually
+  classified. `bandit` has no type information, so it flags every f-string
+  inside an `execute()` call regardless of whether the interpolated value is
+  a hardcoded constant or a runtime one — strictly blunter than the manual
+  audit, not a new finding. Confirmed by spot-checking several against the
+  09-26 classification: all hardcoded-constant, all already judged safe.
+- **`B311` (non-cryptographic `random.sample`), 3 hits**, all in
+  `verify_transfer.py`'s AC3 spot-check sampling. Standard bandit
+  false-positive class — this is drawing a verification sample, not
+  generating a secret, so cryptographic strength is irrelevant. Reviewed,
+  left alone.
+- **`B110` (`except Exception: pass`), 1 hit**, in
+  `test_transfer_e2e.py:290`, inside `parse_markdown_articles()`'s loop over
+  candidate `parser.py` function names:
+  ```python
+  try:
+      res = fn(file_path)
+      if isinstance(res, list) and len(res) > 0:
+          return res
+  except Exception:
+      pass
+  ```
+  This one looked worth tracing rather than dismissing outright, since a
+  silently-swallowed exception in a fallback path is exactly the shape of
+  bug this project's other Cleanup sessions have found real issues in
+  (dead code, dangling constants) — the question was whether this except
+  ever actually fires, and if so, whether it's hiding something.
+
+  **Traced it by instrumentation, not just reading**: loaded the real
+  `parser.py` via the same `importlib.util` mechanism
+  `load_external_parser()` uses, wrapped its `parse_markdown()` to print
+  when called and what it returns, and ran `parse_markdown_articles()`
+  against the real markdown file. Result: `parser.py`'s `parse_markdown()`
+  **is** called every time (the `except` branch is reachable code, not
+  literally dead) — but it returns `{"metadata": {...9 keys...}, "articles":
+  [...394 items...]}`, a `dict`, never a bare `list`. `isinstance(res, list)`
+  is `False`, so the function falls through to
+  `parse_internal_markdown_articles()` every time, without ever raising —
+  the `except Exception: pass` has never actually fired in this file's
+  history; it's a defensive no-op, not a bug by itself.
+
+  **But tracing it surfaced something else.** `parsed_articles.json` (the
+  file `build_corpus_db.load_markdown_articles()` actually reads, via
+  `data["articles"]`) is exactly this same `{"metadata", "articles"}` shape
+  — confirming `parser.py`'s `parse_markdown()` is a real, substantial,
+  independently-maintained parser (its own docstring: "FSM line-by-line
+  streaming parser... 15-field output schema... Built-in `--verify` and
+  `--summary` CLI suite with 10 automated verification checks"), not a stub.
+  Running `python3 parser.py --verify` directly confirms: "Parsed 394
+  articles... All 10 verification checks PASSED." So `parser.py` is a real,
+  working, independently-verified tool — but nothing in the automated test
+  suite ever actually calls it meaningfully, because `parse_markdown_articles()`'s
+  `isinstance(res, list)` check can never be satisfied by its real return
+  shape.
+
+  That's by design for `self.extracted_articles` (Tier 1's own module
+  docstring: `parse_markdown_articles()` is supposed to be "a from-scratch
+  re-parse... independent of structure_parser.py and the frozen
+  `parsed_articles.json` the real pipeline loads" — so never preferring
+  `parser.py`'s own output here is actually correct, not a bug, since using
+  it would make Tier 1 tautological). But `test_r1_markdown_extraction`
+  (`test_transfer_e2e.py:324`) does something different: after checking
+  `self.extracted_articles` (the independent count), it *separately* calls
+  `parse_markdown_articles(MARKDOWN_PATH)` again and asserts on it with the
+  message `f"External parser.py extracted {len(external_result)} articles
+  instead of {EXPECTED_TOTAL_ARTICLES}"` — i.e. it explicitly claims to be
+  testing `parser.py`'s own output. Since `parse_markdown_articles()` always
+  falls through to the internal reimplementation (as just traced), **this
+  assertion has always silently re-tested the internal parser a second time
+  under a label claiming it tested `parser.py`**, for the entire life of
+  this file (confirmed via `git log --diff-filter=A` — present since the
+  very first commit, `e96fb5c`).
+
+  **Verified this is a real, consequential blind spot, not a cosmetic
+  mislabeling**: monkeypatched `parser.py`'s own `parse_markdown()` to drop
+  one article (`res['articles'] = res['articles'][:-1]`, simulating a real
+  394->393 regression) and ran `test_r1_markdown_extraction` against both
+  the pre-fix and post-fix code with that monkeypatch injected via
+  `t.load_external_parser = lambda: mod`. **Pre-fix: test still passes,
+  completely blind to the simulated regression** (since the assertion was
+  really checking the untouched internal reimplementation, not the
+  monkeypatched module). **Post-fix: test fails correctly** —
+  `AssertionError: 393 != 394 : External parser.py extracted 393 articles
+  instead of 394`, with the right count. This is exactly the proof this
+  project's "measure before claiming done" pattern calls for, applied to a
+  test-suite bug rather than a pipeline one.
+
+  Fixed by making `test_r1_markdown_extraction`'s assertion call `parser.py`'s
+  function directly and unwrap its `"articles"` key (handling both the
+  dict-wrapped shape `parser.py` actually returns and a bare-list shape for
+  robustness, in case a future `parser.py` refactor changes it), instead of
+  routing through `parse_markdown_articles()`. `self.extracted_articles` and
+  every other test in the file are untouched — `parse_markdown_articles()`
+  itself still behaves exactly as before (same independence property for
+  Tier 1), only this one previously-inert assertion changed.
+
+  **Why this matters beyond a lint fix**: `parser.py --verify` is the only
+  thing that currently exhaustively checks `parser.py`'s own output (10/10
+  checks, including the exact article count), but it's a standalone CLI a
+  human has to remember to run separately — it isn't wired into
+  `verify_transfer.py`'s AC1-AC7 or invoked by `python -m unittest
+  test_transfer_e2e.py`, the two automated checks every session in this log
+  already runs before committing. `test_r1_markdown_extraction` looked like
+  the one place this was automated, and wasn't. Now it genuinely is: a
+  future regression in `parser.py`'s own article-extraction logic (which
+  feeds `parsed_articles.json`, which `build_corpus_db.py` actually loads
+  into the pipeline) will now be caught by the routine `unittest` run this
+  project already does every session, not just by a `--verify` flag nobody
+  is required to pass.
+
+**Full verification after the fix**: `python3 -m pyflakes test_transfer_e2e.py`
+and `python3 -m vulture test_transfer_e2e.py --min-confidence 60` both clean;
+`python3 -m py_compile test_transfer_e2e.py` clean; `python -m unittest
+test_transfer_e2e.py` — 14/14 pass (including the fixed test, now actually
+exercising `parser.py`). Re-ran `bandit` after the fix: `B110` count
+unchanged at 1 — the *other* `except Exception: pass`, inside
+`load_external_parser()` itself (catches a failed dynamic import of
+`parser.py` and returns `None`), deliberately left alone: that one guards
+the whole mechanism's intended graceful-degradation behavior (if `parser.py`
+is missing or fails to import, skip the external-parser section of the test
+entirely rather than crashing), reviewed and judged correct, not a second
+instance of the same bug. `python3 verify_transfer.py` — all checks green,
+same INFO-line numbers as 2026-09-30 (248 superseded acts, 494 stale edges,
+372/386 General Part articles cited, 39 OKOZ mappings awaiting validation —
+this change has zero pipeline or `corpus.duckdb` surface; `test_transfer_e2e.py`
+isn't part of the build pipeline and writes nothing). `score_gold.py`:
+unchanged at 926/933 (99.2%) precision, 926/936 (98.9%) recall, 0 drift
+(doesn't touch `citation_extractor.py`). Both apps smoke-tested live:
+started `app_llc.py` on :8501 and `app_hierarchy.py` on :8502, `curl` HTTP
+200 on both, no exceptions in either's server log — no schema change, so a
+load check is sufficient per the project's own established rule. `git
+status`/`git diff` confirm the only change is the ~20-line patch inside
+`test_r1_markdown_extraction` in `test_transfer_e2e.py` — no other file
+touched, `corpus.duckdb` untouched and not re-committed.
+
+**Decision**: closing this thread, not leaving it active. The `B608`/`B311`
+classes needed review but no fix (re-discoveries and a standard false
+positive respectively); the `B110` class needed tracing, which paid off with
+one real, verified, previously-invisible bug, now fixed and proven with a
+reproduced-before/confirmed-after regression test. `bandit` joins
+`pyflakes`/`vulture`/the f-string grep as a fourth repeatable Cleanup check
+— next time this rotation comes up, re-run all four before considering a
+fifth.
 
 ### 2026-09-30 — Data currency rotation: root-caused the amending-act-resolution residual to a genuine source-scrape gap, built a new fallback tier around it, 85.1% -> 93.6%
 

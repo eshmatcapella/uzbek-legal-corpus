@@ -345,7 +345,29 @@ class TestTier1FeatureCoverage(unittest.TestCase):
                 has_func,
                 "External parser.py found but does not expose a recognized parse function",
             )
-            external_result = parse_markdown_articles(MARKDOWN_PATH)
+            # Call parser.py's own function directly rather than going through
+            # parse_markdown_articles() (whose job, per this module's docstring,
+            # is to stay independent of parser.py for self.extracted_articles —
+            # it only uses an external result when one is shaped as a bare list,
+            # which parser.py's parse_markdown() never is: it returns
+            # {"metadata": ..., "articles": [...]}, so that preference branch is
+            # permanently inert and parse_markdown_articles() always falls back
+            # to the from-scratch reimplementation). That shape mismatch meant
+            # this assertion used to silently re-check the internal parser under
+            # an "External parser.py extracted..." label while never actually
+            # calling parser.py's real output — unwrap the dict here instead so
+            # this is a genuine regression check on parser.py itself.
+            external_result = None
+            for fn_name in [
+                "parse_markdown_articles",
+                "parse_markdown",
+                "parse_articles",
+                "extract_articles",
+            ]:
+                if hasattr(ext_parser, fn_name):
+                    raw = getattr(ext_parser, fn_name)(MARKDOWN_PATH)
+                    external_result = raw["articles"] if isinstance(raw, dict) else raw
+                    break
             self.assertEqual(
                 len(external_result),
                 EXPECTED_TOTAL_ARTICLES,
