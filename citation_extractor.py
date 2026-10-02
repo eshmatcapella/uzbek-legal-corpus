@@ -16,6 +16,7 @@ Surface forms this handles, all observed in the corpus:
     ... 55-moddasining 12-bandiga                article + band (point)
     ... 30-bobi                                  chapter
     ... 37-bobining 3-paragrafi                  chapter + section
+    ... V boʻlimi / V-boʻlimi                    part (roman numeral)
     ... 2591-moddasi                             superscript article 259-1
     FK 14-moddasi                                only where the act defines "FK"
     ushbu Kodeksning 14-moddasi                  only inside the Code itself
@@ -146,6 +147,22 @@ RE_STOP = re.compile(
     r"(?i:qonuni|qonuniga|qonunining|qonunning|kodeksi|kodeksining|kodeksning|"
     r"farmoni|farmonining|qarori|qarorining|"
     r"nizom|konstitutsiya|buyrugʻi|buyrugi|reglament|"
+    # A "yoʻriqnoma" (instruction/guideline) being named is the same "a
+    # different act is speaking now" signal as qonun/farmon/qaror/nizom
+    # above: its own numbered parts (including, since 2026-10-02, a
+    # roman-numeral "boʻlim") aren't the Code's. Found while building
+    # part-level ("boʻlim") citation support: row 42566's "...yoʻriqnoma"ning
+    # (roʻyxat raqami 697, 08.04.1999-y.) IV boʻlimi" was being misattributed
+    # to the Civil Code (the window's actual Code citation is an earlier,
+    # separate "22-bobining 5 paragrafi" clause; the new part-scan ran past
+    # it unconditionally and reached the yoʻriqnoma's own Part IV). Measured
+    # corpus-wide 2026-10-02: 11 anchor windows mention "yoʻriqnoma" at all,
+    # and row 42566 (twice, V and IV boʻlimi) is the ONLY one where a modda/
+    # bob/paragraf/boʻlim clause of any kind follows it within the window —
+    # the other 10 only ever reach an "ilova" (annex) or "band" (point), units
+    # this extractor never matches anyway. Zero collateral loss: no other
+    # window loses any citation by adding this.
+    r"yo[ʻʼ']?riqnoma|"
     # Publication record of the act, e.g. "(Oliy Majlisining Axborotnomasi, 1997-yil,
     # № 2, 56-modda)".  There "56-modda" is item 56 of the gazette issue, not an
     # article of the Code — the single largest false-positive source in the corpus.
@@ -180,6 +197,24 @@ RE_STOP_ABBR = re.compile(r"\b[A-Z]{2,4}K(?:ning|ga|da|dagi|ni|dan)?\b")
 RE_ROMAN_CHAPTER = re.compile(
     r"(?<![A-Za-z])(?P<r1>[IVXL]{1,6})(?:\s*(?:,|va)\s*(?P<r2>[IVXL]{1,6}))?\s*bob\w*"
 )
+# "Fuqarolik kodeksining V boʻlimi" — Part, the structural tier above chapter
+# (struct_node has 6 real 'part' nodes, PI..PVI). Always a single roman
+# numeral in the corpus today, never a list/range. Like modda/bob/paragraf
+# above, LexUZ sometimes writes a bare space instead of a hyphen before the
+# unit word, and the apostrophe-like letter in "boʻlim" itself varies (okina
+# ʻ, a plain "'", or dropped entirely). Previously unrecognized entirely —
+# no target_kind existed for it — so every occurrence fell through to either
+# the coarse bare-`act` fallback (when nothing else in the window matched) or
+# was silently dropped outright (when an earlier modda/bob clause in the same
+# window already set `produced`, e.g. "23-bobi ... hamda V boʻlimiga").
+# Measured 2026-09-17: 6 corpus-wide occurrences, all using the hyphen form
+# only — that was an undercount of the methodology's own regex, not the real
+# count: measured again 2026-10-02 with the hyphen made optional, 20
+# corpus-wide (14 more via the bare-space form), same single-occurrence-per-
+# window shape throughout. See DAILY_REVIEW.md.
+RE_ROMAN_PART = re.compile(
+    r"(?<![A-Za-z])(?P<r1>[IVXL]{1,6})(?:\s*-\s*|\s+)bo[ʻʼ']?lim\w*", re.IGNORECASE
+)
 ROMAN_VALUES = {"I": 1, "V": 5, "X": 10, "L": 50}
 RE_QISM = re.compile(
     r"(?P<num>\d+|" + "|".join(ORDINALS) + r")\s*-?\s*(?P<unit>qism|band)", re.IGNORECASE
@@ -213,7 +248,7 @@ RE_LEADING_PUB_PAREN = re.compile(
 @dataclass
 class Citation:
     """One resolved reference to a Civil Code provision."""
-    target_kind: str            # 'article' | 'chapter' | 'section' | 'act'
+    target_kind: str            # 'article' | 'chapter' | 'section' | 'part' | 'act'
     article: str | None         # as written, e.g. '14' or '2591'
     struct_number: int | None   # chapter number for 'chapter'/'section' targets
     section_number: int | None
@@ -381,7 +416,27 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
             produced = True
             consumed_to = m.end()
 
-        if not produced:
+        found_arabic = produced  # snapshot before the independent part-scan below
+
+        # Part-level ("V boʻlimi") citations, scanned independently of the
+        # Arabic modda/bob/paragraf loop above rather than gated on `produced`
+        # the way the Roman-chapter fallback below is: unlike a roman chapter
+        # (only ever tried as a fallback when nothing else matched), a part
+        # citation can sit BEFORE an already-matched clause in the same window
+        # ("Fuqarolik kodeksi III-boʻlimining ... va 927-moddasi") as well as
+        # after one ("23-bobi ... hamda V boʻlimiga") — so this always scans
+        # the whole window from its own start, same convention as the
+        # Roman-chapter fallback uses for its own stop-word gate.
+        for m in RE_ROMAN_PART.finditer(window):
+            if RE_STOP.search(window[:m.start()]) or RE_STOP_ABBR.search(window[:m.start()]):
+                break
+            if (num := _roman(m.group("r1"))) is not None:
+                abs_start, abs_end = a_end + m.start(), a_end + m.end()
+                out.append(Citation("part", None, num, None, None, kind, "single",
+                                    abs_start, abs_end, _evidence(text, abs_start, abs_end)))
+                produced = True
+
+        if not found_arabic:
             # Chapters cited in Roman numerals; only worth trying when no Arabic
             # clause was found, so "30-bobi" never re-enters here.
             for m in RE_ROMAN_CHAPTER.finditer(window):
@@ -420,6 +475,25 @@ def _selftest() -> int:
          [("chapter", None, "single")]),
         ("Oʻzbekiston Respublikasi Fuqarolik kodeksi 37-bobining 3-paragrafi", {},
          [("section", None, "single")]),
+        # Part-level ("boʻlim") citations, both the hyphen and the bare-space
+        # forms, and both apostrophe-like spellings LexUZ uses for the vowel
+        # (real corpus phrasings, 2026-10-02 — see DAILY_REVIEW.md)
+        ("Oʻzbekiston Respublikasi Fuqarolik kodeksining V-boʻlimi.", {},
+         [("part", None, "single")]),
+        ("Oʻzbekiston Respublikasi Fuqarolik kodeksining IV boʻlimi.", {},
+         [("part", None, "single")]),
+        ("Oʻzbekiston Respublikasi Fuqarolik kodeksining VI bo'limi.", {},
+         [("part", None, "single")]),
+        # a part citation appearing AFTER an already-matched chapter clause in
+        # the same window (real corpus phrasing, row 38614) must still be
+        # found, not silently skipped because the modda/bob loop already
+        # set `produced`
+        ("Fuqarolik kodeksining 50-moddasi, 23-bobi hamda V boʻlimiga qarang.", {},
+         [("article", "50", "single"), ("chapter", None, "single"), ("part", None, "single")]),
+        # a part citation appearing BEFORE a later article clause in the same
+        # window (real corpus phrasing, row 32449) must also still be found
+        ("Fuqarolik kodeksi III-boʻlimining 2-kichik boʻlimi va 927-moddasi.", {},
+         [("article", "927", "single"), ("part", None, "single")]),
         ("Fuqarolik kodeksining 2591-moddasi", {}, [("article", "2591", "single")]),
         ("shartnoma shartlari bajarilmasa (FK 14-moddasining birinchi qismi)",
          {"allow_fk_alias": True}, [("article", "14", "single")]),
@@ -542,6 +616,14 @@ def _selftest() -> int:
         # blanket bare-lowercase-"qonun" stop.
         ("FKning 60-bobi, “Mualliflik huquqi toʻgʻrisida”gi qonun (35-modda) asosida",
          {"allow_fk_alias": True}, [("chapter", None, "single")]),
+        # a "yoʻriqnoma" (instruction/guideline) named later in the window
+        # owns its own roman-numeral "boʻlim" — must not be misattributed to
+        # the Code as a part-level citation (real corpus phrasing, row 42566,
+        # found 2026-10-02 while building part-level support; see
+        # DAILY_REVIEW.md)
+        ("Fuqarolik kodeksi 22-bobining 5 paragrafi va “Bojxona toʻlovlarini "
+         "toʻlash muddatlarini uzaytirish”ning yoʻriqnomaning IV boʻlimi.", {},
+         [("chapter", None, "single")]),
     ]
     for text, kwargs, expected in stop_cases:
         got = [(c.target_kind, c.article, c.listing) for c in extract(text, **kwargs)]

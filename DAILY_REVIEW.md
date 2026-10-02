@@ -22,6 +22,41 @@ How to use this file each session:
 
 ## Active threads
 
+- **Gold set: 260 -> 300 records, seventh signature-stratified batch
+  2026-10-02; "boʻlim" (Part-level) backlog item built and closed the same
+  day, found while annotating this batch; thread stays open.** Continued
+  the still-open Extractor thread (last touched 2026-09-29; 09-30/10-01
+  rotated to Data currency/Cleanup instead, per the brief's own
+  "rotate across the three" guidance, so this picked the thread back up
+  rather than starting a fourth consecutive non-Extractor day). Drew batch
+  7 (`build_gold_sample_novel.py --seed 20261002 --n 40`, novelty coverage
+  218/451 signatures before drawing), hand-read all 40 against the raw
+  text. Found no NEW extractor bug in the usual sense, but 2 of the 40
+  windows (rows 46656, 48850) are occurrences of the already-known "boʻlim
+  is never a recognized citation unit" backlog item — see Backlog's
+  Extractor recall/precision section for the full build: fixed within this
+  same session (`RE_ROMAN_PART`, a new `target_kind='part'` resolved to the
+  corpus's existing `struct_node` Part rows PI..PVI), so both score
+  `correct` in the merged batch rather than `known_gap`. That fix also
+  caught and corrected 5 pre-existing gold records (134/170/186/193/200)
+  whose previously-"correct" expected output predates the fix. **Combined
+  score after merging**: precision 1189/1196 (99.4%), recall 1189/1199
+  (99.2%) on 300 windows (up from 926/933 = 99.2% / 926/936 = 98.9% on 260)
+  — the improvement is real signal (24 new/corrected part-level edges
+  resolving correctly), not just more records. `verify_transfer.py` green;
+  `pyflakes`/`vulture --min-confidence 60`/`bandit`/`unittest
+  test_transfer_e2e.py` all clean; both apps smoke-tested live. **New
+  signature coverage: 258/451** (up from 218/451), 1257/3251 candidate
+  windows still sit in never-annotated territory. Thread stays open — next
+  Extractor rotation should keep drawing fresh `build_gold_sample_novel.py`
+  batches. Also worth a look, surfaced but not pursued today: whether any
+  of the remaining qism/boʻlim-adjacent known_gaps (the "2-kichik boʻlim"
+  subsection grain inside row 32449/46741, one level finer than the Part
+  grain just built) are now cheap to add given the Part-grain machinery
+  already exists, or whether that's better bundled with the still-open
+  Qism-level-grain backlog item (same "is a coarser/finer-than-article
+  grain worth modeling" question).
+
 - **Cleanup: `bandit` added to the toolchain 2026-10-01, found and fixed one
   real semantic-dead-path bug in `test_transfer_e2e.py`, closed.** Cleanup's
   turn in the rotation (09-30's own note: "next session should prefer
@@ -1569,31 +1604,66 @@ How to use this file each session:
   above), so this is lower priority than a bug that changes an actual
   `link_edge` row. Worth fixing together with that item if qism grain ever
   becomes load-bearing.
-- **"boʻlim" (Part, the structural level above chapter) is never a
-  recognized citation unit.** Found 2026-09-17 while reading a gold sample
-  (see Log): "Fuqarolik kodeksining IV-boʻlimi" cites Part IV of the Code by
-  roman numeral, but `RE_CLAUSE` only recognizes `modda`/`bob`/`paragraf` as
-  unit words, so a bare Part-level citation (no chapter/article alongside
-  it) falls all the way back to a coarse act-level citation, losing the
-  Part distinction entirely. Measured corpus-wide
+- ~~**"boʻlim" (Part, the structural level above chapter) is never a
+  recognized citation unit.**~~ **Built and closed 2026-10-02.** Found
+  2026-09-17 while reading a gold sample (see Log): "Fuqarolik kodeksining
+  IV-boʻlimi" cites Part IV of the Code by roman numeral, but `RE_CLAUSE`
+  only recognizes `modda`/`bob`/`paragraf` as unit words, so a bare
+  Part-level citation (no chapter/article alongside it) falls all the way
+  back to a coarse act-level citation, losing the Part distinction
+  entirely. Measured corpus-wide at the time
   (`Fuqarolik\s+kodeks\w*\s+[IVXLC]+\s*-\s*boʻlim\w*`): 6 occurrences, all
-  genuine. Not fixed today — unlike the other regex-only fixes this
-  session, adding a real Part-level grain means a new `target_kind`
-  ("section"/"part"), roman-numeral parsing, and touching whatever in
-  `build_links.py`/both apps would need to consume it, which isn't
-  justified by a 6-occurrence count alone. Worth building if a future
-  corpus update raises that count, or if the Qism-level-grain backlog item
-  above is ever picked up (same "is a coarser-than-article grain worth
-  modeling" question, one level up the hierarchy instead of down).
-  **Re-confirmed 2026-09-28**: the signature-stratified sampler independently
-  redrew 3 of the 6 already-known occurrences (rows 32449, 35586, 38614) in
-  two batches the same day — re-ran the same corpus-wide regex and count is
-  still exactly 6, so this is re-discovery of the existing gap, not growth.
-  Scored as `verdict: correct` in `gold_citations.json` (not `known_gap`)
-  for all 3, since — unlike qism, which has a real field the schema tracks
-  and excludes from scoring — there is no `target_kind` for "boʻlim" at all,
-  so there's no field to record an honest expected/actual mismatch against;
-  everything the schema *can* express for those windows is correct. See Log.
+  genuine. Not fixed then — adding a real Part-level grain means a new
+  `target_kind`, roman-numeral parsing, and touching `build_links.py`,
+  which wasn't justified by a 6-occurrence count alone. Re-confirmed
+  2026-09-28 (still exactly 6 via that same hyphen-only regex). **Built
+  2026-10-02** (Extractor rotation, continuing the open gold-set thread):
+  the regex itself was undercounting — LexUZ writes the unit word with a
+  bare space far more often than with a hyphen, same space-vs-hyphen
+  variability already handled for modda/bob/paragraf. Re-measured with the
+  hyphen made optional: 20 corpus-wide (14 more via the space form), and
+  running the fixed extractor itself (rather than a hand regex) found 5
+  *more* real occurrences the literal-text regex structurally couldn't see
+  at all — 2 via the `self_reference` anchor ("ushbu/mazkur Kodeksning")
+  rather than literal "Fuqarolik kodeksi", and 3 where the part citation
+  sits in the same anchor window as an already-matched modda/bob clause
+  (e.g. row 38614's "23-bobi ... hamda V boʻlimiga") that the old `if not
+  produced` Roman-chapter-fallback-style gating would have skipped. Added
+  `RE_ROMAN_PART` to `citation_extractor.py` and a new `target_kind='part'`,
+  scanned independently of the modda/bob loop (not gated on `produced`) so
+  it can't be silently skipped by an earlier clause in the same window;
+  resolved in `build_links.py` via a new `_int_to_roman()` helper to the
+  real `struct_node` Part rows (`PI`..`PVI`, already present in the corpus
+  from `structure_parser.py` — no new struct data needed). Caught and fixed
+  one real false positive the new unconditional scan introduced before
+  shipping: row 42566's own "...yoʻriqnoma"ning (roʻyxat raqami 697,
+  08.04.1999-y.) IV boʻlimi" (a *different* document's Part IV) was being
+  misattributed to the Civil Code, because `RE_STOP` had no entry for
+  "yoʻriqnoma" (instruction/guideline) as a named-other-act signal.
+  Measured corpus-wide before adding it: 11 anchor windows mention
+  "yoʻriqnoma" at all, and row 42566 is the *only* one where a modda/bob/
+  paragraf/boʻlim clause of any kind follows it within the window — zero
+  collateral loss elsewhere. **Net new/corrected `link_edge` rows**: 24
+  real `dst_kind='part'` edges after dropping that false positive (22 via
+  the `fuqarolik_kodeksi` anchor, 2 via `self_reference`); total edge count
+  9530 -> 9535. Updated 5 pre-existing `gold_citations.json`
+  records (gold_id 134/170/186/193/200, rows 21686/32449/35586/37887/38614)
+  whose correct expected output changed from a bare `act` (or no part field
+  at all) to include the new part citation — these were previously scored
+  `correct` only because the schema had no field to express the gap
+  against, same treatment this backlog item always got; now scored correct
+  against real, resolved output. Added 6 self-test cases (57/57 passing, up
+  from 51/51 at the session's start). `pyflakes`/`vulture
+  --min-confidence 60`/`bandit` clean on both changed files (`bandit`'s 14
+  pre-existing `B608` hits unchanged); `unittest test_transfer_e2e.py`
+  14/14; `verify_transfer.py` green, same General-Part-coverage INFO
+  numbers as before (372/386 cited, 285/386 below) — this feature adds a
+  coarser-than-chapter target kind, it doesn't change which articles are
+  cited. Both apps smoke-tested live (HTTP 200, no exceptions); confirmed
+  `app_hierarchy.py`'s existing "citations to this article's chapter/
+  section as a whole" query (already written generically against
+  `v_realization_struct`, no code change needed there) correctly surfaces a
+  real part-level citation for an article under Part II. See Log.
 
 ### Data currency
 - ~~**175/885 repeal items still unresolved.**~~ **Fixed 2026-09-06, residual
@@ -1813,6 +1883,105 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-10-02 — Extractor rotation: gold set 260 -> 300 (batch 7), built and closed the "boʻlim"/Part-level citation backlog item, caught and fixed a false positive the new feature introduced
+
+Picked up the open Extractor gold-set thread (09-29's own note: "next
+Extractor rotation should keep drawing fresh batches"; 09-30 and 10-01 had
+rotated to Data currency and Cleanup, so this was Extractor's turn back).
+
+**Drew batch 7**: `build_gold_sample_novel.py --seed 20261002 --n 40`
+(novelty coverage 218/451 signatures before drawing). Hand-read all 40
+windows against the raw Uzbek text and the extractor's own stop-word/anchor
+rules. 38/40 were already-correct instances of well-covered shapes
+(self-reference/fuqarolik_kodeksi anchors, list/range modda citations,
+roman-numeral chapter citations, act-level fallbacks for Plenum-resolution
+citations where the specific clause numbers belong to the resolution, not
+the Code). 2/40 (rows 46656, 48850) are occurrences of the existing
+"'boʻlim' is never a recognized citation unit" backlog item (open since
+2026-09-17, measured then at 6 corpus-wide occurrences, re-confirmed
+unchanged at 09-28).
+
+**Re-measured the backlog item's own methodology before building anything**:
+the 09-17/09-28 corpus-wide count used a hyphen-only regex
+(`[IVXLC]+\s*-\s*boʻlim`). Making the hyphen optional (LexUZ writes the unit
+word with a bare space far more often than a hyphen — the same variability
+already handled for modda/bob/paragraf) found 14 *more* real occurrences:
+20 corpus-wide via literal "Fuqarolik kodeksi(ning) <roman> boʻlim" text
+alone, all confirmed genuine by hand (none are a different document's own
+Part reference at this stage of the check).
+
+**Built Part-level citation support**: added `RE_ROMAN_PART` to
+`citation_extractor.py` (matches a roman numeral + "boʻlim", hyphen or
+space, either apostrophe-like spelling LexUZ uses) and a new
+`target_kind='part'`. Scanned *independently* of the main modda/bob/paragraf
+loop (not gated on `produced` the way the existing Roman-chapter fallback
+is) because a part citation can sit either before an already-matched clause
+in the same window ("Fuqarolik kodeksi III-boʻlimining ... va
+927-moddasi", row 32449) or after one ("23-bobi ... hamda V boʻlimiga",
+row 38614) — a `not produced` gate would have silently kept dropping those.
+Resolved in `build_links.py` via a new `_int_to_roman()` helper to the
+corpus's existing `struct_node` Part rows (`PI`..`PVI` — real data already
+present from `structure_parser.py`, nothing new to build there). Running the
+fixed extractor itself (not a hand regex) corpus-wide found **5 more real
+occurrences** the literal-text regex structurally could never see: 2 via the
+`self_reference` anchor ("ushbu/mazkur Kodeksning", rows 46656/46741 — the
+first is literally one of today's batch-7 windows) and the `anchor`-window
+mechanism reaching past an already-matched clause, which a plain text regex
+has no equivalent of (rows 38614, 32449, plus one more). **Real corpus-wide
+total: 25 occurrences, not 6 or even 20.**
+
+**Caught and fixed one real false positive before shipping**: the
+unconditional, whole-window scan initially mis-caught row 42566's "...
+"Bojxona toʻlovlarini toʻlash muddatlarini uzaytirish ... boʻyicha
+yoʻriqnoma"ning (roʻyxat raqami 697, 08.04.1999-y.) IV boʻlimi" — a
+different document's own Part IV, not the Civil Code's — because `RE_STOP`
+had no entry for "yoʻriqnoma" (instruction/guideline) as a named-other-act
+signal, and the real Civil Code citation in that window is a separate,
+earlier "22-bobining 5 paragrafi" clause the new part-scan ran straight
+past. Measured corpus-wide before adding "yoʻriqnoma" to `RE_STOP`: 11
+anchor windows mention it at all, and row 42566 is the *only* one where any
+modda/bob/paragraf/boʻlim clause follows it within the window (the other 10
+only ever reach an "ilova"/annex or "band"/point, units this extractor
+never matches anyway) — zero collateral loss elsewhere, confirmed by
+re-running `score_gold.py` before and after.
+
+**Numbers**: `build_links.py` 9530 -> 9535 edges (24 real `dst_kind='part'`
+edges after dropping the false positive: 22 via the `fuqarolik_kodeksi`
+anchor + 2 via `self_reference`). Updated 5 pre-existing `gold_citations.json`
+records (gold_id 134/170/186/193/200, rows 21686/32449/35586/37887/38614)
+whose expected output changed from a bare `act` citation (or no part field
+at all) to include the new part citation — these were scored `correct`
+before only because the schema had no field to express the gap against,
+same treatment the backlog item always got; now scored correct against
+real, resolved output, not a vacuous pass. Merged batch 7 as gold_id
+260-299 (all `verdict: correct` against the current, fixed extractor).
+**Combined score: precision 1189/1196 (99.4%), recall 1189/1199 (99.2%)**
+on 300 windows, up from 926/933 (99.2%) / 926/936 (98.9%) on 260 — a real
+improvement (24 previously-wrong-or-missing edges now resolving correctly),
+not just a larger denominator. New signature coverage: 258/451 (up from
+218/451), 1257/3251 candidate windows still never-annotated.
+
+Added 6 self-test cases to `citation_extractor.py` (57/57 passing, up from
+51/51). `pyflakes`/`vulture --min-confidence 60` clean on both changed
+files; `bandit` re-run on both (14 pre-existing `B608` hits, unchanged —
+no new finding from this session's code). `python -m unittest
+test_transfer_e2e.py`: 14/14. `verify_transfer.py`: all checks green, same
+General-Part-coverage INFO numbers as before (372/386 cited, 285/386 below)
+— this feature adds a coarser-than-chapter target kind without changing
+which articles are cited, so that metric correctly didn't move. Both apps
+smoke-tested live (HTTP 200, no exceptions in logs); additionally verified
+by hand that `app_hierarchy.py`'s existing "citations to this article's
+chapter/section as a whole" query — already written generically against
+`v_realization_struct`, so it needed no code change — correctly surfaces a
+real part-level citation (Part II, "Right of Ownership and Other Property
+Rights") when viewing General Part article 206.
+
+This closes the "boʻlim" backlog item. The gold-set thread stays open —
+see Active threads for next steps (keep drawing `build_gold_sample_novel.py`
+batches; the "2-kichik boʻlim" subsection grain one level finer than Part,
+visible in rows 32449/46741, is a new small thing worth a look given the
+Part-grain machinery now exists).
 
 ### 2026-10-01 — Cleanup rotation: re-confirmed pyflakes/vulture/f-string grep clean, added `bandit`, found and fixed a real test-suite blind spot in `test_transfer_e2e.py`
 

@@ -53,16 +53,32 @@ BASE_CONFIDENCE = {
     ("article_text", "article"): 0.90,
     ("article_text", "chapter"): 0.85,
     ("article_text", "section"): 0.85,
+    ("article_text", "part"): 0.85,
     ("article_text", "act"): 0.40,
     ("cross_references", "article"): 0.80,
     ("cross_references", "chapter"): 0.75,
     ("cross_references", "section"): 0.75,
+    ("cross_references", "part"): 0.75,
     ("cross_references", "act"): 0.40,
     ("amendment_note", "article"): 0.60,
     ("amendment_note", "chapter"): 0.55,
     ("amendment_note", "section"): 0.55,
+    ("amendment_note", "part"): 0.55,
     ("amendment_note", "act"): 0.30,
 }
+
+# Roman numerals only ever go up to the Code's own 6 parts (I..VI) today;
+# this covers that with headroom for a future restructuring, same subtractive
+# algorithm as citation_extractor._roman() in reverse.
+_ROMAN_DIGITS = ((50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"))
+
+
+def _int_to_roman(n: int) -> str:
+    out = []
+    for value, sym in _ROMAN_DIGITS:
+        count, n = divmod(n, value)
+        out.append(sym * count)
+    return "".join(out)
 
 # LexUZ's editorial furniture, stripped from displayed evidence so the reader
 # sees the citation and not the site's chrome.  Kept out of `evidence` itself:
@@ -97,7 +113,7 @@ def main() -> int:
             src_tier           INTEGER,
             src_article_number VARCHAR,
             -- cited side
-            dst_kind           VARCHAR,   -- article | chapter | section | act
+            dst_kind           VARCHAR,   -- article | chapter | section | part | act
             dst_doc_id         BIGINT,
             dst_article_number VARCHAR,
             dst_norm_id        VARCHAR,
@@ -217,6 +233,11 @@ def main() -> int:
                                 continue
                             dst_struct, dst_doc = chapter_node, struct_doc[chapter_node]
                             stored_kind = "chapter"
+                    elif c.target_kind == "part":
+                        node = f"P{_int_to_roman(c.struct_number)}"
+                        if node not in struct_doc:
+                            continue  # a part number the corpus doesn't have
+                        dst_struct, dst_doc = node, struct_doc[node]
                     else:  # act-level
                         dst_doc = None
 
