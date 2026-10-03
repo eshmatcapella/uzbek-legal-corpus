@@ -57,84 +57,93 @@ How to use this file each session:
   Qism-level-grain backlog item (same "is a coarser/finer-than-article
   grain worth modeling" question).
 
-- **Cleanup: `bandit` added to the toolchain 2026-10-01, found and fixed one
-  real semantic-dead-path bug in `test_transfer_e2e.py`, closed.** Cleanup's
-  turn in the rotation (09-30's own note: "next session should prefer
-  Cleanup, whose own repeatable checks haven't been re-run since 09-26").
-  Re-ran all three existing repeatable checks first — `pyflakes *.py` (0
-  issues), `vulture *.py --min-confidence 60` (0 issues), the `execute(f"...")`
-  grep (31 call sites, up from 29 at 09-26 — the one new site, `build_links.py`
-  line 669, interpolates only the same hardcoded `raw`/`PARQUET` constant
-  every other site already uses, added by 09-27's `text_by_doc` fix; not a
-  violation) — all clean, matching the established "widen the toolchain when
-  the existing checks stay clean" pattern from 09-23/09-26. Installed
-  `bandit` (a security linter neither prior tool overlaps with — it does
-  flow-sensitive pattern matching for known-risky constructs, not
-  import/scope analysis like `pyflakes` or whole-repo symbol-reachability
-  like `vulture`) and ran it repo-wide (excluding `articles/`, `documents/`,
-  `okoz/`, `structure/` — data directories, not code). **3 issue classes, 61
-  total findings**: 57 `B608` (hardcoded-SQL-expression) hits are bandit's
-  own blunter, type-blind re-discovery of the exact same `execute(f"...")`
-  call sites the 09-26 manual audit already individually classified
-  constant-vs-runtime — not a new finding, bandit just can't tell a
-  hardcoded `PARQUET` path from a runtime value the way the manual audit
-  did; 3 `B311` (non-cryptographic `random.sample`) in `verify_transfer.py`
-  are a standard bandit false-positive class (this project's sampling is
-  for spot-check verification, not security, so cryptographic strength is
-  irrelevant) — reviewed, not fixed. **The 1 `B110`
-  (`except Exception: pass`) finding was real and worth chasing**:
-  `test_transfer_e2e.py`'s `parse_markdown_articles()` tries several
-  `parser.py` function names and silently falls back to its own from-scratch
-  reimplementation (`parse_internal_markdown_articles`) if the external
-  result isn't a bare `list`. Traced why the except fires in practice (it
-  doesn't — see Log) and, in the course of that, found a **separate, more
-  consequential bug the bandit finding led to, not the finding itself**:
-  parser.py's real `parse_markdown()` returns `{"metadata": ..., "articles":
-  [...]}`, never a bare list, so the "prefer the external result" branch in
-  `parse_markdown_articles()` has been structurally unreachable since the
-  project's first commit (`e96fb5c`) — confirmed by instrumenting both the
-  real and a monkeypatched `parser.py` and tracing which branch actually
-  returns. That's *correct* for `self.extracted_articles` (Tier 1's own
-  docstring wants it independent of `parser.py`, so never preferring the
-  external result is the right behavior there) — but `test_r1_markdown_extraction`
-  separately re-calls the same function and asserts on its result labeled
-  "External parser.py extracted N articles," which was **always silently
-  re-testing the internal reimplementation under a false label**, never
-  parser.py's real output, for the test's entire history. Verified this
-  isn't theoretical: monkeypatched `parser.py`'s own `parse_markdown()` to
-  drop one article (394 -> 393) and ran `test_r1_markdown_extraction` against
-  both the original and fixed code — **original: still passes (blind to the
-  regression)**; **fixed: fails with the correct `393 != 394`**. Fixed by
-  having that one assertion call `parser.py`'s function directly and unwrap
-  its `"articles"` key instead of routing through `parse_markdown_articles()`
-  — `self.extracted_articles`'s independence is untouched (same function,
-  same behavior, nothing else calls it differently), only the one
-  previously-inert assertion now does what its own docstring claims. This
-  matters beyond a lint nit: `parser.py --verify` (its own 10/10-check CLI)
-  is the only thing that currently exercises parser.py's real article count,
-  and it's never invoked by any automated check — `test_r1_markdown_extraction`
-  was the one place that looked like it did, and didn't. Now it does.
-  Verified: `pyflakes`/`vulture --min-confidence 60` clean on the changed
-  file; `python -m unittest test_transfer_e2e.py` 14/14; re-ran `bandit`
-  after the fix — `B110` count unchanged at 1 (the *other*
-  `except Exception: pass`, inside `load_external_parser()` itself, left
-  alone deliberately — it's the one that actually guards the independence
-  property, reviewed and judged intentional, not touched); `verify_transfer.py`
-  all green, same INFO-line numbers as 09-30 (this change has zero pipeline/
-  `corpus.duckdb` surface — `test_transfer_e2e.py` reads the raw parquet
-  directly for its own Tier 3 checks but writes nothing); `score_gold.py`
-  unchanged at 926/933 (99.2%) / 926/936 (98.9%) (doesn't touch
-  `citation_extractor.py`). Both apps smoke-tested live (HTTP 200, no
-  exceptions — no schema change, so a load check is sufficient). This closes
-  the thread: the `B110` finding itself didn't need a code change (the flagged
-  except is fine), but chasing *why* it never fires surfaced a real,
-  verified, previously-invisible test-suite blind spot, fixed with a
-  reproduced-before/confirmed-after regression proof — a new bug class
-  neither `pyflakes` nor `vulture` could structurally see (the code was
-  syntactically live and "used," just semantically inert due to a return-type
-  mismatch). `bandit` is now a fourth repeatable Cleanup check alongside
-  `pyflakes`/`vulture`/the f-string grep — next Cleanup rotation should
-  re-run all four before deciding whether to widen the toolchain again.
+- **Cleanup: invented and adopted a fifth repeatable check,
+  `check_sql_bindings.py`, 2026-10-03 — closed.** Data currency's backlog
+  (see Backlog) is now in diminishing-returns territory on every open item
+  (the 39/612 amending-act residual, the OKOZ-granularity item), so picked
+  Cleanup over it this rotation — Cleanup's own backlog explicitly asks for
+  this ("next rotation should re-run all four before deciding whether a
+  fifth is worth adding"), last touched 10-01 vs. Data currency's 09-30, so
+  this is the more net-overdue of the two non-Extractor areas either way.
+  Re-ran all four existing checks first: `pyflakes *.py` (0), `vulture *.py
+  --min-confidence 60` (0), `bandit -r . -x ./articles,./documents,./okoz,
+  ./structure` (61 findings, same 57 `B608`/3 `B311`/1 `B110` breakdown as
+  10-01 — no new issue), and the `execute(f"...")` grep (**32 call sites**,
+  up from 31 at 10-01 — re-verified every one via an AST-based extraction of
+  each f-string's `{...}` expressions rather than eyeballing: all 32 still
+  interpolate only hardcoded module-level constants — `raw`, `CC_GENERAL_PART`,
+  `cx.DOC_GENERAL`, `CC_GENERAL`, `LLC_LAW_CURRENT`, `LLC_LAW_PRIOR`,
+  `REPEALED_COMPANY_ARTICLES`'s own length, and `build_links.py`'s `doc_id`
+  loop variable, which only ever ranges over the fixed 2-tuple `CC_DOCS` —
+  zero violations. Didn't chase exactly which commit moved the count from
+  31 to 32; neither 7c40bed nor 8b7b808's diffs touch any `execute(f` call
+  site, so it's most likely a pre-existing bookkeeping drift in an earlier
+  day's count, not a new site — not worth forensically re-auditing every
+  prior day's number when today's direct re-check is what actually matters
+  and came back clean).
+  **The actual question this rotation asked — is a fifth tool worth
+  adding — got a real, invented answer**: none of the four existing checks
+  understand SQL semantics at all. A column/table rename or typo inside a
+  query string is invisible to `pyflakes` (valid Python syntax), `vulture`
+  (the string literal looks "used"), the f-string grep (governs
+  interpolation safety, not correctness), and `bandit` (pattern-matches
+  injection shapes, not schema binding) — and the project's own
+  smoke-test-both-apps step only proves the *default* page returns HTTP 200,
+  not that every widget's query on every page actually binds against the
+  schema. Built `check_sql_bindings.py`: AST-walks every call to
+  `q()`/`qdf()` (the apps' own query helpers) or `execute()` whose first
+  argument is a plain string literal (or a `+`-concatenation of literals —
+  f-strings are explicitly out of scope, already covered by the grep audit
+  above), and validates each one with DuckDB's `PREPARE <name> AS <query>`
+  against the live `corpus.duckdb` schema — `PREPARE` resolves every
+  table/column name and throws a `BinderException`/`CatalogException` on a
+  bad one *without* needing bound parameter values, so a query full of `?`
+  placeholders validates cleanly with no dummy inputs needed. Scoped the
+  default file list to the read-only layer only — `app_hierarchy.py`,
+  `app_llc.py`, `verify_transfer.py`, `score_gold.py`,
+  `measure_extractor_recall.py`, `build_gold_sample.py`,
+  `build_gold_sample_novel.py` — after testing it against
+  `build_corpus_db.py`/`build_links.py`/`build_okoz.py`/`build_llc.py` too
+  and finding that's the wrong model for them: their `CREATE TABLE`/`CREATE
+  VIEW` statements aren't `PREPARE`-able at all (DDL, not a prepared
+  statement), and one `INSERT` (`build_corpus_db.py:254`) false-fails with
+  "table uz does not exist" because `uz` is a `CREATE TEMP TABLE` from the
+  *previous* statement in that same pipeline run — this check's one-query,
+  fresh-connection model can't see session state a multi-statement script
+  builds up, and isn't the right tool for it anyway: those scripts already
+  self-validate every single time `python build_*.py` runs successfully (a
+  real binding bug there would just crash the build immediately). The actual
+  gap is the read-only layer: a broken query in `app_llc.py` only ever
+  surfaces when a person happens to click that exact page. **Measured
+  coverage**: 106/119 total `q`/`qdf`/`execute` call sites across the 7
+  in-scope files are plain literals and get checked; of the 13 not checked,
+  4 are the `q()`/`qdf()` helper *definitions* themselves (not call sites),
+  8 are f-strings already covered by the grep audit above, and 1
+  (`measure_extractor_recall.py:172`) is a literal assigned to a local
+  variable first and passed by name — not resolved (would need real
+  data-flow tracking for one occurrence), same single-occurrence-not-worth-
+  the-complexity precedent this project already applies elsewhere. All 106
+  checked queries bind cleanly today. **Proved the check has real teeth,
+  not just "nothing's broken right now"**, with a mutation test: copied
+  `app_llc.py` to a scratch file, renamed one column inside a live query
+  (`article_title` → `article_title_TYPO`, line 89) — exactly the shape of
+  drift none of the other four tools can see (valid Python, a "used"
+  string, no injection pattern) — ran the checker against the mutant: caught
+  immediately, `BinderException`, exact line and query text, under a
+  second. Discarded the mutant. **Decision: adopted** as the fifth
+  repeatable Cleanup check (`python check_sql_bindings.py`) — same
+  escalation pattern as `vulture` (09-23) and `bandit` (10-01), each added
+  only after the existing set stayed clean and a real, distinct gap was
+  identified and measured rather than assumed. Zero new dependency (reuses
+  `duckdb`, already required everywhere); read-only connection, no risk to
+  `corpus.duckdb`. Verified: `pyflakes`/`vulture` clean on the new file
+  itself; `verify_transfer.py` all green, same INFO-line numbers as 10-02
+  (zero pipeline/`corpus.duckdb` surface — every connection this check opens
+  is `read_only=True`); `python -m unittest test_transfer_e2e.py` 14/14.
+  Both apps smoke-tested live (HTTP 200 on fresh `streamlit run` on
+  :8601/:8602). Next Cleanup rotation: re-run all five; also worth revisiting
+  the `measure_extractor_recall.py:172` single-occurrence coverage gap only
+  if `check_sql_bindings.py` is otherwise being extended anyway, not alone.
 
 - **Amending-act resolution: 85.1% -> 93.6%, new `date+sole-law-cc-mention`
   tier built and closed 2026-09-30.** Data currency's turn in the rotation
@@ -1879,10 +1888,172 @@ How to use this file each session:
   is now a fourth repeatable Cleanup check; next rotation should re-run all
   four (pyflakes/vulture/f-string grep/bandit) before deciding whether a
   fifth is worth adding.
+- ~~**A fifth check: something beyond pyflakes/vulture/f-string grep/bandit,
+  none of which understand SQL semantics.**~~ **Added 2026-10-03**:
+  `check_sql_bindings.py` — AST-extracts every plain-literal SQL query passed
+  to `q()`/`qdf()`/`execute()` in the read-only app/analysis layer
+  (`app_hierarchy.py`, `app_llc.py`, `verify_transfer.py`, `score_gold.py`,
+  `measure_extractor_recall.py`, `build_gold_sample.py`,
+  `build_gold_sample_novel.py` — deliberately *not* the `build_*.py`
+  pipeline scripts, whose `CREATE TABLE`/`CREATE VIEW`/temp-table-dependent
+  statements aren't validatable this way and already self-validate on every
+  successful run) and validates each one against the live `corpus.duckdb`
+  schema via DuckDB's `PREPARE` statement, which resolves every table/column
+  name without needing bound parameter values. 106/119 call sites in scope
+  are checked today (the other 13: 4 are the `q`/`qdf` helper definitions, 8
+  are f-strings already covered by the grep audit, 1 is a single
+  variable-indirected literal, not resolved); all 106 bind cleanly. Proved
+  with a mutation test (a scratch copy of `app_llc.py` with one column
+  renamed) that it catches exactly the class of drift none of the other four
+  tools can see — a schema-breaking typo that's still valid Python, still a
+  "used" string, with no injection shape. See Active threads and Log for the
+  full measurement and the build-script-exclusion reasoning. Now a fifth
+  repeatable Cleanup check; next rotation should re-run all five.
 
 ---
 
 ## Log
+
+### 2026-10-03 — Cleanup rotation: re-confirmed pyflakes/vulture/f-string grep/bandit clean, invented a fifth check (SQL-schema-binding validation via DuckDB PREPARE), proved it with a mutation test, adopted it
+
+Also fixed a stale-container git issue found at session start: this
+container's clone had `main` sitting at `209c62f` (one day behind) with HEAD
+detached at `7c40bed` (10-02's own commit, two ahead) — `git fetch` showed
+`origin/main` was already at `7c40bed`, so 10-02's work *had* made it to the
+remote; this container's local branch ref was just stale from before that
+push. `git branch -f main 7c40bed && git checkout main` fixed the local ref
+to track `origin/main` correctly; nothing was unpushed or at risk, and no
+push was needed to resolve it. Recorded here only so a future session
+doesn't mistake a stale local ref for a real problem.
+
+Data currency's backlog (see Backlog) is now diminishing-returns on every
+open item — the 39/612 amending-act residual and the OKOZ-granularity item
+both explicitly say "not worth re-opening without a new angle"/"not scoped
+by today's finding alone." Cleanup's own backlog, by contrast, had a
+concrete, explicit next step: 10-01's entry asked "next rotation should
+re-run all four before deciding whether a fifth is worth adding." Re-ran all
+four first: `pyflakes *.py` (0 issues), `vulture *.py --min-confidence 60`
+(0 issues), `bandit -r . -x ./articles,./documents,./okoz,./structure` (61
+findings — same 57 `B608`/3 `B311`/1 `B110` breakdown as 10-01, no new
+issue), and the `execute(f"...")` grep (**32 call sites**, up from 31 at
+10-01). Re-verified all 32 programmatically rather than eyeballing: wrote a
+quick AST-based extraction of every f-string's `{...}` interpolated
+expressions and listed the distinct identifiers per file —
+`build_corpus_db.py`: `CC_GENERAL_PART`, `raw`; `build_gold_sample.py`/
+`build_gold_sample_novel.py`/`measure_extractor_recall.py`/`score_gold.py`:
+`raw` only; `build_links.py`: `cx.DOC_GENERAL`, `doc_id`, `raw`;
+`build_llc.py`: `CC_GENERAL`, `LLC_LAW_CURRENT`, `LLC_LAW_PRIOR`, `raw`, and
+`','.join('?' * len(REPEALED_COMPANY_ARTICLES))`; `verify_transfer.py`:
+`CC_GENERAL_PART`, `raw`. Checked the one that looked most suspicious at a
+glance — `build_links.py`'s `doc_id` (a loop variable, not an obvious
+constant) — by hand: it's `for doc_id in CC_DOCS:` where `CC_DOCS =
+(cx.DOC_GENERAL, cx.DOC_SPECIAL)` (`build_links.py:30`), a fixed 2-tuple of
+module-level constants, not a runtime/user value, so it's fine under the
+project's own rule. All 32 sites interpolate only hardcoded constants —
+zero violations. (Didn't chase why the count moved 29→31→32 across 09-26/
+10-01/10-03 when each day's note names only one new site; neither 7c40bed
+nor 8b7b808 touch any `execute(f` call site, so today's +1 isn't explained
+by yesterday's commits either — most likely earlier bookkeeping drift, not
+a new site. Not worth forensically re-auditing every prior count when
+today's direct re-check is itself clean.)
+
+**The actual question — is a fifth tool worth adding — needed a real
+answer, not just "re-run the greps again."** Looked at what the four
+existing tools structurally cannot see: none of them understand SQL at all.
+`pyflakes` and `vulture` operate on Python syntax/symbol-reachability — a
+SQL string with a typo'd column name is just a string literal to both,
+syntactically valid and "used." The f-string grep governs interpolation
+safety (constant vs. runtime value), not query correctness. `bandit`
+pattern-matches known-risky *constructs* (string-built SQL, weak random),
+not whether a query actually binds against a schema. And the project's own
+verification step for the apps is "smoke-tested live (HTTP 200)" — which
+only proves the *default* page of each app loads, not that every widget's
+query on every page actually resolves. That's a real, previously-unmeasured
+gap: a column rename or typo inside, say, `app_llc.py`'s dossier-detail
+query would sit silently broken until a person happened to click into that
+specific page.
+
+**Built `check_sql_bindings.py`.** Confirmed first that DuckDB's `PREPARE
+<name> AS <query>` is exactly the right primitive: it resolves every
+table/column reference in a query against the connected schema and raises
+`BinderException`/`CatalogException` on a bad one, *without* needing actual
+parameter values bound — so a query full of `?` placeholders validates
+cleanly with no dummy inputs required (confirmed interactively: `PREPARE t1
+AS SELECT * FROM norm_unit WHERE article_number = ?` succeeds unbound;
+`PREPARE t2 AS SELECT * FROM norm_unit WHERE nonexistent_col = ?` raises
+immediately with the real "not found in FROM clause" error and candidate-
+column suggestions). The script walks each target file's AST (not a regex —
+multi-line triple-quoted strings and the project's own `q(sql, params)` /
+`qdf(sql, params)` calling convention would be fragile to approximate any
+other way) for every call to `q`/`qdf`/`execute` whose first argument is a
+plain string literal (or a `+`-chain of literals), then runs
+`PREPARE`/`DEALLOCATE` for each one against a fresh `read_only=True`
+connection to `corpus.duckdb`.
+
+**Scope decision, made by testing both ways rather than assuming**: first
+ran it against every `*.py` file in the repo (156 queries found, 17
+"failures"). All 17 turned out to be the wrong kind of failure for this
+tool: every `CREATE TABLE`/`CREATE VIEW` statement in `build_corpus_db.py`/
+`build_links.py`/`build_okoz.py`/`build_llc.py` fails outright because DDL
+isn't a `PREPARE`-able statement at all, and one `INSERT`
+(`build_corpus_db.py:254`) fails with "table uz does not exist" because
+`uz` is a `CREATE OR REPLACE TEMP TABLE` created by the immediately
+preceding statement in that same pipeline run (`build_corpus_db.py:248-253`)
+— this tool's one-statement-per-fresh-connection model has no way to see
+session state a multi-statement script builds as it runs, and that's not a
+real bug to chase: those four scripts already self-validate every single
+time `python build_*.py` completes without crashing, which every green
+`verify_transfer.py` run already proves happened. So the default scope is
+deliberately just the read-only layer: `app_hierarchy.py`, `app_llc.py`,
+`verify_transfer.py`, `score_gold.py`, `measure_extractor_recall.py`,
+`build_gold_sample.py`, `build_gold_sample_novel.py` (the last two have no
+`CREATE` statements at all — checked with a plain grep before including
+them). Against that 7-file scope: **106 literal SQL queries checked, all
+bind cleanly**; the gap to the file set's 119 total `q`/`qdf`/`execute` call
+sites breaks down as 4 (the `q()`/`qdf()` helper *definitions* in
+`app_hierarchy.py`/`app_llc.py` themselves, not call sites), 8 (f-strings,
+already covered by the grep audit above — `verify_transfer.py` ×4,
+`score_gold.py` ×2, `measure_extractor_recall.py` ×2), and 1
+(`measure_extractor_recall.py:172` — a literal assigned to a local `q`
+variable a few lines earlier and passed by name, which the AST walk
+doesn't resolve; a real but single-occurrence coverage gap, left as a
+documented limitation in the script's own docstring rather than building
+variable data-flow tracking for one site — same precedent several Extractor
+backlog items already set).
+
+**Proved the check actually catches something, not just "nothing's broken
+today."** A clean run on day one of a tool proves nothing about its
+sensitivity — ran a mutation test instead: copied `app_llc.py` to a
+scratch file, changed one column reference inside a real, currently-correct
+query from `article_title` to `article_title_TYPO` (line 89, the LLC
+foundation-mapping query), and ran the checker against the mutant. Caught
+immediately: `BinderException: Referenced column "article_title_TYPO" not
+found in FROM clause!`, with the exact line number and the full query text
+printed. This is precisely the failure mode none of the other four tools
+can see — valid Python, a "used" string literal, no SQL-injection shape —
+so it's a genuinely new class of coverage, not a re-discovery. Discarded
+the mutant and scratch checker copy afterward; `corpus.duckdb` was opened
+`read_only=True` throughout, so nothing was ever at risk.
+
+**Decision: adopted.** `check_sql_bindings.py` is now a fifth repeatable
+Cleanup check, same escalation pattern as `vulture` (09-23) and `bandit`
+(10-01) — each added only once the existing set stayed clean on a fresh
+re-run and a real, measured, distinct-from-the-others gap was identified
+first. Zero new runtime dependency (reuses `duckdb`, already required by
+everything in this project); every connection it opens is read-only.
+Verified: `pyflakes`/`vulture --min-confidence 60` clean on the new file
+itself; `python verify_transfer.py` all green, same INFO-line numbers as
+10-02 (this change touches nothing in the pipeline or `corpus.duckdb` —
+every query run today, by the new script and by me directly, used a
+read-only connection); `python -m unittest test_transfer_e2e.py` 14/14.
+Both apps smoke-tested live: fresh `streamlit run app_hierarchy.py
+--server.port 8601`/`app_llc.py --server.port 8602`, both returned HTTP 200.
+
+**Next Cleanup rotation**: re-run all five (`pyflakes`/`vulture`/f-string
+grep/`bandit`/`check_sql_bindings.py`) before deciding whether a sixth is
+worth adding. The `measure_extractor_recall.py:172` single-occurrence
+coverage gap is worth closing only if `check_sql_bindings.py` is being
+touched anyway for some other reason — not a standalone justification.
 
 ### 2026-10-02 — Extractor rotation: gold set 260 -> 300 (batch 7), built and closed the "boʻlim"/Part-level citation backlog item, caught and fixed a false positive the new feature introduced
 
