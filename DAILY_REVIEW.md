@@ -22,6 +22,52 @@ How to use this file each session:
 
 ## Active threads
 
+- **Gold set: 300 -> 340 records, eighth signature-stratified batch
+  2026-10-04; one new surface-form gap found ("§ N" section-mark notation),
+  formalized as a known_gap rather than fixed; thread stays open.**
+  Continued the still-open Extractor thread (last touched 2026-10-02; 10-03
+  rotated to Cleanup instead, per the brief's own "rotate across the three"
+  guidance and that session's own note that Data currency is in
+  diminishing-returns territory on every open item — so this picked the
+  Extractor thread back up as the next-highest-value pull rather than
+  forcing a Data currency session with no new angle). Drew batch 8
+  (`build_gold_sample_novel.py --seed 20261004 --n 40`, novelty coverage
+  258/451 signatures before drawing), hand-read all 40 against the raw
+  text and the live `extract()` output. 39/40 verdict `correct`. The 40th
+  (gold_id 324, row 41858, doc -104720) is a real, novel gap: LexUZ writes
+  "Fuqarolik kodeksining 9-bobi § 2" — a "§ N" section-mark symbol instead
+  of the word "paragraf"/"paragrafi" that `RE_CLAUSE`'s chapter+section
+  lookahead (the `sec = re.match(r"\s*,?\s*(\d+)\s*-\s*paragraf", ...)`
+  call in `citation_extractor.py`) requires literally — so the citation
+  resolves as a bare chapter-9 citation, losing the section-2 grain
+  (`dst_kind` would read `chapter` instead of `section`, same class of gap
+  as the already-known "paragrif" misspelling and Roman-chapter-lookahead
+  items). Measured corpus-wide before deciding whether to fix: a regex scan
+  for `bob\w*\s*§\s*\d+` across every anchor-window candidate row found
+  exactly 2 raw occurrences, but only 1 is in scope — row 35993's "ushbu
+  Qoidalarning XXI bobiga § 84" is a different document's own internal
+  Rules, not a Civil Code citation, and sits nowhere near a Civil Code
+  anchor window. So the real footprint is exactly 1 occurrence corpus-wide.
+  **Decision: did not fix** — same single-occurrence-scope precedent this
+  project has applied consistently to the paragrif/Roman-chapter/
+  chapter+paragraph-space-separator gaps (see Backlog); formalized instead
+  as a new permanent `known_gap` gold record (gold_id 324) with its true
+  `section 9/2` expected output, so it's an honest regression data point
+  rather than a silently-inflated score. **Combined score after merging**:
+  precision 1481/1489 (99.5%), recall 1481/1492 (99.3%) on 340 windows (up
+  from 1189/1196 = 99.4% / 1189/1199 = 99.2% on 300) — consistent with
+  adding one new honest miss and 39 confirmed-correct windows, not a
+  regression. `verify_transfer.py` green (no pipeline code touched —
+  `gold_citations.json` is not read by any `build_*.py` script);
+  `pyflakes`/`vulture --min-confidence 60`/`check_sql_bindings.py` all
+  clean; `python -m unittest test_transfer_e2e.py` 14/14; both apps
+  smoke-tested live (HTTP 200, no exceptions in server logs). **New
+  signature coverage: 298/451** (up from 258/451), 1179/3251 candidate
+  windows still sit in never-annotated territory. Thread stays open — next
+  Extractor rotation should keep drawing fresh `build_gold_sample_novel.py`
+  batches; at the current ~1 new real gap per ~1-2 batches, each batch is
+  still earning its keep.
+
 - **Gold set: 260 -> 300 records, seventh signature-stratified batch
   2026-10-02; "boʻlim" (Part-level) backlog item built and closed the same
   day, found while annotating this batch; thread stays open.** Continued
@@ -1354,23 +1400,22 @@ How to use this file each session:
 - ~~**Build the gold set.**~~ **Scoring layer built 2026-09-20, grown to 100
   records 2026-09-22, to 140 via signature-stratified sampling 2026-09-25,
   to 220 via two more signature-stratified batches 2026-09-28, to 260 via
-  a third 2026-09-29** — see Active threads and Log for the full detail.
-  `gold_citations.json` (260 hand-verified anchor occurrences, six batches —
-  two uniform-random, four signature-stratified) + `score_gold.py` (the
-  scorer) + `build_gold_sample.py`/`build_gold_sample_novel.py` (the two
-  samplers) now exist; current score **precision 926/933 (99.2%), recall
-  926/936 (98.9%)** — the five mismatches are the documented "paragrif"
+  a third 2026-09-29, to 300 via a fourth 2026-10-02, to 340 via a fifth
+  2026-10-04** — see Active threads and Log for the full detail.
+  `gold_citations.json` (340 hand-verified anchor occurrences, eight
+  batches — two uniform-random, six signature-stratified) + `score_gold.py`
+  (the scorer) + `build_gold_sample.py`/`build_gold_sample_novel.py` (the
+  two samplers) now exist; current score **precision 1481/1489 (99.5%),
+  recall 1481/1492 (99.3%)** — the mismatches are the documented "paragrif"
   spelling gap, the 2026-09-25 Roman-chapter+paragraf gap, the 2026-09-28
   "hamda" list-separator gap, the 2026-09-28 chapter+paragraph-list-with-
-  parenthetical gap, and the 2026-09-28 "bare article number before an
-  interposed different code name" gap (see below), each recorded with its
-  true expected output rather than silently marked correct — the
-  2026-09-29 batch found and fixed a sixth real gap (the "axborotnoma"
-  publication-record parenthetical swallowing a real citation, see Active
-  threads) *before* merging, so it shows up as a fix, not a new mismatch.
-  Not closed outright — 260 windows is still a small fraction of the 3251
-  real candidate windows corpus-wide (218/451 distinct window *signatures*
-  covered as of 2026-09-29, up from 98/451 after 2026-09-28's first batch
+  parenthetical gap, the 2026-09-28 "bare article number before an
+  interposed different code name" gap, and the 2026-10-04 "§ N"
+  section-mark-notation gap (see below), each recorded with its true
+  expected output rather than silently marked correct. Not closed
+  outright — 340 windows is still a small fraction of the 3251 real
+  candidate windows corpus-wide (298/451 distinct window *signatures*
+  covered as of 2026-10-04, up from 98/451 after 2026-09-28's first batch
   — see Active threads). **Next step, whenever Extractor rotation comes up
   again**: run `build_gold_sample_novel.py` again (not
   `build_gold_sample.py` — see below for why) with a fresh `--n`/`--seed`,
@@ -1443,6 +1488,23 @@ How to use this file each session:
   precedent as several items on this list — if ever picked up, port the
   same `sec = re.match(r"\s*,?\s*(\d+)\s*-\s*paragraf", ...)` lookahead the
   `bob` branch already uses into the Roman-chapter branch in `extract()`.
+- **Chapter+section citations written with a "§ N" section-mark symbol,
+  not the word "paragraf", lose the section grain.** Found 2026-10-04 via
+  the eighth signature-stratified gold batch (see Active threads and Log):
+  row 41858 reads "Fuqarolik kodeksining 9-bobi § 2" — same semantic
+  content as "9-bobining 2-paragrafi" elsewhere in the corpus, but the
+  chapter+section lookahead's `sec = re.match(r"\s*,?\s*(\d+)\s*-\s*paragraf", ...)`
+  only recognizes the literal word, not "§", so this resolves as a bare
+  chapter-9 citation, losing the section-2 grain (same `dst_kind`-affecting
+  failure class as the "paragrif" and Roman-chapter-lookahead items above).
+  Measured corpus-wide: exactly 2 raw `bob\w*\s*§\s*\d+` occurrences, only 1
+  in scope — row 35993's "ushbu Qoidalarning XXI bobiga § 84" is a
+  different document's own internal Rules, not a Civil Code citation, and
+  never sits inside a Civil Code anchor window. Not fixed given the
+  single-occurrence scope, same precedent as the two items above; recorded
+  as a permanent `gold_citations.json` known_gap record (`gold_id` 324)
+  instead. If ever picked up, accept `§\s*(\d+)` as an alternate spelling
+  alongside `\d+\s*-\s*paragraf` in the chapter+section lookahead.
 - **`RE_STOP`'s `break`-vs-`continue` design.** Once a stop-word is found in
   the gap before a clause, `extract()` abandons the *rest* of that anchor's
   window, not just the one stopped clause — a deliberate, conservative
@@ -1913,6 +1975,98 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-10-04 — Extractor rotation: eighth gold batch, found and formalized a new "§ N" section-mark gap, 300 -> 340 records
+
+Same stale-local-ref pattern as 2026-09-04 and 2026-10-03 at session start:
+this container's `main` sat at `209c62f` (three days behind) with HEAD
+detached at `4d7f5ce` (10-03's own commit). `git fetch` confirmed
+`origin/main` was already at `4d7f5ce`, so nothing was actually unpushed —
+fast-forwarded local `main` to it (`git checkout main && git merge --ff-only
+origin/main`) before starting. Recorded again since this is now the third
+occurrence; if a fourth session hits it, worth asking whether something
+about how these containers are provisioned reliably leaves `main` stale
+rather than treating it as a one-off each time.
+
+Continued the Extractor thread (last touched 2026-10-02; 10-03 rotated to
+Cleanup, and that session's own log explicitly flagged Data currency as
+diminishing-returns on every open item — so with Cleanup now also closed
+for this rotation, the Extractor thread was the clear next pull, not a
+forced rotation-order pick). Drew an eighth signature-stratified batch:
+`python build_gold_sample_novel.py --seed 20261004 --n 40` (258/451
+signatures covered going in, matching the 10-02 log's own number exactly —
+confirms the sampler's coverage tracking is stable across sessions/containers).
+
+Hand-read all 40 windows against the raw parquet text and the live
+`extract()` output. 39/40 are correct. The 40th (row 41858, doc -104720, a
+code's own cross-reference) reads "Fuqarolik kodeksining 9-bobi § 2" — the
+same semantic content as the many "N-bobining M-paragrafi" citations
+elsewhere in the corpus, but using a "§ N" section-mark symbol instead of
+the word "paragraf". `citation_extractor.py`'s chapter+section lookahead
+(`sec = re.match(r"\s*,?\s*(\d+)\s*-\s*paragraf", ...)`, run right after a
+bob match) only recognizes the literal word, so this citation resolves as a
+bare chapter-9 citation — correct at the chapter level, but silently
+dropping the section-2 grain. This is the same failure class as two
+already-documented backlog items (the 2026-09-22 "paragrafi"->"paragrifi"
+misspelling gap, and the 2026-09-25 Roman-numeral-chapter-never-gets-the-
+lookahead gap): a real citation, with `dst_kind` landing one level coarser
+than it should (`chapter` instead of `section`), not a dropped citation.
+
+Measured corpus-wide before deciding whether to invest in a fix: a regex
+scan for `bob\w*\s*§\s*\d+` across every Civil-Code-anchor candidate row
+(the same row set `build_gold_sample_novel.py` scans) found exactly 2 raw
+occurrences. Checked both by hand: row 41858 (this one, in scope) and row
+35993 ("ushbu Qoidalarning XXI bobiga § 84" — "this [set of internal] Rules'
+Chapter XXI, § 84" — a different document's own internal numbering, not a
+Civil Code citation at all, and not inside any Civil Code anchor window).
+So the real, in-scope footprint is exactly 1 occurrence corpus-wide.
+
+**Decision: did not fix.** This project has applied the same
+single-occurrence-scope reasoning consistently to the paragrif gap, the
+Roman-chapter-lookahead gap, and the chapter+paragraph space-separator gap
+— a 1-occurrence count doesn't justify touching a regex that 106+ other
+call sites and dozens of self-tests already depend on being conservative.
+Formalized instead as a new `known_gap` gold record (`gold_id` 324, in
+`gold_citations.json`) carrying the true `section 9/2` expected output, so
+the score reflects an honest, permanent regression check rather than either
+silently marking it correct or leaving it as an un-tracked backlog line.
+Added the same reasoning to the Backlog (new item, same family as the two
+existing section-lookahead gaps) in case a future corpus update introduces
+more "§"-style citations and tips the scope calculus.
+
+Merged the batch: **gold set 300 -> 340 records.** Re-scored:
+**precision 1481/1489 (99.5%), recall 1481/1492 (99.3%)** (up from
+1189/1196 = 99.4% / 1189/1199 = 99.2% at 300 records) — the movement is
+exactly one new honest miss (`gold_id` 324's FP/FN pair) plus 39 newly
+confirmed-correct windows, verified by diffing `score_gold.py`'s mismatch
+list before and after the merge rather than just reading the headline
+percentages. **New signature coverage: 298/451** (up from 258/451),
+1179/3251 candidate windows still never-annotated.
+
+No pipeline code changed today (`citation_extractor.py`, `build_links.py`
+untouched) — only `gold_citations.json` and this file — so
+`corpus.duckdb` is byte-identical to yesterday and no rebuild was needed or
+attempted. `verify_transfer.py`: all checks green, identical INFO-line
+numbers to 10-03 (372/386 General Part articles cited, 248 acts
+superseded/495 realization edges, 39 OKOZ mappings awaiting validation).
+`pyflakes *.py` / `vulture *.py --min-confidence 60` / `check_sql_bindings.py`
+all clean (106/119 call sites checked, all bind). `python -m unittest
+test_transfer_e2e.py`: 14/14. Both apps smoke-tested live (fresh
+`streamlit run` on :8601/:8602, HTTP 200, server logs free of
+errors/exceptions).
+
+**Decision on today's rotation choice**: didn't invent a brand-new angle
+this session — the signature-stratified gold sampler is still finding a
+real, previously-uncharacterized gap roughly every other batch (7 of 8
+batches so far have found something; this is the second batch in a row to
+find exactly one), so it's still the highest-measured-yield use of an
+Extractor session, not yet a checklist-running exercise. Worth revisiting
+that judgment once a batch comes back fully clean (0/40) for the first
+time — at that point diversifying into a genuinely new method (e.g.
+model-assisted window classification, or targeting the specific 153
+not-yet-covered-at-all signatures directly rather than sampling from them)
+would be the better next invention, not another uniform draw from the same
+sampler.
 
 ### 2026-10-03 — Cleanup rotation: re-confirmed pyflakes/vulture/f-string grep/bandit clean, invented a fifth check (SQL-schema-binding validation via DuckDB PREPARE), proved it with a mutation test, adopted it
 
