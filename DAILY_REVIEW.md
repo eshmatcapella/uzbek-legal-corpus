@@ -22,6 +22,77 @@ How to use this file each session:
 
 ## Active threads
 
+- **Data currency: independent precision audit of `date+cc-clause-match`
+  (478/612 amending-act resolutions) 2026-10-08 — closed as a negative
+  result, no bug, but a real architectural fact newly documented.**
+  Rotated to Data currency (last touched 2026-09-30; Extractor had 10-02
+  and 10-04, Cleanup had 10-03). Rather than re-running the same
+  retroactive-agreement spot-checks prior sessions used, built a from-
+  scratch, independent re-implementation of `cc_blocks()`/
+  `cc_clause_candidates()` in a throwaway script and ran it against ALL
+  478 `date+cc-clause-match` rows (not a sample) to check two things no
+  prior session had measured at full scale: (1) is every resolution
+  mechanically reproducible from the same inputs (yes, 478/478), and (2)
+  for acts where `cc_blocks()` finds zero top-level `"N-modda."` markers
+  and falls back to treating the ENTIRE document as one block (13/58
+  distinct amending docs, up to 161KB each), does the "same block as a
+  Civil Code mention" check still mean anything, or has it silently
+  degraded into the naive whole-document search this project explicitly
+  measured and rejected on 2026-09-24? Found 6 rows (events 6, 52, 53, 54,
+  86, 247, across 3 of those 13 whole-doc-block acts) where the matched
+  "Fuqarolik kodeks" mention read as a passing substantive reference
+  ("...Fuqarolik kodeksida nazarda tutilgan hollarda...") rather than a
+  real citation, sitting in the same giant block as the target article
+  number purely by document size. Treated this as a live false-positive
+  candidate, wrote and tested a stricter `re_civil_citation` regex
+  (requiring "qabul qilingan"/"tasdiqlangan" shortly before the mention —
+  the two bibliographic shapes every genuine Civil Code citation in this
+  corpus actually uses) in `build_links.py`, and ran it against a
+  throwaway copy: 4/478 rows moved from `date+cc-clause-match` to
+  `date+sole-law-cc-mention` (same `amending_doc_id` in every case), 2
+  (events 6 and 86) didn't change at all (the same giant block also
+  contains a second, legitimate Civil Code citation elsewhere, so the
+  looser check still passed), zero rows became unresolved. **Before
+  shipping that fix, checked why it had so little effect — and found the
+  actual reason the fix can't matter**: every single one of the 478
+  `date+cc-clause-match` rows has `host_article_number ==
+  target_article_number` (verified directly: 478/478, 0 exceptions).
+  This tier has never once been asked to pick a *target article* out of a
+  list — `target_article_number` is always just the Civil Code's own
+  article whose `amendment_note` is being parsed (LexUZ's own per-article
+  annotation, not something this pipeline infers). So the "coincidental
+  digit match" failure mode a block-splitting weakness could theoretically
+  cause — attributing the wrong ARTICLE to an act — is structurally
+  impossible for this tier today; the same-block check's only real job is
+  disambiguating *which document* a cited act number refers to, and for
+  all 6 candidate rows the document identity holds up independently (3 of
+  the 6 resolve to -7367697/OʻRQ-1025, already corroborated in the
+  2026-09-30 entry via its own genuine superscript-article insertions; the
+  restated text for event 6's Article 2 and event 86's Article 69 reads as
+  a plausible real conforming amendment on inspection, not a coincidence).
+  **Decision: did not ship the regex fix** — reverted it after confirming
+  it would only relabel 4 rows' `match_method` without changing any
+  resolved act, based on a premise (risk of misattributing the target
+  article) that the `host==target` invariant rules out; shipping an
+  unvalidated stricter regex against zero confirmed benefit risks a new,
+  real false-negative class instead (already had to patch the first draft
+  once for a legitimate "-dagi ... tasdiqlangan" citation phrasing it
+  missed). `git status` clean, `corpus.duckdb` untouched,
+  `verify_transfer.py` green, `pyflakes`/`vulture --min-confidence 60`
+  clean. **Net effect of today's session: a confirmed, no-bug result for
+  the project's single largest, most-relied-upon amendment-resolution
+  tier, reached by a materially more rigorous method (exhaustive
+  mechanical re-verification, not spot-checking) than any prior day used
+  on it** — closing this specific question, not leaving it active. Worth
+  recording for whoever next touches `target_articles()` in
+  `build_links.py`: if that function is ever extended to parse genuine
+  multi-article lists/ranges for `article_amendment` (today it can't —
+  see the `host==target` finding above, this is a known, intentional
+  simplification, not a bug), the same-block check would start actually
+  needing to discriminate between articles, not just acts, and the 13
+  whole-doc-block documents found today would become a real risk worth
+  revisiting then. Not re-opening without that trigger.
+
 - **Gold set: 300 -> 340 records, eighth signature-stratified batch
   2026-10-04; one new surface-form gap found ("§ N" section-mark notation),
   formalized as a known_gap rather than fixed; thread stays open.**
@@ -1861,6 +1932,25 @@ How to use this file each session:
   or breadcrumbs ever need to distinguish LLC-specific provisions from
   general commercial-organization ones within the General Part — not
   scoped or justified by today's single dead-constant finding alone.
+- **`date+cc-clause-match`'s same-block check degrades to a whole-document
+  search for 13/58 distinct amending acts.** Found and fully investigated
+  2026-10-08 (see Active threads for the full trace): `cc_blocks()` finds
+  zero top-level `"N-modda."` markers in 13 of the 58 documents this tier
+  resolves to (older Roman-numeral-structured omnibus acts, and modern
+  standalone laws whose own articles are referenced as "ushbu Qonunning
+  N-moddasi" rather than headed "N-modda."), so the whole document (up to
+  161KB) becomes one block. **Not a live bug today**: verified
+  `host_article_number == target_article_number` for all 478
+  `date+cc-clause-match` rows, so this tier never actually has to pick the
+  right ARTICLE out of a block — only the right ACT, which held up on
+  inspection for every candidate case checked. Only worth revisiting if
+  `target_articles()` in `build_links.py` is ever extended to parse a
+  genuine multi-article list/range for `article_amendment` (it can't
+  today) — at that point the same-block check would need real
+  article-level discrimination and these 13 documents would become a
+  measurable risk. Do not re-open this without that trigger; a regex fix
+  was prototyped, tested, and deliberately reverted today for lack of a
+  confirmed bug to justify it.
 
 ### Cleanup
 - ~~**Retire superseded prototypes.**~~ **Done 2026-09-07**: deleted
@@ -1975,6 +2065,120 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-10-08 — Data currency rotation: exhaustive independent precision audit of `date+cc-clause-match`, no bug found, one real invariant documented
+
+Container started with local `main` at `f9cd423` (2026-10-04's own commit,
+matching `origin/main` exactly — no stale-ref gap this time, unlike most
+prior sessions). Environment cold-start: `apt-get`-installed `git-lfs`,
+`git lfs pull` for the real parquet (confirmed 163,356,047 bytes, not the
+10KB LFS-pointer stub), `pip install duckdb pandas pyarrow streamlit
+pyflakes vulture bandit`.
+
+Rotation: Extractor had run 10-02 and 10-04 (two of the last three real
+sessions), Cleanup ran 10-03, Data currency last ran 09-30 — the clear
+next pull. Data currency's own backlog is in diminishing-returns
+territory on every open item per 09-30's own note, so today's work
+invented a new angle rather than re-running the same checks: instead of
+spot-checking a handful of `article_amendment` resolutions by hand (the
+pattern every prior Data-currency session used, typically 4-10 examples
+per new tier), built a throwaway, from-scratch re-implementation of
+`cc_blocks()`/`cc_clause_candidates()` and ran it against **all 478**
+`date+cc-clause-match` rows — the project's single largest, most-relied-
+upon amendment-resolution tier, never before audited at full scale for
+precision rather than recall.
+
+Two measurements: (1) every resolution is mechanically reproducible
+(478/478, 0 mismatches re-deriving the same logic independently) — the
+pipeline is deterministic, no reproducibility bug. (2) 13/58 distinct
+amending documents have zero top-level `"N-modda."` markers (older
+Roman-numeral-structured omnibus acts from the late 1990s/early 2000s,
+plus modern standalone laws — e.g. a bank-sanitation law, an agricultural-
+cooperative law — whose own articles are referenced internally as "ushbu
+Qonunning N-moddasi" rather than headed "N-modda."), so `cc_blocks()`'s
+fallback (`if not marks: blocks_by_doc[doc_id] = [text]`) treats the
+*entire* document, up to 161,011 characters, as one block. That looked
+like a live regression toward the naive whole-document search this
+project explicitly measured and rejected on 2026-09-24 (where an omnibus
+act's own sequential numbering coincidentally matched low target article
+numbers).
+
+Found 6 candidate rows (event_id 6, 52, 53, 54, 86, 247, spanning 3 of the
+13 whole-doc-block documents) where the matched "Fuqarolik kodeks" mention
+read as a passing substantive reference rather than a real citation —
+e.g. event 6's "Bajarilishi Oʻzbekiston Respublikasi Fuqarolik kodeksining
+259-moddasida nazarda tutilgan usullarda taʼminlanadigan majburiyatlar..."
+sits deep inside a bank-sanitation law discussing what secures an
+obligation, nowhere near a real "the Civil Code is hereby amended" clause.
+Wrote and tested a stricter regex, `re_civil_citation = re.compile(r"(?:
+qabul qilingan|tasdiqlangan).{0,130}?fuqarolik kodeks", ...)` — the two
+bibliographic shapes every genuine Civil Code citation in this corpus
+actually uses ("...1995/1996 **qabul qilingan** ... Fuqarolik kodeksi
+(gazette locators)..." or "...-dagi ... Qonunlari bilan **tasdiqlangan**
+... Fuqarolik kodeksi...") — and swapped it into `cc_clause_candidates`'s
+guard in `build_links.py`. Tested against a throwaway copy of
+`corpus.duckdb` (never the committed one) before deciding anything:
+4/478 rows (52, 53, 54, 247) moved from `date+cc-clause-match` to
+`date+sole-law-cc-mention`, landing on the *same* `amending_doc_id` in
+every case (-7367697); events 6 and 86 didn't move at all, because the
+same giant block also contains a second, separate, legitimate Civil Code
+citation elsewhere that still satisfies the stricter check. Zero rows
+became unresolved; `score_gold.py` unaffected (this tier doesn't touch
+`citation_extractor.py`).
+
+That near-zero effect is what led to the real finding: before shipping a
+fix whose only measurable effect is relabeling 4 rows, checked *why* it
+could only ever do that much — and found that **every single one of the
+478 `date+cc-clause-match` rows has `host_article_number ==
+target_article_number`** (verified directly against the live
+`article_amendment` table: 478/478, 0 exceptions). This tier is only ever
+asked to parse the Civil Code's *own* per-article `amendment_note` field —
+`target_article_number` is always just the host article itself, LexUZ's
+own authoritative annotation, never something this pipeline infers from a
+list or range (`target_articles()`'s list/range-expansion machinery,
+built 2026-09-13, has simply never had a case to apply inside this
+specific tier). So the failure mode a weak same-block check could
+theoretically cause — crediting an act with amending the *wrong article*
+— is structurally impossible here today: the article is never in doubt,
+only the identity of the cited act, which is a much narrower and already
+better-defended question. Re-read the 6 candidate rows with that framing
+and all 6 hold up: 4 resolve to -7367697/OʻRQ-1025, already independently
+corroborated in the 2026-09-30 entry via its own genuine superscript-
+article insertions (articles 181, 358-1, 962-1); event 6's restated text
+for Article 2 ("...shuningdek banklarni sanatsiya qilish va tugatish
+bilan bogʻliq munosabatlarga nisbatan fuqarolik qonunchiligi...") reads
+as exactly the conforming scope-extension a bank-sanitation law would add
+to the Civil Code's own scope article, not a coincidence; event 86's
+Article 69 addition (a joint agricultural-cooperative organizational form)
+is equally plausible as a real amendment from an agricultural-cooperative
+law.
+
+**Decision: reverted the regex change** (`git checkout -- build_links.py`,
+confirmed clean via `git status`) rather than ship it. It has no
+confirmed bug to justify it — the premise (risk of misattributing the
+target article) doesn't hold given the `host==target` invariant — and
+shipping an unvalidated stricter pattern carries real downside: the first
+draft (`qabul qilingan` only) already had to be widened once after it
+false-flagged two genuinely correct resolutions that use the "-dagi ...
+tasdiqlangan" phrasing instead, and there is no guarantee a third,
+unseen phrasing isn't still out there waiting to cause a real false
+negative on some future gold batch or corpus update. `corpus.duckdb` is
+therefore byte-identical to yesterday; no rebuild of any kind was done or
+needed. `verify_transfer.py`: all checks green, identical INFO-line
+numbers to 10-04. `pyflakes *.py` / `vulture *.py --min-confidence 60`
+both clean (nothing shipped, so nothing new to check, but re-ran both to
+confirm the revert left no stray residue). Did not re-run
+`check_sql_bindings.py`/`bandit`/`test_transfer_e2e.py` — no file in
+their scope changed from the committed state.
+
+**This is a deliberate negative result, not a non-finding**: the project
+now has direct, exhaustive (not sampled) confirmation that its largest
+amendment-resolution tier's core mechanism — one article number is never
+in competition with another inside this tier's block-matching, ever — is
+sound, reached by building new, reusable-in-spirit verification logic
+rather than repeating the existing spot-check pattern. See Backlog for
+the one real condition (an extension to `target_articles()`) that would
+make the 13 whole-doc-block documents worth measuring again.
 
 ### 2026-10-04 — Extractor rotation: eighth gold batch, found and formalized a new "§ N" section-mark gap, 300 -> 340 records
 
