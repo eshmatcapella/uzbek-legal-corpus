@@ -22,6 +22,66 @@ How to use this file each session:
 
 ## Active threads
 
+- **Cleanup: a sixth repeatable check, `check_code_clones.py` — built and
+  closed 2026-10-09, no live drift bug found.** Container started in
+  detached HEAD one commit ahead of the local `main` ref (at 68b8bd7,
+  2026-10-08's own commit) — recovered first: `git checkout main && git
+  merge --ff-only 68b8bd7`, then confirmed `origin/main` already had it
+  (the push had actually succeeded; only the local branch pointer in this
+  checkout was stale, likely an artifact of how this environment seeds a
+  detached checkout). No data lost, but noting it here in case the same
+  stale-pointer pattern shows up again. Rotation: Cleanup last ran
+  2026-10-03 (the oldest of the three areas — Extractor 10-04, Data
+  currency 10-08), so today's pull. Re-ran all five existing checks first
+  (`pyflakes`, `vulture --min-confidence 60`, `execute(f"` grep,
+  `bandit -r . -x ./articles,./documents,./okoz,./structure`,
+  `check_sql_bindings.py`) — all clean/unchanged from their last-known
+  state (61 bandit issues, same B608/B311 classes as 2026-10-01, no new
+  B110; 106/106 SQL bindings clean). Per the 2026-10-03 note ("next
+  rotation should re-run all five before deciding whether a sixth is worth
+  adding"), invented a new angle: a cross-file **code-clone-drift**
+  detector. None of the five existing tools catch the bug class this
+  project is structurally exposed to — the same helper logic hand-copied
+  into several scripts (the `alias_docs` query and `_anchors()`/`extract()`
+  call pattern alone appear in 5 files: `build_gold_sample.py`,
+  `build_gold_sample_novel.py`, `build_links.py`,
+  `measure_extractor_recall.py`, `score_gold.py`) where a later fix lands
+  in one copy and never reaches the others. Built `check_code_clones.py`:
+  AST-parses every function (>=4 body lines) in every `*.py` file, diffs
+  every cross-file pair's source text with `difflib.SequenceMatcher`, flags
+  pairs at similarity >= 0.55. Tried a second, SQL-block-level variant
+  first (diffing text inside `execute()`'s triple-quoted SQL directly,
+  rather than whole function bodies) — rejected it: 83 SQL blocks, 54
+  cross-file pairs >= 0.5, almost all coincidental overlap from shared
+  `SELECT ... FROM norm_unit WHERE ...` vocabulary between genuinely
+  unrelated queries, not real duplication. The whole-function version is
+  precise: 91 functions, exactly 4 cross-file pairs >= 0.55, zero noise.
+  Hand-verified all 4: (1) `sha256_file()` in `build_corpus_db.py` and
+  `verify_transfer.py`, byte-identical, fine; (2) `excerpt()` in
+  `app_hierarchy.py`/`app_llc.py`, 0.930 — logic byte-identical, only the
+  docstring wording differs, fine; (3) `citation_dict()`
+  (`build_gold_sample.py`) vs `citation_to_dict()` (`score_gold.py`), 0.795
+  — deliberately different by design: the former serializes `anchor`/
+  `evidence` for a human annotator to read, the latter deliberately omits
+  them from the scoring signature per `score_gold.py`'s own docstring
+  (two logically-equivalent citations found via different anchors should
+  still score as a match), not drift; (4) `build_gold_sample.py:main()` vs
+  `build_gold_sample_novel.py:build_candidates()`, 0.672 — the uniform and
+  signature-stratified samplers' shared candidate-window-generation logic,
+  confirmed byte-identical on the parts that matter (the `alias_docs`/
+  `rows` queries, already independently confirmed byte-identical across
+  all 5 files containing them) with the stratification/output logic
+  differing on purpose. **No drift bug found** — but adopted the tool
+  anyway as a sixth repeatable check: it's cheap (<1s), precise on this
+  codebase (0 false positives above 0.55), and the bug class it targets is
+  real and specific to how this project is built (duplicated helper logic
+  by design, not by accident), something none of the other five tools can
+  see. `verify_transfer.py` green, `python -m unittest
+  test_transfer_e2e.py` 14/14, both apps HTTP 200 with no exceptions
+  logged (schema untouched — this change touches no table/view).
+  `corpus.duckdb` untouched. Thread closed; next Cleanup rotation should
+  re-run all six.
+
 - **Data currency: independent precision audit of `date+cc-clause-match`
   (478/612 amending-act resolutions) 2026-10-08 — closed as a negative
   result, no bug, but a real architectural fact newly documented.**
@@ -2061,10 +2121,134 @@ How to use this file each session:
   "used" string, with no injection shape. See Active threads and Log for the
   full measurement and the build-script-exclusion reasoning. Now a fifth
   repeatable Cleanup check; next rotation should re-run all five.
+- ~~**A sixth check: something that catches drift between hand-duplicated
+  copies of the same helper logic.**~~ **Added 2026-10-09**:
+  `check_code_clones.py` — AST-diffs every function (>=4 body lines) across
+  every `*.py` file pairwise with `difflib.SequenceMatcher`, flagging
+  cross-file pairs at similarity >= 0.55. 91 functions, 4 flagged pairs, 0
+  live bugs (all 4 hand-verified as either byte-identical-and-consistent or
+  intentionally-different-by-design — see Active threads/Log for the full
+  trace). A SQL-block-level variant was tried first and rejected as too
+  noisy (54 false-positive-heavy pairs from shared SQL vocabulary). Now a
+  sixth repeatable Cleanup check; next rotation should re-run all six.
 
 ---
 
 ## Log
+
+### 2026-10-09 — Cleanup rotation: built and adopted a sixth check, `check_code_clones.py` (cross-file duplicate-logic drift), no live bug found
+
+Container started with `HEAD` detached one commit ahead of the local `main`
+branch ref — at `68b8bd7`, 2026-10-08's own "Data currency" closing commit.
+Checked whether this meant lost/unpushed work: `git fetch origin main`
+showed `origin/main` was already at `68b8bd7`, so the push had in fact
+succeeded; only this checkout's local `main` pointer was stale (pointing at
+the previous commit, `f9cd423`) while `HEAD` sat on the real tip, detached.
+Recovered cleanly with `git checkout main && git merge --ff-only 68b8bd7`
+(fast-forward, no conflict, confirmed identical to `origin/main` after).
+No work was at risk, but recording the pattern here in case a future
+session sees the same detached-HEAD-ahead-of-main shape and needs to tell
+"stale local pointer, already pushed" apart from "uncommitted/unpushed work
+from a session that got cut off" quickly.
+
+Rotation: Cleanup last ran 2026-10-03, the oldest of the three focus areas
+(Extractor 10-04, Data currency 10-08 after today's recovery) — clear next
+pull, and no thread was genuinely mid-flight (the Extractor "gold set"
+thread's own 2026-10-04 entry decided *not* to fix its one open gap, same
+single-occurrence precedent as prior gaps, so it's a standing recurring
+bucket to pick up on Extractor's next turn, not a blocked mid-step task).
+
+Re-ran all five existing checks before deciding whether to touch anything:
+`pyflakes *.py` (clean), `vulture *.py --min-confidence 60` (clean),
+`grep -n 'execute(f"' *.py` (same 33 call sites as the 2026-09-26 audit,
+all previously confirmed to bind via parameterized `UNNEST`/safe hardcoded
+interpolation, no new offender), `bandit -r . -x ./articles,./documents,
+./okoz,./structure` (61 issues: 57 B608 + 3 B311 + 1 B110, same classes and
+same count as 2026-10-01 — no new B110 this time), `check_sql_bindings.py`
+(106/106 literal queries bind cleanly against the live schema, same as
+2026-10-03). All five confirm clean/unchanged.
+
+Per the 2026-10-03 entry's own note ("next rotation should re-run all five
+before deciding whether a sixth is worth adding"), looked for a genuinely
+new angle rather than stopping at re-confirmation. None of the five
+existing tools check for *cross-file duplicate-logic drift* — and this
+project has real exposure to exactly that: `alias_docs` (the FK-abbreviation
+doc-id query) and the `_anchors()`/`extract()` call pattern are hand-copied,
+by design, into five different scripts (`build_gold_sample.py`,
+`build_gold_sample_novel.py`, `build_links.py`,
+`measure_extractor_recall.py`, `score_gold.py`). A fix landing in one copy
+and never reaching the others would be invisible to pyflakes (valid
+Python), vulture (all copies are "used"), the f-string grep (none of these
+are f-string SQL — already parameterized or safe), bandit (not a security
+pattern) and check_sql_bindings.py (each copy's query still binds fine
+against the schema on its own, binding doesn't prove two copies agree).
+
+Built `check_code_clones.py`: AST-parses every function (>=4 body lines,
+skip trivial getters) in every `*.py` file, diffs every cross-file pair's
+source text with `difflib.SequenceMatcher`, reports pairs at similarity
+>= 0.55. Tried a SQL-block-level variant first (diff text inside
+`execute()`'s triple-quoted SQL strings directly, rather than whole
+function bodies) on the theory that it would catch *partial* duplication
+inside otherwise-different functions that whole-function diffing might
+miss: 83 SQL blocks across 10 files, 54 cross-file pairs >= 0.5 similarity
+— but manually spot-checking the pairs showed almost all were coincidental
+overlap from shared SQL vocabulary (`SELECT ... FROM norm_unit WHERE ...`)
+between queries with nothing actually in common, not real duplication.
+Rejected that variant as too noisy to be a repeatable check. The
+whole-function version is precise: 91 functions parsed across 17 files,
+exactly 4 cross-file pairs >= 0.55, 0 further noise.
+
+Hand-verified all 4 flagged pairs against the actual source (not just the
+diff ratio):
+1. `sha256_file()` in `build_corpus_db.py` and `verify_transfer.py` — ratio
+   1.000, byte-identical. Fine (this is the intended invariant: both must
+   hash the same way or the parquet-integrity check means nothing).
+2. `excerpt()` in `app_hierarchy.py`/`app_llc.py` — ratio 0.930. Full-text
+   diff shows the logic is byte-identical; only the one-line docstring's
+   wording differs ("Paragraph-sized window into an act stored as a single
+   block" vs "...of a whole-act blob around the citation"). No behavior
+   drift.
+3. `citation_dict()` (`build_gold_sample.py`) vs `citation_to_dict()`
+   (`score_gold.py`) — ratio 0.795. The former includes `anchor` and
+   `evidence` fields (serializing extra context for a human annotator to
+   read in `gold_sample.json`); the latter deliberately omits them when
+   building the per-citation signature used for scoring, per
+   `score_gold.py`'s own docstring reasoning: two logically-equivalent
+   citations found via different anchor kinds should still score as a
+   match, so the anchor/evidence metadata is correctly excluded from the
+   comparison key. Documented, intentional difference, not drift.
+4. `build_gold_sample.py:main()` vs
+   `build_gold_sample_novel.py:build_candidates()` — ratio 0.672. These are
+   the uniform-random and signature-stratified samplers' shared
+   candidate-window-generation logic (deliberately duplicated — see
+   `build_gold_sample_novel.py`'s own docstring on why it's a separate
+   script rather than a shared import). The parts that must agree (the
+   `alias_docs` and `rows` SQL, independently confirmed byte-identical
+   across all 5 files that define them — checked directly, not just via
+   the ratio) are unchanged; the similarity score difference is entirely
+   the stratification/output logic the two scripts intentionally differ on.
+
+**No live drift bug found** in any of the 4 candidates — a clean bill of
+health for the specific duplication this project carries today. Adopted
+`check_code_clones.py` as a sixth repeatable Cleanup check anyway: it runs
+in under a second, is precise on this codebase (0 false positives above its
+threshold once the noisy SQL-block variant was rejected), and targets a
+real, project-specific bug class (by-design duplicated helper logic across
+the gold-sampling/scoring/measurement scripts) that none of the other five
+tools can see by construction.
+
+Validation before committing: `python verify_transfer.py` green (all AC1-7
+checks pass, same reconciliation residual as every prior session —
+`corpus.duckdb` untouched, this change touches no table/view); `python -m
+unittest test_transfer_e2e.py` 14/14; `pyflakes`/`vulture --min-confidence
+60`/`bandit`/`check_sql_bindings.py` all re-confirmed clean on the new file
+itself too; both `app_hierarchy.py` and `app_llc.py` smoke-tested live
+(HTTP 200 on both ports, no exceptions in server logs — expected, since
+nothing schema-level changed). Net effect: a clean, well-scoped new
+cleanup tool added to the toolchain, no regression, no bug to fix today —
+closing this rotation's thread rather than leaving it open; next Cleanup
+rotation should re-run all six checks before deciding whether a seventh is
+worth adding.
 
 ### 2026-10-08 — Data currency rotation: exhaustive independent precision audit of `date+cc-clause-match`, no bug found, one real invariant documented
 
