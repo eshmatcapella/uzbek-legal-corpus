@@ -22,6 +22,68 @@ How to use this file each session:
 
 ## Active threads
 
+- **Gold set: 340 -> 380 records, ninth signature-stratified batch
+  2026-10-10; two new bugs found (a dropped-article typo and an
+  under-measured existing gap class widened), one old backlog item
+  finally formalized; thread stays open.** Rotated to Extractor (oldest
+  of the three areas: last touched 2026-10-04 vs Data currency 2026-10-08
+  and Cleanup 2026-10-09). Container started in detached HEAD, 2 commits
+  ahead of the local `main`/`origin/main` refs as seen by this checkout
+  (at 7b9d503, 2026-10-09's own commit) — recovered the same way the
+  2026-10-09 session documented: `git fetch origin main` (confirmed
+  origin was already current, this checkout's remote-tracking ref was
+  just stale) then `git checkout main && git merge --ff-only`. Drew batch
+  9 (`build_gold_sample_novel.py --seed 20261010 --n 40`, novelty coverage
+  298/451 signatures before drawing), hand-read all 40 against the raw
+  parquet text and the live `extract()` output. 37/40 verdict `correct`
+  (several nice confirmations that complex multi-act, multi-list windows
+  are handled right — e.g. gold_id 351/356/360/374 each correctly stop a
+  Civil Code list before a second or third different act's own number run
+  bleeds in). 3/40 real findings: (1) **gold_id 370** (row 38339): LexUZ
+  typo "Fuqarolik kodeksining 43-moddsi." (missing the 'a' in "moddasi")
+  — `RE_CLAUSE` doesn't recognize "moddsi" as any unit word at all, so the
+  whole clause falls through to a bare-act citation and Article 43 is
+  dropped entirely; confirmed corpus-wide this exact typo touches the
+  Civil Code exactly once (3 other occurrences of the same typo target
+  different, out-of-scope acts). (2) **gold_id 379** (row 42229): "Fuqarolik
+  kodeksining 14, 15, 324 — 339, 985, 989 va 990, Oʻzbekiston
+  Respublikasining "..."gi Qonunining 38-moddasiga..." — a 21-article list
+  (the 324—339 range alone is 16 articles) loses its unit word entirely to
+  a *different Qonun's* own clause that follows, the identical failure
+  mechanism as the existing 2026-09-28 known_gap (gold_id 194-196, "bare
+  article number before an interposed different code's own name") but a
+  case that measurement's own search regex missed, because it only looked
+  for an interposing *kodeks*, not a *Qonun*. Built a wider, general
+  measurement today (any CC anchor whose `extract()` falls back to a bare
+  act/chapter despite a genuine 2+-digit list sitting right after the
+  anchor with no modda/bob/paragraf/qism/band/boʻlim word ever attaching
+  to it) and confirmed this is the only additional in-scope occurrence —
+  true corpus-wide count for that whole failure class corrected from 5/3
+  rows to 6/4 rows (Backlog updated). (3) **gold_id 341** (row 42566):
+  re-independently drew the exact row the 2026-09-15 session already found
+  and described ("Chapter+paragraph's own space-separator gap" — "22-
+  bobining 2 paragrafi" loses its section grain because the lookahead
+  regex requires a hyphen) but had left as prose-only backlog text with no
+  gold record for five weeks; formalized it as the permanent regression
+  check it should always have been. None of the three fixed — all three
+  stay single-occurrence (or, for gold_id 379, single-row) given the same
+  cross-clause-inference/typo-tolerance risk already weighed and rejected
+  for their respective sibling gaps — but all three are now honest,
+  permanent `known_gap` records instead of silent gaps or stale prose.
+  **Combined score after merging**: precision 1608/1619 (99.3%), recall
+  1608/1642 (97.9%) on 380 windows (down from 99.5%/99.3% on 340 — the
+  drop is arithmetic, not regression: gold_id 379 alone adds 21 honest
+  misses in one record, more than any previous single finding).
+  `verify_transfer.py` green (no pipeline code touched — `gold_citations.json`
+  is read only by `score_gold.py`/`build_gold_sample_novel.py`, never by any
+  `build_*.py` script); `python -m unittest test_transfer_e2e.py` 14/14;
+  both apps smoke-tested live (HTTP 200, no exceptions in server logs).
+  **New signature coverage: 337/451** (up from 298/451), 1142/3251
+  candidate windows still sit in never-annotated territory. Thread stays
+  open — next Extractor rotation should keep drawing fresh
+  `build_gold_sample_novel.py` batches; today's ~1 real finding per ~13
+  windows (3/40) is still well above the "diminishing returns" bar this
+  project has used to justify switching sampling strategy before.
 - **Cleanup: a sixth repeatable check, `check_code_clones.py` — built and
   closed 2026-10-09, no live drift bug found.** Container started in
   detached HEAD one commit ahead of the local `main` ref (at 68b8bd7,
@@ -1532,28 +1594,30 @@ How to use this file each session:
   records 2026-09-22, to 140 via signature-stratified sampling 2026-09-25,
   to 220 via two more signature-stratified batches 2026-09-28, to 260 via
   a third 2026-09-29, to 300 via a fourth 2026-10-02, to 340 via a fifth
-  2026-10-04** — see Active threads and Log for the full detail.
-  `gold_citations.json` (340 hand-verified anchor occurrences, eight
-  batches — two uniform-random, six signature-stratified) + `score_gold.py`
-  (the scorer) + `build_gold_sample.py`/`build_gold_sample_novel.py` (the
-  two samplers) now exist; current score **precision 1481/1489 (99.5%),
-  recall 1481/1492 (99.3%)** — the mismatches are the documented "paragrif"
-  spelling gap, the 2026-09-25 Roman-chapter+paragraf gap, the 2026-09-28
-  "hamda" list-separator gap, the 2026-09-28 chapter+paragraph-list-with-
-  parenthetical gap, the 2026-09-28 "bare article number before an
-  interposed different code name" gap, and the 2026-10-04 "§ N"
-  section-mark-notation gap (see below), each recorded with its true
-  expected output rather than silently marked correct. Not closed
-  outright — 340 windows is still a small fraction of the 3251 real
-  candidate windows corpus-wide (298/451 distinct window *signatures*
-  covered as of 2026-10-04, up from 98/451 after 2026-09-28's first batch
-  — see Active threads). **Next step, whenever Extractor rotation comes up
-  again**: run `build_gold_sample_novel.py` again (not
-  `build_gold_sample.py` — see below for why) with a fresh `--n`/`--seed`,
-  hand-annotate the batch, and merge into `gold_citations.json` — or add a
-  targeted record for any new bug a hypothesis-driven session finds, so
-  fixes become permanent regression checks instead of one-time. What
-  changed getting here: `build_gold_sample.py` (2026-09-15) built the
+  2026-10-04, to 380 via a sixth 2026-10-10** — see Active threads and Log
+  for the full detail. `gold_citations.json` (380 hand-verified anchor
+  occurrences, nine batches — two uniform-random, seven signature-
+  stratified) + `score_gold.py` (the scorer) + `build_gold_sample.py`/
+  `build_gold_sample_novel.py` (the two samplers) now exist; current score
+  **precision 1608/1619 (99.3%), recall 1608/1642 (97.9%)** — the
+  mismatches are the documented "paragrif" spelling gap, the 2026-09-25
+  Roman-chapter+paragraf gap, the 2026-09-28 "hamda" list-separator gap,
+  the 2026-09-28 chapter+paragraph-list-with-parenthetical gap, the
+  2026-09-28/2026-10-10 "bare article number before an interposed
+  different act name" gap (now 4 rows, up from 3), the 2026-10-04 "§ N"
+  section-mark-notation gap, the 2026-10-10 chapter+paragraph space-
+  separator gap (formalized, not new), and the 2026-10-10 "moddsi" typo gap
+  (see below), each recorded with its true expected output rather than
+  silently marked correct. Not closed outright — 380 windows is still a
+  small fraction of the 3251 real candidate windows corpus-wide (337/451
+  distinct window *signatures* covered as of 2026-10-10, up from 298/451
+  after 2026-10-04's batch — see Active threads). **Next step, whenever
+  Extractor rotation comes up again**: run `build_gold_sample_novel.py`
+  again (not `build_gold_sample.py` — see below for why) with a fresh
+  `--n`/`--seed`, hand-annotate the batch, and merge into
+  `gold_citations.json` — or add a targeted record for any new bug a
+  hypothesis-driven session finds, so fixes become permanent regression
+  checks instead of one-time. What changed getting here: `build_gold_sample.py` (2026-09-15) built the
   reusable, seeded, stratified sampler over real anchor windows (half
   `extract()`-produced-a-citation, half empty); 2026-09-17's sample found a
   false alarm — a citation that looked like a recall miss in one anchor's
@@ -1636,6 +1700,24 @@ How to use this file each session:
   as a permanent `gold_citations.json` known_gap record (`gold_id` 324)
   instead. If ever picked up, accept `§\s*(\d+)` as an alternate spelling
   alongside `\d+\s*-\s*paragraf` in the chapter+section lookahead.
+- **LexUZ typo drops an article entirely: "moddsi" instead of "moddasi".**
+  Found 2026-10-10 via the ninth signature-stratified gold batch (see Log):
+  row 38339 reads "Fuqarolik kodeksining 43-moddsi." — a source-data typo
+  (missing the 'a' in "moddasi") that `RE_CLAUSE`'s unit-word match doesn't
+  recognize at all, so the whole clause falls through to the bare-act
+  fallback and Civil Code Article 43 is dropped entirely — a genuine recall
+  miss, not a grain loss. Measured corpus-wide: this exact typo string also
+  appears 3 more times in the corpus, but always against a different act
+  (Mehnat kodeksi, "mazkur Qonun") entirely out of this extractor's anchor
+  scope — so the real in-scope footprint is exactly 1 occurrence. Not
+  fixed given the single-occurrence scope, same precedent as the
+  "paragrif" misspelling gap; recorded as a permanent `gold_citations.json`
+  known_gap record instead (`gold_id` 370). If ever picked up broadly:
+  tolerate a missing vowel in "modda"'s suffix the same way "paragraf"/
+  "paragrif" could be unified, e.g. `modd a?si|moddalari` or a small
+  edit-distance check — but given it's the same 1-occurrence-of-a-typo
+  shape as "paragrif", probably not worth the risk of over-matching until
+  more instances appear.
 - **`RE_STOP`'s `break`-vs-`continue` design.** Once a stop-word is found in
   the gap before a clause, `extract()` abandons the *rest* of that anchor's
   window, not just the one stopped clause — a deliberate, conservative
@@ -1750,7 +1832,22 @@ How to use this file each session:
   grammar pattern. Not fixed today given the narrow, single-target,
   cross-clause-inference scope; formalized as three permanent
   `gold_citations.json` known_gap records instead (`gold_id` 194-196, one
-  per anchor occurrence in row 37948).
+  per anchor occurrence in row 37948). **Corrected 2026-10-10**: that
+  corpus-wide count was itself incomplete — the regex only looked for an
+  interposing *kodeks* (code), missing the *Qonun* (law) variant. A wider
+  measurement (any CC anchor whose `extract()` falls back to a bare
+  act/chapter despite a genuine 2+-digit list sitting right after the
+  anchor with no modda/bob/paragraf/qism/band/boʻlim word ever attaching to
+  it) found exactly 1 more occurrence: row 42229, "Fuqarolik kodeksining 14,
+  15, 324 — 339, 985, 989 va 990, Oʻzbekiston Respublikasining
+  "Tadbirkorlik..."gi Qonunining 38-moddasiga..." — the SAME failure
+  mechanism, but losing 21 articles in one shot (not 1), immediately before
+  a Qonun rather than a kodeks. True corpus-wide count for this failure
+  class: 6 occurrences / 4 rows, not 5/3. Formalized as a fourth
+  `gold_citations.json` known_gap record (`gold_id` 379). Still not fixed —
+  same cross-clause-inference risk as before — but if this is ever picked
+  up, the fix needs to treat "a different act's own name" generically
+  (kodeks/Qonun/Nizom/Farmon/Qaror), not just kodeks.
 - **"hamda" not recognized as a list conjunction, only "va".** Found
   2026-09-15 while fixing the space-separator gap (see Log): row 24219 reads
   "Fuqarolik kodeksining 11-12 hamda 14 moddalari" — `_expand`'s top-level
@@ -1794,7 +1891,11 @@ How to use this file each session:
   precision refinement, not a recall gap. Confirmed corpus-wide this is
   exactly 1 occurrence today; left alone given the single-occurrence scope,
   worth revisiting alongside the chapter+paragraph-list gap above if a
-  corpus update adds more.
+  corpus update adds more. **Formalized 2026-10-10**: the signature-
+  stratified sampler independently re-drew this exact row (`gold_id` 341) —
+  merged as a permanent `gold_citations.json` known_gap record (this
+  backlog note alone was never a regression check until now). Re-confirmed
+  still exactly 1 occurrence corpus-wide.
 - **Qism range collapses to its last ordinal only.** Found 2026-09-15 (see
   Log): "FK 154-moddasining ikkinchi — toʻrtinchi qismlarida" (parts two
   through four) — `RE_QISM`'s tail search only matches one ordinal
@@ -2135,6 +2236,123 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-10-10 — Extractor rotation: ninth gold batch, 340 -> 380 records, two new bugs found (dropped-article typo, widened an existing gap class), one stale backlog note finally formalized
+
+Container started in detached `HEAD`, 2 commits ahead of the local
+`main`/`origin/main` refs as this checkout initially saw them (at
+`7b9d503`, 2026-10-09's own closing commit) — same stale-remote-tracking-
+pointer pattern the 2026-10-09 entry flagged as "might show up again."
+`git fetch origin main` confirmed `origin/main` was genuinely already at
+`7b9d503` (nothing lost, the push from yesterday had succeeded); this
+checkout's local `main` ref was just never advanced. Fixed with
+`git checkout main && git merge --ff-only 7b9d503`, then proceeded.
+Installed the project's Python dependencies (`duckdb`, `pandas`, `pyarrow`,
+`streamlit`, `pyflakes`, `vulture`, `bandit` — this is a fresh container
+with none of them present) and ran `git lfs pull` to materialize
+`articles/train-00000-of-00001.parquet` (was a 134-byte LFS pointer stub).
+`verify_transfer.py` confirmed green before touching anything.
+
+Rotation: Extractor last touched 2026-10-04 (6 days ago), the oldest of
+the three focus areas (Data currency 2026-10-08, Cleanup 2026-10-09), so
+picked it per the brief's own rotation guidance, continuing the still-open
+gold-set thread rather than inventing a new angle.
+
+Drew a fresh batch via `build_gold_sample_novel.py --seed 20261010 --n 40`
+(novelty coverage 298/451 signatures, 1179/3251 candidate windows in
+never-annotated territory before drawing — both numbers unchanged from
+2026-10-04, confirming the corpus itself hasn't moved). Hand-read all 40
+windows against the raw parquet text (`article_text`/`cross_references`/
+`amendment_note` via a direct DuckDB query) and the live `extract()`
+output, window by window.
+
+**37/40 verdict `correct`.** Several are worth noting as real stress tests
+that passed: a self_reference list correctly stopping before THREE
+different codes named in sequence afterward (Oila kodeksi, Uy-joy kodeksi,
+Havo kodeksi, each with its own number run — gold_id 351), two separate
+range-then-list correctly stopping before a different code's own citation
+(gold_id 356, 360), and a window correctly producing both an article-list
+AND a separate chapter citation from one anchor run (gold_id 374). One
+window (gold_id 348, formerly local id 8) re-hits the already-known
+qism/band-collapse limitation in an unusually dense form (two articles in
+one window each losing a qism to the "keep only the last ordinal"
+behavior) — scored `correct` per existing precedent (qism isn't
+load-bearing), just noted.
+
+**3/40 real findings, all investigated and measured corpus-wide before
+deciding not to fix:**
+
+1. **gold_id 370** (row 38339): a LexUZ typo, "Fuqarolik kodeksining
+   43-moddsi." — missing the "a" in "moddasi". `RE_CLAUSE`'s unit-word
+   match doesn't recognize "moddsi" as any unit word at all, so the whole
+   clause falls through to the bare-act fallback, dropping Civil Code
+   Article 43 entirely — a genuine recall miss caused by a source-data
+   typo, not a grammar gap. Measured corpus-wide: the identical typo
+   string appears 3 more times, but always against a different act (Mehnat
+   kodeksi, "mazkur Qonun") entirely outside this extractor's anchor scope
+   — so the real in-scope footprint is exactly 1 occurrence, same shape as
+   the existing "paragrif" misspelling known_gap. Not fixed given the
+   single-occurrence scope; recorded as a permanent known_gap record.
+
+2. **gold_id 379** (row 42229): "Fuqarolik kodeksining 14, 15, 324 — 339,
+   985, 989 va 990, Oʻzbekiston Respublikasining "Tadbirkorlik faoliyati
+   erkinligining kafolatlari toʻgʻrisida"gi Qonunining 38-moddasiga..." —
+   the Civil Code's own list (expanding the 324—339 range: 16 articles, 21
+   total) has no unit word anywhere; the sentence moves straight from
+   "990," into a different Qonun's own "38-moddasiga". This is the
+   identical failure mechanism as the existing 2026-09-28 known_gap
+   (gold_id 194-196: a bare number loses its unit word to a different
+   act's own later clause) — but that session's corpus-wide measurement
+   regex only searched for an interposing *kodeks* name and reported 5
+   occurrences across 3 rows, all resolving to the same target (Article
+   38). Built a wider, general measurement today
+   (`/tmp/.../measure_bare_list.py`, not committed — a throwaway script):
+   scan every CC anchor window, and flag any where `extract()` produced no
+   article/chapter/section/part citation at all despite a genuine
+   2+-digit list sitting right after the anchor with no
+   modda/bob/paragraf/qism/band/boʻlim word ever attaching to it (checked
+   both inside the matched digit run and in the ~20 chars immediately
+   after it, to avoid false positives from legitimate multi-chapter lists
+   like "22, 24, 57-boblari" which the extractor already handles
+   correctly — an early version of this script wrongly flagged 9 such
+   cases before that tail-check fix). Found exactly 1 more in-scope
+   occurrence: this row, the *Qonun* variant of the same bug, missed by
+   the kodeks-only regex, and a much bigger single-row loss (21 articles,
+   not 1). **Corrected the 2026-09-28 backlog note's corpus-wide count
+   from 5 occurrences/3 rows to 6 occurrences/4 rows** for this whole
+   failure class. Not fixed — same cross-clause-inference risk already
+   weighed and rejected for the sibling gap (inferring that a bare
+   number's unit word lives in a different act's own later clause isn't
+   safe to generalize past this narrow, repeatedly-recurring shape) — but
+   recorded as a known_gap record and the Backlog item corrected.
+
+3. **gold_id 341** (row 42566): the sampler independently re-drew the
+   exact row the 2026-09-15 session already found and described in prose
+   ("Chapter+paragraph's own space-separator gap" — "Fuqarolik kodeksi
+   22-bobining 2 paragrafi", space instead of hyphen before "paragrafi",
+   loses the section-2 grain because the chapter+section lookahead's own
+   regex requires a hyphen) but never turned into a gold record across the
+   five weeks since — it sat as backlog prose only. Re-confirmed corpus-
+   wide still exactly 1 occurrence; formalized as the permanent
+   `known_gap` regression record it should have had from the start.
+
+**Combined score after merging**: precision 1608/1619 (99.3%), recall
+1608/1642 (97.9%) on 380 windows, down from 1481/1489 (99.5%) / 1481/1492
+(99.3%) on 340 — the drop is arithmetic, not a regression: gold_id 379
+alone contributes 21 honest new misses in a single record, more than any
+previous individual finding, plus 2 more small ones and 37 confirmed-
+correct windows. `verify_transfer.py` green (`gold_citations.json` is read
+only by `score_gold.py`/`build_gold_sample_novel.py`, never by any
+`build_*.py` pipeline script, so no rebuild needed); `python -m unittest
+test_transfer_e2e.py` 14/14; both Streamlit apps smoke-tested live (HTTP
+200, no exceptions in server logs — no schema touched, this session only
+edited `gold_citations.json` and this file). **New signature coverage:
+337/451** (up from 298/451), 1142/3251 candidate windows still in
+never-annotated territory. Thread stays open for tomorrow: next Extractor
+rotation should keep drawing fresh `build_gold_sample_novel.py` batches —
+today's yield (3 real findings / 40 windows) is still well above the
+"diminishing returns" bar this project has used before to justify
+switching strategy, so no reason to change approach yet.
 
 ### 2026-10-09 — Cleanup rotation: built and adopted a sixth check, `check_code_clones.py` (cross-file duplicate-logic drift), no live bug found
 
