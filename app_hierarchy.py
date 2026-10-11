@@ -14,6 +14,7 @@ and okoz_code on owner override).  Everything else is read-only.
 """
 from __future__ import annotations
 
+import datetime as dt
 from pathlib import Path
 
 import duckdb
@@ -64,6 +65,26 @@ def excerpt(text: str, around: str, pad: int = 400) -> str:
     if i < 0:
         return text[:pad]
     return ("…" if i > pad else "") + text[max(0, i - pad): i + pad] + "…"
+
+
+# `act.version_date` is LexUZ's own per-act scrape date -- carried since the
+# first build but, until the 2026-10-11 Data currency measurement, never read
+# by either app. `status` can't substitute (it's 'in-force' for all 24,267
+# acts, see repeal_clause's own comment in build_links.py), and our own
+# repeal-clause detector only catches a repeal the act itself states in text
+# it managed to scrape -- 78/102 realizing acts >3y stale corpus-wide carry no
+# such positive signal either way. Surfacing the scrape date itself is the one
+# honest thing left to say: not a verdict, just how old the snapshot is.
+def snapshot_age_note(version_date: str | None, threshold_years: float = 3.0) -> str:
+    if not version_date:
+        return ""
+    try:
+        age_years = (dt.date.today() - dt.date.fromisoformat(version_date)).days / 365.25
+    except ValueError:
+        return ""
+    if age_years < threshold_years:
+        return ""
+    return f"LexUZ snapshot: {version_date}  (~{age_years:.0f}y old — verify at lex.uz)"
 
 
 @st.cache_resource
@@ -223,6 +244,7 @@ def page_article() -> None:
     """, [norm_id, rels]):
         acts = q("""
             SELECT r.src_doc_id, r.src_doc_title, r.src_doc_date, r.src_url,
+                   max(r.src_version_date) AS version_date,
                    count(*) AS n, max(r.hierarchy_rel) AS rel,
                    c.derived_status, c.repealed_by_title,
                    p.n_voided, p.locators, p.last_voided_on, p.last_voided_by_title
@@ -230,17 +252,17 @@ def page_article() -> None:
             LEFT JOIN v_act_currency c ON c.doc_id = r.src_doc_id
             LEFT JOIN v_act_partial_repeal p ON p.doc_id = r.src_doc_id
             WHERE r.norm_id = ? AND r.src_tier = ? AND r.hierarchy_rel = ANY(?)
-            GROUP BY 1, 2, 3, 4, 7, 8, 9, 10, 11, 12
+            GROUP BY 1, 2, 3, 4, 8, 9, 10, 11, 12, 13
             HAVING NOT (? AND c.derived_status = 'superseded')
             ORDER BY (c.derived_status = 'superseded'), n DESC, r.src_doc_date
         """, [norm_id, tier, rels, hide_dead])
         if not acts:
             continue
-        n_dead = sum(1 for a in acts if a[6] == "superseded")
+        n_dead = sum(1 for a in acts if a[7] == "superseded")
         dead_note = f" · {n_dead} superseded" if n_dead else ""
         st.markdown(f"#### Tier {tier} — {TIER_LABEL.get(tier, '?')} "
                     f"({len(acts)} act{'s' if len(acts) != 1 else ''}{dead_note})")
-        for (doc_id, doc_title, doc_date, url, n, rel, derived, rep_by,
+        for (doc_id, doc_title, doc_date, url, version_date, n, rel, derived, rep_by,
              n_voided, locators, voided_on, voided_by) in acts:
             dead = " 🔴" if derived == "superseded" else ""
             partial = " ⚠️" if n_voided else ""
@@ -256,6 +278,9 @@ def page_article() -> None:
                                f"voided — most recently by "
                                f"{voided_by[:80] if voided_by else 'a later act'} "
                                f"on {voided_on}.")
+                note = snapshot_age_note(version_date)
+                if note:
+                    st.caption(note)
                 if url:
                     st.caption(f"[source]({url})  ·  {REL_LABEL.get(rel, rel)}")
                 for (ev, qism, conf, kind, amb, p_no, p_title,

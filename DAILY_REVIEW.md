@@ -144,76 +144,60 @@ How to use this file each session:
   `corpus.duckdb` untouched. Thread closed; next Cleanup rotation should
   re-run all six.
 
-- **Data currency: independent precision audit of `date+cc-clause-match`
-  (478/612 amending-act resolutions) 2026-10-08 — closed as a negative
-  result, no bug, but a real architectural fact newly documented.**
-  Rotated to Data currency (last touched 2026-09-30; Extractor had 10-02
-  and 10-04, Cleanup had 10-03). Rather than re-running the same
-  retroactive-agreement spot-checks prior sessions used, built a from-
-  scratch, independent re-implementation of `cc_blocks()`/
-  `cc_clause_candidates()` in a throwaway script and ran it against ALL
-  478 `date+cc-clause-match` rows (not a sample) to check two things no
-  prior session had measured at full scale: (1) is every resolution
-  mechanically reproducible from the same inputs (yes, 478/478), and (2)
-  for acts where `cc_blocks()` finds zero top-level `"N-modda."` markers
-  and falls back to treating the ENTIRE document as one block (13/58
-  distinct amending docs, up to 161KB each), does the "same block as a
-  Civil Code mention" check still mean anything, or has it silently
-  degraded into the naive whole-document search this project explicitly
-  measured and rejected on 2026-09-24? Found 6 rows (events 6, 52, 53, 54,
-  86, 247, across 3 of those 13 whole-doc-block acts) where the matched
-  "Fuqarolik kodeks" mention read as a passing substantive reference
-  ("...Fuqarolik kodeksida nazarda tutilgan hollarda...") rather than a
-  real citation, sitting in the same giant block as the target article
-  number purely by document size. Treated this as a live false-positive
-  candidate, wrote and tested a stricter `re_civil_citation` regex
-  (requiring "qabul qilingan"/"tasdiqlangan" shortly before the mention —
-  the two bibliographic shapes every genuine Civil Code citation in this
-  corpus actually uses) in `build_links.py`, and ran it against a
-  throwaway copy: 4/478 rows moved from `date+cc-clause-match` to
-  `date+sole-law-cc-mention` (same `amending_doc_id` in every case), 2
-  (events 6 and 86) didn't change at all (the same giant block also
-  contains a second, legitimate Civil Code citation elsewhere, so the
-  looser check still passed), zero rows became unresolved. **Before
-  shipping that fix, checked why it had so little effect — and found the
-  actual reason the fix can't matter**: every single one of the 478
-  `date+cc-clause-match` rows has `host_article_number ==
-  target_article_number` (verified directly: 478/478, 0 exceptions).
-  This tier has never once been asked to pick a *target article* out of a
-  list — `target_article_number` is always just the Civil Code's own
-  article whose `amendment_note` is being parsed (LexUZ's own per-article
-  annotation, not something this pipeline infers). So the "coincidental
-  digit match" failure mode a block-splitting weakness could theoretically
-  cause — attributing the wrong ARTICLE to an act — is structurally
-  impossible for this tier today; the same-block check's only real job is
-  disambiguating *which document* a cited act number refers to, and for
-  all 6 candidate rows the document identity holds up independently (3 of
-  the 6 resolve to -7367697/OʻRQ-1025, already corroborated in the
-  2026-09-30 entry via its own genuine superscript-article insertions; the
-  restated text for event 6's Article 2 and event 86's Article 69 reads as
-  a plausible real conforming amendment on inspection, not a coincidence).
-  **Decision: did not ship the regex fix** — reverted it after confirming
-  it would only relabel 4 rows' `match_method` without changing any
-  resolved act, based on a premise (risk of misattributing the target
-  article) that the `host==target` invariant rules out; shipping an
-  unvalidated stricter regex against zero confirmed benefit risks a new,
-  real false-negative class instead (already had to patch the first draft
-  once for a legitimate "-dagi ... tasdiqlangan" citation phrasing it
-  missed). `git status` clean, `corpus.duckdb` untouched,
-  `verify_transfer.py` green, `pyflakes`/`vulture --min-confidence 60`
-  clean. **Net effect of today's session: a confirmed, no-bug result for
-  the project's single largest, most-relied-upon amendment-resolution
-  tier, reached by a materially more rigorous method (exhaustive
-  mechanical re-verification, not spot-checking) than any prior day used
-  on it** — closing this specific question, not leaving it active. Worth
-  recording for whoever next touches `target_articles()` in
-  `build_links.py`: if that function is ever extended to parse genuine
-  multi-article lists/ranges for `article_amendment` (today it can't —
-  see the `host==target` finding above, this is a known, intentional
-  simplification, not a bug), the same-block check would start actually
-  needing to discriminate between articles, not just acts, and the 13
-  whole-doc-block documents found today would become a real risk worth
-  revisiting then. Not re-opening without that trigger.
+- **Data currency: surfaced `act.version_date` (LexUZ's own per-act scrape
+  date) as a "snapshot age" signal in both apps, 2026-10-11, after
+  measuring how much of the realization graph rests on old, unverified
+  scrapes — closed, shipped.** Rotated to Data currency (oldest of the
+  three: last touched 2026-10-08; Cleanup 10-09, Extractor 10-10). Tried
+  the most direct "data currency" check first — comparing the corpus
+  against the live lex.uz source — but outbound network to `lex.uz` is
+  denied by this environment's egress policy (`curl` CONNECT 403,
+  `WebFetch` DNS failure); no live-vs-corpus diff was possible today.
+  Pivoted to an internal measurement: the raw parquet carries a
+  `version_date` per act (copied into the `act` table by
+  `build_corpus_db.py` since the project's first build) that no prior
+  session had ever queried — not the same signal as the already-known-
+  useless `status` field (100% `in-force`, see `repeal_clause`'s own
+  comment), but a genuine, independent currency signal nobody had looked
+  at. Measured corpus-wide: of 245 distinct acts that currently realize a
+  General Part Civil Code article, ages range 2 months-28 years (mean
+  4.3y, median 1.9y); 102/245 (41.6%) are >3 years stale. Cross-checked
+  those 102 against the project's own text-based repeal detector
+  (`v_act_currency.derived_status`): only 24/102 are independently flagged
+  `superseded` — the other **78/102 (76.5%)**, i.e. **78/245 (31.8%) of
+  all realizing acts corpus-wide**, carry no positive currency signal
+  either way; their "still law" status rests entirely on a scrape with
+  nothing in the pipeline re-checking it since. Same measurement on the
+  LLC vertical alone: 135 implementing acts, 43 (31.9%) >3y stale, 33/43
+  (76.7%) with no repeal signal — consistent with the corpus-wide rate, not
+  an artifact of one vertical. **Decision: shipped, not just measured.**
+  Given the README's own stance ("a pinned consolidated snapshot...
+  always verify at lex.uz") and that no live comparison is possible from
+  here, the honest thing to surface is the scrape date itself, not a
+  derived "risk" verdict this data can't support. Added `src_version_date`
+  to both realization views (`v_realization` in `build_links.py`,
+  `v_llc_realization` in `build_llc.py` — additive, no table schema
+  change) and a `snapshot_age_note()` helper, duplicated deliberately in
+  both apps the same way `check_code_clones.py` already accepts for
+  `excerpt()`, showing "LexUZ snapshot: YYYY-MM-DD (~Ny old — verify at
+  lex.uz)" on a citing act's card, but only past the 3-year threshold
+  used above (showing it at median age 1.9y would bury the signal).
+  Caught one self-inflicted issue before committing: `from datetime import
+  date` collided with 3 pre-existing local loop variables named `date` in
+  the two apps (`pyflakes` caught all 4) — fixed with `import datetime as
+  dt` rather than renaming unrelated pre-existing code. Verified:
+  `pyflakes`/`vulture --min-confidence 60`/`bandit` clean (61 bandit
+  issues, unchanged from baseline), `check_sql_bindings.py` 106/106,
+  `check_code_clones.py`'s only new pair is the expected, intentional
+  `snapshot_age_note()` duplicate; `build_links.py`/`build_llc.py`
+  reproduce identical edge/resolution counts to before (9535 edges, 612
+  amendment rows, 135 LLC implementing acts); `verify_transfer.py` green,
+  `test_transfer_e2e.py` 14/14, both apps HTTP 200 with no exceptions
+  logged, and the exact modified SQL re-run directly against
+  `corpus.duckdb` to confirm old/new realizing acts surface correctly.
+  Thread closed — see Backlog for what's left if this is picked up again
+  (the live lex.uz comparison, the 3-year threshold, and extending the
+  same signal to the General Part's whole-act currency badges).
 
 - **Gold set: 300 -> 340 records, eighth signature-stratified batch
   2026-10-04; one new surface-form gap found ("§ N" section-mark notation),
@@ -2095,7 +2079,7 @@ How to use this file each session:
   scoped or justified by today's single dead-constant finding alone.
 - **`date+cc-clause-match`'s same-block check degrades to a whole-document
   search for 13/58 distinct amending acts.** Found and fully investigated
-  2026-10-08 (see Active threads for the full trace): `cc_blocks()` finds
+  2026-10-08 (see Log, 2026-10-08, for the full trace): `cc_blocks()` finds
   zero top-level `"N-modda."` markers in 13 of the 58 documents this tier
   resolves to (older Roman-numeral-structured omnibus acts, and modern
   standalone laws whose own articles are referenced as "ushbu Qonunning
@@ -2112,6 +2096,24 @@ How to use this file each session:
   measurable risk. Do not re-open this without that trigger; a regex fix
   was prototyped, tested, and deliberately reverted today for lack of a
   confirmed bug to justify it.
+- **`act.version_date` (LexUZ's scrape date) surfaced as a snapshot-age
+  signal, 2026-10-11 — shipped, not just measured** (see Log for the full
+  trace): 78/245 (31.8%) of acts realizing a General Part article, and
+  33/135 (24.4%) of LLC implementing acts, are >3 years past their own
+  scrape date AND carry no positive repeal signal from this project's own
+  text-based detector — their "current law" status rests entirely on an
+  unrefreshed scrape. Tried to check this against the live lex.uz source
+  directly first; blocked by this environment's egress policy (`lex.uz` is
+  not in the allowed domains). Shipped the honest fallback instead: both
+  apps now show "LexUZ snapshot: DATE (~Ny old — verify at lex.uz)" on a
+  realizing act's citation card once it passes 3 years old. **If ever
+  picked up again**: (1) re-run the live comparison if `lex.uz` is ever
+  added to this environment's allowed domains — turns "how old" into "is
+  it actually stale"; (2) the 3-year threshold is round-number legible,
+  not tuned against any labeled staleness data (none exists corpus-wide);
+  (3) the same signal isn't yet wired into `v_act_currency`/
+  `v_act_partial_repeal`'s own whole-act 🔴/⚠️ badges in the General Part
+  explorer, only the two realization-citation panels touched today.
 
 ### Cleanup
 - ~~**Retire superseded prototypes.**~~ **Done 2026-09-07**: deleted
@@ -2236,6 +2238,162 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-10-11 — Data currency rotation: surfaced `act.version_date` (LexUZ's scrape date) as a snapshot-age signal after measuring the realization graph's staleness blind spot
+
+Container started in detached `HEAD`, 3 commits ahead of the local
+`main`/`origin/main` refs as this checkout initially saw them (at
+`1afec90`, 2026-10-10's own closing commit) — same stale-remote-tracking-
+pointer pattern flagged in several prior entries, confirmed harmless again:
+`git fetch origin main` showed `origin/main` already at `1afec90` (the
+push had succeeded), so `git checkout main && git merge --ff-only
+origin/main` recovered cleanly with no lost work. Cold-start installs:
+`git lfs install && git lfs pull` (the raw parquet was a 134-byte LFS
+pointer stub until then), `python -m pip install duckdb pandas pyarrow
+streamlit pyflakes vulture bandit` (note: this container's `pip` on PATH
+targets Python 3.13's dist-packages, not the `/usr/local/bin/python`
+3.11 that actually runs the scripts — `python -m pip install ...` avoids
+the mismatch; a bare `pip install duckdb` silently installs into the
+wrong interpreter and `import duckdb` still fails afterward).
+
+Rotation: Extractor last touched 2026-10-10, Cleanup 2026-10-09, Data
+currency 2026-10-08 — clearly the oldest, and its own backlog items are
+each either closed or explicitly "diminishing returns, not worth
+re-opening without a new angle" (the 39/612 amending-act residual,
+2026-09-30; the 13/58 whole-doc-block risk, 2026-10-08). Rather than
+re-litigate either, looked for a genuinely new angle instead.
+
+The most direct possible "data currency" check for a project whose
+README explicitly calls itself "a pinned consolidated snapshot, not a
+live legal database" is to compare the snapshot against the live source.
+Tried it: `curl -sS https://lex.uz/uz/docs/-111189` failed with a proxy
+`CONNECT tunnel failed, response 403` ("organization policy"), and
+`WebFetch` on the same URL failed with `getaddrinfo ENOTFOUND lex.uz`.
+Confirmed via `read_documentation` that this is this environment's
+network allow-list, not a transient failure — not fixable from inside
+the session. No live-vs-corpus diff was possible today.
+
+Pivoted to what the corpus already has but has never used. The raw
+parquet carries 28 columns; one is `version_date` — LexUZ's own per-act
+scrape/snapshot date, distinct from `doc_date` (the act's own enactment
+date). `build_corpus_db.py` already copies it into the `act` table
+(`any_value(version_date)`, confirmed uniform per `doc_id` — not an
+internally-mixed-vintage document), and has done so since the project's
+first build. But `grep -rn version_date *.py` turns up exactly 3 hits
+total: the column definition, the INSERT, and a docstring comment noting
+the Civil Code's own pin date — it has never been read by `build_links.py`,
+`build_llc.py`, `app_hierarchy.py`, or `app_llc.py`. This is a different
+signal from the already-known-useless `status` field (100% `in-force`
+for all 24,267 acts, `build_links.py`'s own long-standing comment) — an
+act's `status` says nothing, but its `version_date` at least says how
+old the text behind that claim is.
+
+Measured (`duckdb` read-only against the committed `corpus.duckdb`, see
+`/tmp/.../scratchpad/measure_staleness.py`): of the 245 distinct acts that
+currently realize (cite as a lower-tier act) at least one General Part
+Civil Code article (`link_edge.hierarchy_rel = 'below'`), snapshot ages
+range 2 months to 28 years (mean 4.3y, median 1.9y); bucketed by age,
+66 are <1y, 57 are 1-2y, 20 are 2-3y, and 102 (41.6%) are >3y old (36 in
+3-5y, 39 in 5-10y, 27 over 10y). Cross-joined those 102 against
+`v_act_currency.derived_status` (the project's own text-based repeal
+detector): only 24/102 are independently flagged `superseded` by a later
+act's repeal clause — the other **78/102 (76.5%)** carry no positive
+signal either way, meaning **78/245 (31.8%) of all realizing acts
+corpus-wide** rest their "still current law" status purely on an
+unrefreshed scrape, with nothing in the pipeline re-checking it since
+(oldest example found: a 1998-09-11 Oliy sud Plenumi resolution still
+cited as realizing Civil Code Article 100, 28 years stale). Repeated the
+same measurement scoped to the LLC vertical alone (`llc_implementing_act`
+join `act`): 135 implementing acts, 43 (31.9%) >3y stale, 33/43 (76.7%)
+with no repeal signal — close enough to the corpus-wide rate (31.8%/76.5%)
+that this isn't a quirk of one vertical, it's structural.
+
+**Decision: ship the signal, not a verdict.** The measurement shows a real
+blind spot, but nothing in it supports actually calling any specific act
+"stale" — absence of a detected repeal is not evidence of currency, and
+without the live lex.uz comparison there is no way to confirm or deny
+staleness for any individual act. Inventing a "risk score" from this data
+would overclaim. The honest, available move is to surface the scrape date
+itself and let the reader judge, matching the project's own stated
+epistemic stance (README: "always verify the current, in-force text [at]
+lex.uz"). Implementation, kept minimal: added `a.version_date AS
+src_version_date` to `v_realization` (`build_links.py`) and to
+`v_llc_realization` (`build_llc.py`) — additive columns on existing views,
+no table schema change, no full `corpus.duckdb` rebuild (only re-ran
+`build_links.py` then `build_llc.py`, per the hard constraint, since
+`build_okoz.py` has no dependency on either). Added a `snapshot_age_note()`
+helper to both `app_hierarchy.py` and `app_llc.py` — deliberately
+duplicated rather than factored into a shared module, the same
+duplication-by-design precedent `check_code_clones.py` already accepted
+for `excerpt()` on 2026-10-09, since the two apps have no shared import
+path today and inventing one for a 10-line function would be the bigger
+change. It renders "LexUZ snapshot: YYYY-MM-DD (~Ny old — verify at
+lex.uz)" on a citing act's expander, gated at the 3-year threshold the
+measurement above used — at median age 1.9y, showing it unconditionally
+on every citation would bury the signal in noise for acts that are
+plausibly current.
+
+Wired it into the two existing per-citation displays that already carry
+per-act currency badges: the General Part explorer's realization pyramid
+(`app_hierarchy.py:page_article()`) and the LLC dossier's "Below · acts
+implementing this Code article" panel (`app_llc.py:page_norm()`). Both
+queries needed column-position updates (`GROUP BY`/tuple-unpack indices
+shifted by the new column) — re-verified both queries directly against
+`corpus.duckdb` by hand (not just via the running app) before trusting
+the app's own smoke test, since an off-by-one in a tuple unpack is exactly
+the kind of bug that silently mislabels a different field instead of
+crashing.
+
+Caught one self-inflicted bug before it shipped: `from datetime import
+date` collided with pre-existing local loop variables named `date` in
+both apps (amendment-history loops, an LLC currency listing, an acts
+table) — `pyflakes app_hierarchy.py app_llc.py build_links.py build_llc.py`
+caught all 4 instances ("import 'date' from line N shadowed by loop
+variable") on the first run after the edit. None of the 4 were actual
+runtime bugs (each shadow is local to its own enclosing function, and
+`snapshot_age_note()` itself never sees the shadowed name), but shipping
+a new, avoidable lint warning into a codebase this project otherwise
+keeps `pyflakes`-clean would be its own small regression. Fixed by
+switching to `import datetime as dt` in both files instead of renaming
+3 unrelated, pre-existing local variables to work around a new import —
+`pyflakes` clean afterward.
+
+Full verification before committing: `python build_links.py` (9535 edges,
+612 `article_amendment` rows via 478/45/33/38 across the four match
+methods, 840/885 repeal items resolved — all identical to the
+pre-change baseline, confirming the view-only change didn't perturb any
+upstream table) and `python build_llc.py` (135 implementing acts, 25
+superseded, same repealed-company-form-article counts as before) both
+re-run clean; `python verify_transfer.py` — all checks green, identical
+INFO-line counts to 2026-10-10 (17 citations/8 repealed articles, 248
+superseded acts/495 edges, 39 proposed OKOZ mappings); `python -m
+unittest test_transfer_e2e.py` 14/14; `pyflakes`/`vulture
+--min-confidence 60`/`bandit -r . -x ./articles,./documents,./okoz,./structure`
+all clean on the 4 changed files (bandit: 61 issues total project-wide,
+unchanged from the 2026-10-01 baseline — no new findings); `python
+check_sql_bindings.py` 106/106; `python check_code_clones.py` — 93
+functions, 5 cross-file pairs >= 0.55, and the one new pair
+(`snapshot_age_note()`, 1.000 similarity) is the deliberate, documented
+duplicate described above, not drift. Ran both apps live
+(`streamlit run ... --server.headless true`) on throwaway ports: both
+HTTP 200 at startup with nothing in either log beyond the normal
+Uvicorn banner, and the exact modified SQL for both touched pages re-run
+directly against `corpus.duckdb` (not just through the app) to confirm
+real old-snapshot acts (e.g. a 2011-07-20 realizing act, a 2022-02-25 LLC
+implementing act) surface with the correct `version_date` and that the
+new `GROUP BY`/tuple-unpack indices didn't silently misalign any other
+column.
+
+**Net effect**: a real, measured blind spot (31.8% of the realization
+graph's currency claims rest on scrapes with no independent check, some
+decades old) made visible to readers for the first time, without
+overclaiming what the data can support. Not a fix to the staleness
+itself — that would need either a fresh scrape or the live lex.uz access
+this environment doesn't grant — but a genuinely new angle for this
+rotation area (every prior Data-currency session worked inside the
+existing repeal/amendment-resolution machinery; today used a column that
+machinery never touches at all). Thread closed, not left mid-flight; see
+Backlog for the three concrete follow-ons if this is picked up again.
 
 ### 2026-10-10 — Extractor rotation: ninth gold batch, 340 -> 380 records, two new bugs found (dropped-article typo, widened an existing gap class), one stale backlog note finally formalized
 

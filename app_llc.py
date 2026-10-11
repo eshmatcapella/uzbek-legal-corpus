@@ -11,6 +11,7 @@ foundation and the LLC Law's own chapters as the skeleton.
 """
 from __future__ import annotations
 
+import datetime as dt
 from pathlib import Path
 
 import duckdb
@@ -61,6 +62,23 @@ def excerpt(text: str, around: str, pad: int = 400) -> str:
     if i < 0:
         return text[:pad]
     return ("…" if i > pad else "") + text[max(0, i - pad): i + pad] + "…"
+
+
+# See app_hierarchy.py's own copy for the full rationale: `act.version_date`
+# (LexUZ's scrape date) is the one honest currency signal left once
+# `derived_status` is silent -- 33/43 LLC implementing acts >3y stale carry no
+# positive repeal signal either way. Surfaced here, not derived from, the LLC
+# dossier's own currency verdicts.
+def snapshot_age_note(version_date: str | None, threshold_years: float = 3.0) -> str:
+    if not version_date:
+        return ""
+    try:
+        age_years = (dt.date.today() - dt.date.fromisoformat(version_date)).days / 365.25
+    except ValueError:
+        return ""
+    if age_years < threshold_years:
+        return ""
+    return f"LexUZ snapshot: {version_date}  (~{age_years:.0f}y old — verify at lex.uz)"
 
 
 def status_chip(derived: str) -> str:
@@ -191,8 +209,8 @@ def page_norm() -> None:
     # this query doesn't select stage_no at all, so without DISTINCT those
     # citations would render (and count) twice.
     rows = q("""
-        SELECT DISTINCT src_doc_id, src_doc_title, src_tier, doc_date, source_url,
-               evidence_kind, confidence, evidence_clean,
+        SELECT DISTINCT src_doc_id, src_doc_title, src_tier, doc_date, src_version_date,
+               source_url, evidence_kind, confidence, evidence_clean,
                src_prov_number, src_prov_title, src_prov_text, is_whole_act_blob,
                derived_status, repealed_by_title
         FROM v_llc_realization WHERE cc_article = ?
@@ -205,15 +223,15 @@ def page_norm() -> None:
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Implementing acts", len({r[0] for r in rows}))
-    c2.metric("Normative citations", sum(1 for r in rows if r[5] == "normative"))
-    c3.metric("Superseded acts", len({r[0] for r in rows if r[12] == "superseded"}))
+    c2.metric("Normative citations", sum(1 for r in rows if r[6] == "normative"))
+    c3.metric("Superseded acts", len({r[0] for r in rows if r[13] == "superseded"}))
 
     hide_dead = st.toggle("Hide superseded acts", value=True)
     only_norm = st.toggle("Only the act's own words (hide editorial pointers)", value=False)
 
     shown = [r for r in rows
-             if not (hide_dead and r[12] == "superseded")
-             and not (only_norm and r[5] != "normative")]
+             if not (hide_dead and r[13] == "superseded")
+             and not (only_norm and r[6] != "normative")]
     if not shown:
         st.warning("Every citation to this article was filtered out — "
                    "turn a filter off to see them.")
@@ -222,17 +240,20 @@ def page_norm() -> None:
     for tier in sorted({r[2] for r in shown}):
         st.markdown(f"### Tier {tier} — {TIER_LABEL.get(tier, '?')}")
         for r in [x for x in shown if x[2] == tier]:
-            (doc_id, title, _, date, url, kind, conf, ev,
+            (doc_id, title, _, doc_date, version_date, url, kind, conf, ev,
              p_no, p_title, p_text, is_blob, derived, rep_by) = r
             badge, why = KIND_BADGE.get(kind, ("", ""))
             dead = " 🔴" if derived == "superseded" else ""
-            head = f"{badge} {title[:95]} · {date or 'no date'}{dead}"
+            head = f"{badge} {title[:95]} · {doc_date or 'no date'}{dead}"
             with st.expander(head):
                 if derived == "superseded":
                     st.error(f"This act was repealed by: {rep_by or 'a later act'}. "
                              "It is not current law.")
                 st.caption(f"{badge} **{kind}** — {why} · confidence `{conf}`"
                            + (f" · [source]({url})" if url else ""))
+                note = snapshot_age_note(version_date)
+                if note:
+                    st.caption(note)
 
                 # The realizing norm itself.
                 if p_no and not is_blob:

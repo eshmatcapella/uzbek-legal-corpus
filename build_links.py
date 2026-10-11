@@ -347,6 +347,11 @@ def main() -> int:
             n.article_title_uz, n.article_title_en, n.struct_node_id,
             e.src_doc_id, a.doc_title AS src_doc_title, e.src_doc_type, e.src_tier,
             a.doc_date AS src_doc_date, a.source_url AS src_url,
+            -- LexUZ's own per-act scrape date, carried into `act` since the first
+            -- build but never surfaced: `status` is 'in-force' for all 24,267 acts
+            -- (see repeal_clause below), so this is the only signal the reader has
+            -- for how old a realizing act's captured text actually is.
+            a.version_date AS src_version_date,
             e.src_article_number, e.dst_qism,
             e.relation, e.hierarchy_rel, e.source_field, e.evidence_kind,
             e.confidence, e.evidence, e.evidence_clean,

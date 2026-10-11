@@ -277,6 +277,7 @@ def main() -> int:
         SELECT DISTINCT
             n.stage_no, n.article_number AS cc_article, n.article_title AS cc_title,
             e.src_doc_id, a.doc_title AS src_doc_title, e.src_tier, a.doc_date,
+            a.version_date AS src_version_date,
             a.source_url, e.evidence_kind, e.confidence, e.evidence_clean,
             p.article_number AS src_prov_number, p.article_title AS src_prov_title,
             p.article_text   AS src_prov_text, p.is_whole_act_blob,
