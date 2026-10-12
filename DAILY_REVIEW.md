@@ -22,6 +22,52 @@ How to use this file each session:
 
 ## Active threads
 
+- **Cleanup: a seventh repeatable check, `check_fstring_interp.py` —
+  built and closed 2026-10-12, one real bug found and fixed.** Container
+  started detached one commit ahead of the local `main` ref (at `f62ce8d`,
+  2026-10-11's own commit); `git fetch origin main` confirmed `origin/main`
+  already matched `HEAD` exactly — same stale-local-pointer shape as
+  2026-10-09/earlier, recovered the same way (`git checkout -B main
+  origin/main`). Rotation: Cleanup last ran 2026-10-09 (oldest of the
+  three; Extractor 10-10, Data currency 10-11) — clear next pull. Re-ran
+  all six existing checks first: `pyflakes`/`vulture --min-confidence
+  60`/`bandit` (61 issues, same 57 B608/3 B311/1 B110 breakdown, no new
+  issue) all clean/unchanged; `check_sql_bindings.py` 106/106;
+  `check_code_clones.py` found the one new, expected pair from 10-11's
+  `snapshot_age_note()` duplicate, nothing else. The `execute(f"` grep's
+  own count moved 33 -> 35 raw hits, which is where today's real finding
+  came from: one of the 35 is a docstring's own self-reference (not a
+  call), and AST cross-validation found the grep itself has a structural
+  blind spot — it's a single-line literal match, so `execute(\n    f"...")`
+  (opening paren and f-string literal on different lines) is invisible to
+  it. `test_transfer_e2e.py` has 20 such call sites that no prior Cleanup
+  rotation's grep audit had ever seen (the file never appeared in the
+  grep's own output). Hand-auditing those 20 found one real violation of
+  the project's own f-string-SQL rule: `query_db_article_text_en()`'s
+  `else` branch interpolated `norm_id` — a value derived at runtime from
+  parsing the English markdown fixture, not a hardcoded constant — straight
+  into the WHERE clause. Fixed by parameterizing it (`article_number = ?`
+  + a bound param) rather than just adding it to an allowlist. Built
+  `check_fstring_interp.py` as the permanent replacement for the grep:
+  AST-walks every f-string `execute()` call regardless of line layout and
+  recursively resolves each interpolated expression to a hardcoded
+  constant via intra-function dataflow (does `raw` only ever get assigned
+  from a SCREAMING_CASE constant, transitively?) rather than trusting a
+  variable's *name*. That distinction mattered in practice: a first draft
+  allowlisted the bare name `where_clause`, and a mutation test against
+  the pre-fix file proved that version would have missed the exact bug
+  just fixed (the name was unchanged, only its unsafe content differed) —
+  redesigned to resolve structurally, re-ran the same mutation test,
+  confirmed it now correctly flags the pre-fix file and passes the fixed
+  one. Verified: `verify_transfer.py` green (no table/view touched,
+  `corpus.duckdb` untouched); `python -m unittest test_transfer_e2e.py`
+  14/14 (including the two edge tests that exercise the fixed function);
+  `pyflakes`/`vulture`/`bandit`/`check_sql_bindings.py`/`check_code_clones.py`
+  all re-confirmed clean on the new file too; both apps smoke-tested live
+  (HTTP 200, no exceptions). Thread closed; next Cleanup rotation should
+  re-run all seven checks (the plain `execute(f"` grep is now subsumed by
+  `check_fstring_interp.py` and doesn't need a separate re-run).
+
 - **Gold set: 340 -> 380 records, ninth signature-stratified batch
   2026-10-10; two new bugs found (a dropped-article typo and an
   under-measured existing gap class widened), one old backlog item
@@ -2234,10 +2280,180 @@ How to use this file each session:
   trace). A SQL-block-level variant was tried first and rejected as too
   noisy (54 false-positive-heavy pairs from shared SQL vocabulary). Now a
   sixth repeatable Cleanup check; next rotation should re-run all six.
+- ~~**A seventh check / a fix to the third: the `execute(f"` grep (added
+  2026-09-26) is a single-line literal match and can't see a call whose
+  f-string sits on a different source line than `execute(`.**~~ **Added
+  2026-10-12**: `check_fstring_interp.py` — AST-walks every f-string
+  `execute()` call regardless of line layout, recursively resolving each
+  interpolated expression to a hardcoded constant via intra-function
+  dataflow rather than trusting a variable's name. Found 20 call sites in
+  `test_transfer_e2e.py` the grep had never once seen, one of which was a
+  real violation (`query_db_article_text_en()` interpolating a runtime
+  `norm_id` into SQL) — fixed by parameterizing it. Proved with a mutation
+  test against the pre-fix file; a first, name-based-allowlist draft of
+  the checker failed that same test, which is why the shipped version
+  resolves structurally instead. See Active threads/Log for the full
+  trace. Now a seventh repeatable Cleanup check, and it subsumes the third
+  (`execute(f"` grep) going forward — next rotation should re-run all
+  seven, which in practice means the six scripted checks plus this one;
+  the plain grep itself doesn't need a separate re-run anymore.
 
 ---
 
 ## Log
+
+### 2026-10-12 — Cleanup rotation: built a seventh check, `check_fstring_interp.py`, after finding a real structural blind spot in the third check (the `execute(f"` grep) and one real f-string-SQL violation it had been hiding
+
+This container also had a toolchain gap worth recording: `duckdb`, `pandas`,
+`streamlit`, `pyflakes`, `vulture`, `bandit`, `pyarrow`, and `requests` were
+all absent from the start (`pip` itself resolved to a different, system
+Python 3.13 than the `/usr/local/bin/python` 3.11.17 this project actually
+runs under — `pip install` silently installed into the wrong interpreter
+the first time; `python -m pip install ...` fixed it). Not a code bug, just
+noting it here in case a future session hits the same `ModuleNotFoundError:
+duckdb` on a fresh container and wastes time looking for a corpus problem
+instead.
+
+Container itself started `HEAD` detached one commit ahead of the local
+`main` ref (at `f62ce8d`, 2026-10-11's own closing commit) — `git fetch
+origin main` confirmed `origin/main` already matched `HEAD` exactly, same
+stale-local-pointer shape every recent session has hit. Recovered with
+`git checkout -B main origin/main` rather than the usual `merge --ff-only`
+(no local-only commits to preserve, so resetting the branch pointer
+straight to the fetched tip is equivalent and slightly simpler).
+
+Rotation: Cleanup last ran 2026-10-09, the oldest of the three focus areas
+(Extractor 10-10, Data currency 10-11) — clear next pull. The Extractor
+"gold set" thread's own 2026-10-10 entry explicitly recommends continuing
+it next, but per the brief's own "rotate across the three" instruction and
+this project's consistent precedent of treating that as a standing
+recurring bucket rather than a blocked mid-step task, Cleanup's own
+staleness won out.
+
+Re-ran all six existing checks before looking for anything new: `pyflakes
+*.py` (clean), `vulture *.py --min-confidence 60` (clean), `bandit -r . -x
+./articles,./documents,./okoz,./structure` (61 issues: 57 B608 + 3 B311 +
+1 B110, same classes and counts as every prior session back to 2026-10-01
+— no new issue), `check_sql_bindings.py` (106/106 literal queries bind
+cleanly), `check_code_clones.py` (93 functions across 18 files, same 4
+pairs as 2026-10-09 plus the one new, fully expected pair from 10-11's
+`snapshot_age_note()` duplicate — nothing else).
+
+The sixth check, `grep -n 'execute(f"' *.py`, came back at 35 raw hits, up
+from 33 at 2026-10-09. Per this project's own standing precedent (never
+trust a count-only re-check; re-derive what actually changed), looked
+closer rather than just re-stating the new number. One of the 35 is
+`check_sql_bindings.py`'s own docstring mentioning the pattern in prose,
+not a real call — a pre-existing false positive in the grep that's
+probably been present since 2026-10-03 and never isolated. The real
+question was the other direction: are there call sites the grep *misses*?
+Wrote a quick AST script to enumerate every `*.execute(...)` call whose
+first argument is an f-string, independent of the grep entirely, and it
+found 54 such calls — 19 more than the grep's real count of 34. All 19
+untracked calls are in `test_transfer_e2e.py`, a file that had never once
+appeared in any prior Cleanup rotation's grep output. The reason: the grep
+pattern `execute(f"` is a single-line literal match, and every one of
+those 19 (really 20, one more turned up on a second pass) call sites in
+that file has its f-string literal on the line *after* `execute(`, e.g.:
+
+```python
+res = conn.execute(
+    f"SELECT article_text_en FROM read_parquet('{parquet_path}') WHERE {where_clause}"
+).fetchone()
+```
+
+That's a real, structural blind spot in a check this project has relied on
+since 2026-09-26 — not a hypothetical one, since it had successfully hidden
+20 call sites for 16 days across 4 Cleanup rotations (10-01, 10-03, 10-09,
+and whichever earlier ones never thought to check file coverage against
+the grep's own output).
+
+Hand-audited all 20 against the project's own f-string-SQL rule (no
+interpolated value that isn't a hardcoded constant). 19 are fine —
+`PARQUET_PATH` (a module constant) in 19 of them. The 20th,
+`query_db_article_text_en()`'s `else` branch, is a real violation:
+
+```python
+where_clause = f"doc_id = -111189 AND article_number = '{norm_id}'"
+```
+
+`norm_id` is not a constant — it's derived at runtime from parsing the
+project's own English markdown fixture (normalized superscript-article IDs
+like `173-1`), threaded in from the Tier-2 reconciliation test's per-article
+loop. It's not externally reachable (the markdown is a tracked fixture,
+not user input), so this was never an exploitable injection in practice —
+but it's exactly the shape of violation this project has fixed every other
+time it's found one (`build_gold_sample_novel.py`/`score_gold.py`/
+`build_llc.py`'s runtime int-list interpolations, fixed 2026-09-26), and
+the project's own hard rule doesn't carve out an exception for "fixture
+data, not live input." Fixed it the same way: parameterized the one
+runtime value (`article_number = ?` + `conn.execute(sql, [norm_id])`)
+instead of leaving the WHERE clause built entirely from an f-string. The
+other two branches (`raw_id == "26¹"`/`"261"`) were already pure hardcoded
+literals and needed no change beyond pulling the shared `doc_id = -111189`
+clause out into the call site so all three branches compose the same way.
+
+Built `check_fstring_interp.py` as the seventh repeatable Cleanup check —
+and the structural replacement for the third, not just an addition next to
+it. Method: AST-walk every `*.execute(...)` call whose first argument is a
+`JoinedStr`, which DuckDB's AST sees identically regardless of how the
+source lines are wrapped, so the multi-line blind spot can't recur by
+construction. For each interpolated expression, resolve it recursively:
+a plain string literal is safe; a SCREAMING_CASE name or dotted attribute
+(this project's own consistent naming convention for a module-level
+constant, e.g. `CC_GENERAL_PART`, `cx.DOC_GENERAL`) is safe, including
+through a method call on one (`PARQUET.as_posix()`); an f-string is safe
+iff every one of *its* interpolations is, recursively; and a bare name
+with no safe resolution is traced to every place it's assigned *within the
+same function* — if every one of those right-hand sides is safe
+(recursively), so is the name.
+
+That last rule is what makes this check materially stronger than a
+name-based allowlist, and the first draft proved it the hard way: it
+initially allowlisted the bare names `raw` and `where_clause` directly
+(the same two names the 2026-10-03 manual audit had already hand-verified
+as safe), on the theory that re-deriving safety from first principles each
+run was overkill. A mutation test against a scratch copy of the *pre-fix*
+`test_transfer_e2e.py` (restored via `git show HEAD:test_transfer_e2e.py`
+before the fix was committed) was supposed to prove the new checker would
+have caught the `norm_id` bug — instead it passed clean, because
+`where_clause` was still spelled `where_clause` in the buggy version and
+the allowlist didn't look past the name. That's the exact failure mode
+this check exists to prevent, caught by the check's own test before it
+ever shipped. Redesigned to resolve `where_clause` and `raw` structurally
+instead (tracing every local assignment within their enclosing function,
+recursively) — re-ran the same mutation test: the pre-fix file now
+correctly flags `{where_clause}` at line 308 (its one unsafe assignment
+resolves to the unresolvable parameter `norm_id`), and the post-fix,
+real file passes clean (54 calls, 0 flagged). A handful of genuinely
+irreducible shapes (a loop variable ranging over a fixed tuple, a
+cross-function parameter, `check_sql_bindings.py`'s own PREPARE-statement
+plumbing, a hardcoded constant's length used to generate `?` placeholders)
+are still hand-verified and listed explicitly with a one-line reason each,
+the same way `check_sql_bindings.py` already excludes what it can't
+validate — but that list is now 5 entries instead of being the entire
+mechanism.
+
+Validation before committing: `python verify_transfer.py` — all AC1-7
+green, same reconciliation residual as every prior session (`corpus.duckdb`
+untouched; this change touches no table/view, so no rebuild was needed or
+attempted). `python -m unittest test_transfer_e2e.py` — 14/14, including
+`test_edge_duplicate_article_261` and the other edge test that exercise
+`query_db_article_text_en()`'s three branches directly. Re-ran
+`pyflakes`/`vulture --min-confidence 60`/`bandit`/`check_sql_bindings.py`/
+`check_code_clones.py` against the two changed/new files — all clean, no
+new findings introduced by this change itself. Both `app_hierarchy.py` and
+`app_llc.py` smoke-tested live (HTTP 200 on both ports, no exceptions in
+server logs — expected, since nothing schema-level changed and neither app
+imports the touched test file).
+
+**Decision: shipped.** One real bug fixed (an actual, if not externally
+exploitable, violation of the project's own hard rule), one real gap in an
+existing check closed, and the new check proved against its own mutation
+test rather than just asserted clean. Thread closed. Next Cleanup rotation
+should re-run all seven checks; the plain `execute(f"` grep can retire —
+`check_fstring_interp.py` subsumes everything it covered and sees strictly
+more.
 
 ### 2026-10-11 — Data currency rotation: surfaced `act.version_date` (LexUZ's scrape date) as a snapshot-age signal after measuring the realization graph's staleness blind spot
 

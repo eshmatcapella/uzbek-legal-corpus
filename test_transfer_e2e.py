@@ -299,14 +299,18 @@ def query_db_article_text_en(conn, parquet_path, raw_id, norm_id):
     Article 26¹ (Part I) vs Article 261 (Part III).
     """
     if raw_id == "26¹":
-        where_clause = "doc_id = -111189 AND article_number = '261' AND part NOT LIKE '%III%' AND (part LIKE '%I %' OR part LIKE '%I BO%' OR part LIKE '%UMUMIY%')"
+        where_clause = "article_number = '261' AND part NOT LIKE '%III%' AND (part LIKE '%I %' OR part LIKE '%I BO%' OR part LIKE '%UMUMIY%')"
+        params = []
     elif raw_id == "261":
-        where_clause = "doc_id = -111189 AND article_number = '261' AND (part LIKE '%III%' OR part LIKE '%MAJBURIYAT%')"
+        where_clause = "article_number = '261' AND (part LIKE '%III%' OR part LIKE '%MAJBURIYAT%')"
+        params = []
     else:
-        where_clause = f"doc_id = -111189 AND article_number = '{norm_id}'"
+        where_clause = "article_number = ?"
+        params = [norm_id]
 
     res = conn.execute(
-        f"SELECT article_text_en FROM read_parquet('{parquet_path}') WHERE {where_clause}"
+        f"SELECT article_text_en FROM read_parquet('{parquet_path}') WHERE doc_id = -111189 AND {where_clause}",
+        params,
     ).fetchone()
     return res[0] if res else None
 
