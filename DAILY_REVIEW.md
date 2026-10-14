@@ -22,6 +22,43 @@ How to use this file each session:
 
 ## Active threads
 
+- **Data currency: wired the 2026-10-11 snapshot-age signal into the two
+  whole-act badge spots it hadn't reached yet — closed 2026-10-14.**
+  Rotated to Data currency (oldest of the three: last touched 2026-10-11;
+  Cleanup 10-12, Extractor 10-13). Picked up backlog item (3) from
+  2026-10-11's own entry: `src_version_date`/`snapshot_age_note()` had only
+  been wired into the two *realization-citation* panels
+  (`app_hierarchy.py::page_article()`'s pyramid, `app_llc.py::page_norm()`'s
+  "Below" panel) — the LLC dossier's two other whole-act badge spots,
+  `page_acts()` (the 135-act `llc_implementing_act` listing, 🔴/⚠️ badges
+  sourced from `v_act_currency`/`v_act_partial_repeal`) and
+  `page_currency()`'s "LLC's own governing law" two-act chip, still showed
+  supersession/voided-provision badges with no sense of *how stale the
+  underlying scrape is* for acts that carry no positive repeal signal.
+  Added a live join to `act.version_date` in both queries (additive, no
+  schema change, no `corpus.duckdb` rebuild) and called the existing
+  `snapshot_age_note()` helper, matching the exact display pattern
+  `page_norm()` already uses — no new helper, no second duplicate.
+  **Measured**: 43/135 (31.9%) of LLC implementing acts now show the note
+  in `page_acts()` — the same rate 2026-10-11 found for this vertical, now
+  surfaced where a browsing user actually lands on it; the two
+  governing-law acts (2001 LLC Law, 2026 LLC Law) currently show no note
+  (scraped 2026-07-22 and 2026-04-21 respectively, both under the 3-year
+  threshold) — correct, not a bug, that display slot is just quiet right
+  now. Verified: `check_sql_bindings.py` 106/106, `check_fstring_interp.py`
+  54/54 call sites clean, `check_code_clones.py` still 5 cross-file pairs
+  (no new pair — reused the existing shared helper rather than duplicating
+  it again), `pyflakes`/`vulture --min-confidence 60`/`bandit` all
+  unchanged (61 bandit issues, same B608/B311/B110 breakdown); ran both new
+  queries directly against `corpus.duckdb` to confirm they bind and return
+  the expected columns before wiring them into the apps; `verify_transfer.py`
+  green, `test_transfer_e2e.py` 14/14; both apps started live (HTTP 200,
+  clean logs, no exceptions) and torn down after. Thread closed — backlog
+  items (1) the live lex.uz comparison (still blocked on this environment's
+  egress policy) and (2) the untuned 3-year threshold are the only pieces
+  of this area still open; next Data currency rotation should pick one of
+  those or invent a new angle rather than re-running today's wiring.
+
 - **Gold set: 380 -> 420 records, tenth signature-stratified batch
   2026-10-13; first fully clean batch (0 new findings) since batch 1;
   thread stays open, now watching for a second clean batch in a row before
@@ -2195,9 +2232,13 @@ How to use this file each session:
   added to this environment's allowed domains — turns "how old" into "is
   it actually stale"; (2) the 3-year threshold is round-number legible,
   not tuned against any labeled staleness data (none exists corpus-wide);
-  (3) the same signal isn't yet wired into `v_act_currency`/
+  (3) ~~the same signal isn't yet wired into `v_act_currency`/
   `v_act_partial_repeal`'s own whole-act 🔴/⚠️ badges in the General Part
-  explorer, only the two realization-citation panels touched today.
+  explorer, only the two realization-citation panels touched today.~~
+  **Done 2026-10-14**: wired into the LLC dossier's two remaining whole-act
+  badge spots, `app_llc.py::page_acts()` and `page_currency()`'s
+  governing-law chip (see Active threads/Log) — 43/135 LLC implementing
+  acts now show the note. (1) and (2) above remain open.
 
 ### Cleanup
 - ~~**Retire superseded prototypes.**~~ **Done 2026-09-07**: deleted
@@ -2339,6 +2380,113 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-10-14 — Data currency rotation: wired the snapshot-age signal into the LLC dossier's two remaining whole-act badge spots — 43/135 implementing acts now show it
+
+Container toolchain gap, same shape as recent sessions: `duckdb`, `streamlit`,
+`pandas`, `pyflakes`, `vulture`, `bandit` all absent from this fresh
+container; `pip` (`/usr/bin/pip`) resolved to the system Python 3.13
+interpreter while this project runs under `/usr/local/bin/python3` 3.11.17,
+so `pip install` silently installed into the wrong interpreter — fixed with
+`python3 -m pip install duckdb streamlit pandas pyflakes vulture bandit`.
+No git-lfs pointer-stub issue today: `articles/train-00000-of-00001.parquet`
+was already the real 163MB file.
+
+Container started `HEAD` detached one commit ahead of the local `main` ref
+(at `13915be`, 2026-10-13's own closing commit) — `git fetch origin main`
+confirmed `origin/main` already matched `HEAD` exactly, the same
+stale-local-pointer shape every recent session has hit; recovered with
+`git checkout -B main origin/main` (no classifier objection this time).
+
+Rotation: Data currency was the oldest of the three focus areas (last
+touched 2026-10-11; Cleanup 10-12, Extractor 10-13 — Extractor's own
+"second clean batch" thread is open-ended, not mid-flight/blocking, so
+rotation discipline won over continuing it). Re-verified the baseline
+first: `verify_transfer.py` green, `test_transfer_e2e.py` 14/14,
+`check_sql_bindings.py` 106/106, `check_fstring_interp.py` 54/54,
+`check_code_clones.py` 5 pairs, `pyflakes`/`vulture`/`bandit` clean/61
+issues — all matching 2026-10-13's own re-confirmation, no drift.
+
+Read 2026-10-11's own backlog note (see Backlog, Data currency item (3)):
+`src_version_date`/`snapshot_age_note()` — the "LexUZ snapshot: DATE (~Ny
+old — verify at lex.uz)" caption shipped 2026-10-11 — had only been wired
+into the two citation-level realization panels
+(`app_hierarchy.py::page_article()`'s pyramid, `app_llc.py::page_norm()`'s
+"Below" panel). Grepped both apps for every other place a 🔴/⚠️ badge is
+rendered from `v_act_currency`/`v_act_partial_repeal`/`llc_implementing_act`
+to find what was still unwired: `app_hierarchy.py` has no other such spot
+(the realization pyramid is its only one) — so the General Part explorer
+side of this backlog item turned out to already be fully covered; the real
+gap was entirely in the LLC dossier, which has two more whole-act badge
+spots neither of which carried the signal:
+
+1. `page_acts()` — the "Acts implementing the LLC" listing (135 acts across
+   two routes, `cites_cc_foundation`/`names_llc_law`), showing 🔴
+   superseded / ⚠️ partially-voided badges per act with zero currency-age
+   context for the acts that show neither badge.
+2. `page_currency()`'s "The LLC's own governing law" section — just two
+   acts (the repealed 2001 LLC Law and the current 2026 LLC Law) via
+   `status_chip()`, same gap in miniature.
+
+Fixed both the same way 2026-10-11 did it: a live `JOIN act a ON a.doc_id =
+...doc_id` added to each query (additive — neither `llc_implementing_act`
+nor `v_act_currency` changed shape, so no rebuild of `build_llc.py` or
+`build_links.py` needed) to pull `a.version_date`, then called the
+existing `snapshot_age_note()` helper (not a new copy — `page_norm()` in
+the same file already defines and uses it) and rendered it as a caption in
+the same spot `page_norm()` does.
+
+**Measured, not assumed.** Ran both new queries directly against
+`corpus.duckdb` before touching the apps: the `page_acts()` join (all
+`cites_cc_foundation` rows, `hide_dead=False`) returned 61 rows, every one
+carrying a non-null `version_date` (the join doesn't drop rows — every
+`llc_implementing_act.doc_id` has a matching `act` row, as expected since
+the table is built *from* `act` in the first place). Computed ages
+directly: **43/135 (31.9%)** of all LLC implementing acts (both routes
+combined) are now old enough to trigger the note — matching 2026-10-11's
+own corpus-wide LLC-vertical measurement (33/43 of 135 *stale* acts lacked
+a repeal signal; today's 43/135 is the stale-count itself, the superset
+that measurement's denominator came from) almost exactly, which is the
+expected sanity check: wiring a display doesn't change which acts are
+stale, it just makes the existing fact visible where a user actually
+browses. The two governing-law acts show no note today (`version_date`
+2026-07-22 and 2026-04-21, both under the 3-year threshold) — correctly
+quiet, confirmed by hand rather than assumed.
+
+**Verification.** `pyflakes app_llc.py app_hierarchy.py` clean;
+`vulture --min-confidence 60` clean; `check_sql_bindings.py` 106/106 (the
+two rewritten queries bind against the live schema identically to before);
+`check_fstring_interp.py` 54/54 call sites, no new interpolation
+introduced; `check_code_clones.py` still exactly 5 cross-file pairs, same
+list as 2026-10-13 (`snapshot_age_note` IDENTICAL, `sha256_file`
+IDENTICAL, `excerpt` NEAR-DUP, two SIMILAR gold-sample pairs) — confirms
+reusing the existing helper rather than writing a second copy kept the
+clone count flat; `bandit -r . -x ./articles,./documents,./okoz,./structure`
+unchanged at 61 issues (57 B608/3 B311/1 B110, same breakdown as every
+prior rotation). `verify_transfer.py` exits 0, all checks green (see
+closing summary below). `python -m unittest test_transfer_e2e.py` 14/14.
+Both apps started live with `streamlit run --server.headless true` on
+scratch ports, confirmed HTTP 200 with clean logs (no tracebacks) at
+startup, then torn down with `pkill`; since Streamlit only executes the
+code path for whichever sidebar page is selected, also ran the exact two
+rewritten SQL queries directly against `corpus.duckdb` in a plain Python
+script to independently confirm both resolve and return the expected
+columns/row counts (above) — a stronger check than an HTTP 200 alone,
+which only proves the *default* page (`page_skeleton()`) renders.
+
+**Decision**: thread closed, not left open — this was a bounded,
+well-scoped backlog item (two query edits, no design ambiguity) rather
+than an open-ended investigation. Backlog items (1) (re-run a live
+lex.uz comparison if that domain is ever allowed through this
+environment's egress policy) and (2) (the 3-year threshold is round-number
+legible, not tuned against labeled staleness data, none of which exists
+corpus-wide) remain open for whoever next picks up Data currency.
+
+`verify_transfer.py` summary: all AC1-AC7 checks PASS, same INFO-level
+counts as 2026-10-13 (39 proposed OKOZ mappings awaiting validation, 248
+acts provably superseded / 495 edges from them) — nothing about today's
+change touches either number, as expected for a pure display-layer
+addition.
 
 ### 2026-10-13 — Extractor rotation: tenth signature-stratified gold batch, 380 -> 420 records, first fully clean batch since batch 1 — signature coverage jumps 337/451 -> 377/451
 

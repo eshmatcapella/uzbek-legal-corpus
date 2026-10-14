@@ -291,10 +291,11 @@ def page_currency() -> None:
     c[2].metric("Acts doing the repealing", n_actors)
 
     st.subheader("The LLC's own governing law")
-    for doc_id, date, derived, rep_by, rep_title in q("""
-        SELECT doc_id, doc_date, derived_status, repealed_by,
-               coalesce(repealed_by_title, '')
-        FROM v_act_currency WHERE doc_id IN (?, ?) ORDER BY doc_date
+    for doc_id, date, derived, rep_by, rep_title, version_date in q("""
+        SELECT c.doc_id, c.doc_date, c.derived_status, c.repealed_by,
+               coalesce(c.repealed_by_title, ''), a.version_date
+        FROM v_act_currency c JOIN act a ON a.doc_id = c.doc_id
+        WHERE c.doc_id IN (?, ?) ORDER BY c.doc_date
     """, [LLC_LAW_PRIOR, LLC_LAW_CURRENT]):
         n_art = q("SELECT n_articles FROM act WHERE doc_id = ?", [doc_id])[0][0]
         st.markdown(f"**{date}** · `{doc_id}` · {n_art} articles — {status_chip(derived)}")
@@ -304,6 +305,9 @@ def page_currency() -> None:
                    [doc_id])
             if ev:
                 st.caption(f"…{ev[0][0][:320]}…")
+        note = snapshot_age_note(version_date)
+        if note:
+            st.caption(note)
 
     st.subheader("Superseded acts still feeding the realization graph")
     st.caption("These acts were repealed, yet still contribute 'realizes' edges — "
@@ -396,9 +400,10 @@ def page_acts() -> None:
     hide_dead = st.toggle("Hide superseded", value=True)
     rows = q("""
         SELECT l.tier, l.doc_title, l.doc_date, l.n_hits, l.stages,
-               l.derived_status, l.evidence,
+               l.derived_status, l.evidence, a.version_date,
                p.n_voided, p.locators, p.last_voided_on, p.last_voided_by_title
         FROM llc_implementing_act l
+        JOIN act a ON a.doc_id = l.doc_id
         LEFT JOIN v_act_partial_repeal p ON p.doc_id = l.doc_id
         WHERE l.route = ? AND (? OR l.derived_status <> 'superseded')
         ORDER BY l.tier, l.n_hits DESC
@@ -406,7 +411,7 @@ def page_acts() -> None:
     st.write(f"**{len(rows)}** acts")
     for tier in sorted({r[0] for r in rows}):
         st.markdown(f"### Tier {tier} — {TIER_LABEL.get(tier, '?')}")
-        for (_, title, date, n, stages, derived, ev,
+        for (_, title, date, n, stages, derived, ev, version_date,
              n_voided, locators, voided_on, voided_by) in [r for r in rows if r[0] == tier]:
             dead = " 🔴" if derived == "superseded" else ""
             partial = " ⚠️" if n_voided else ""
@@ -420,6 +425,9 @@ def page_acts() -> None:
                                f"own provisions ({locators}) have been individually "
                                f"voided — most recently by {voided_by[:80] if voided_by else 'a later act'} "
                                f"on {voided_on}.")
+                note = snapshot_age_note(version_date)
+                if note:
+                    st.caption(note)
                 st.caption(f"…{ev}…")
 
 
