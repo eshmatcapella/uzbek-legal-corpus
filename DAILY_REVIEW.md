@@ -22,6 +22,70 @@ How to use this file each session:
 
 ## Active threads
 
+- **Gold set: 420 -> 460 records, eleventh signature-stratified batch
+  2026-10-15; the clean-batch streak broke (batch 10 was 0/40), but not
+  with a new extractor bug — instead found and fixed a real gold-set
+  bookkeeping inconsistency; thread stays open, well still clearly not
+  dry.** Continued the already-open Extractor thread (last touched
+  2026-10-13; Extractor was the oldest of the three focus areas, Cleanup
+  10-12 and Data currency 10-14 both more recent). `pip install duckdb
+  pandas` was needed first — this container's `python3` resolves to
+  3.11 but the pre-wired `pip3` targets a separate 3.13 install, so
+  `pip3 install duckdb` silently installs into the wrong interpreter;
+  used `python3 -m pip install duckdb pandas` instead. `corpus.duckdb`
+  and the raw parquet were both present (git-lfs pulled the parquet,
+  134-byte pointer stub by default — `git lfs install && git lfs pull`
+  before anything else). Drew batch 11 (`build_gold_sample_novel.py
+  --seed 20261015 --n 40`, novelty coverage 377/451 signatures before
+  drawing). Hand-read all 40 against the raw parquet text and the live
+  `extract()` output: 39/40 verdict `correct`. The one exception, gold_id
+  451 (row 26159, "Fuqarolik kodeksining 38, Oila kodeksining 228,
+  Fuqarolik protsessual kodeksining 274-moddalari"), is the identical
+  failure class already documented at gold_id 194-196 (2026-09-28: a bare
+  article number swallowed by an interposed different code's name before
+  any unit word attaches) — one of the 5 occurrences / 3 rows that
+  class's own corpus-wide measurement already counted (26159, 37948 x3,
+  53186) but had never gotten its own gold record, so formalized it as
+  `known_gap` rather than counting it as a "new" finding. Formalizing it
+  meant re-checking the other two rows named in that same 2026-09-28
+  count, which surfaced a real inconsistency: **gold_id 295 (row 53186)
+  — the exact same phrase pattern, same dropped Article 38 — had been
+  recorded `verdict: correct` with `expected: [act]`**, not `known_gap`.
+  That record predates the 2026-09-28 discovery of the failure class and
+  nobody had revisited it since; re-ran `citation_extractor.py` on row
+  53186's actual text to confirm it produces the identical bare-`act`
+  fallback as row 26159 and row 37948, not a different, genuinely-correct
+  case. Corrected gold_id 295 to `known_gap` with the honest
+  `expected: [article 38]`. All 3 rows gold_id 194 originally counted
+  (26159, 37948, 53186) are now consistently represented in the gold set
+  for the first time. **Score after merging**: precision 1988/2001
+  (99.4%), recall 1988/2024 (98.2%) on 460 windows (steady from
+  1895/1906 = 99.4% / 1895/1929 = 98.2% on 420 — precision/recall
+  percentages barely move because this was almost entirely more of the
+  same well-handled surface forms, as expected for a clean-leaning
+  batch), zero drift against the pre-existing 420 records. **New
+  signature coverage: 417/451** (up from 377/451 — the biggest
+  single-batch jump yet, because signature-stratified sampling's own
+  novelty guarantee means every one of this batch's 40 windows added a
+  signature the gold set had never annotated before); 737/3251 candidate
+  windows remain in never-annotated territory (down from 958/3251), 34
+  signatures remain uncovered (down from 74). `verify_transfer.py`
+  green; `python -m unittest test_transfer_e2e.py` 14/14;
+  `check_sql_bindings.py` 106/106; `check_fstring_interp.py` 54/54 call
+  sites clean; `check_code_clones.py` still exactly the same 5 cross-file
+  pairs (no new pair — this change touched no code, only
+  `gold_citations.json`); `pyflakes`/`vulture --min-confidence
+  60`/`bandit` all unchanged (61 bandit issues, same 57 B608/3 B311/1
+  B110 breakdown); both apps started live (HTTP 200, clean logs, no
+  exceptions) and torn down after. `corpus.duckdb` untouched — this
+  entire session only ever read it, never wrote. Thread stays open —
+  next Extractor rotation should draw batch 12. With 34/451 signatures
+  and 737/3251 windows still never-annotated, and today's jump from
+  377->417 covered showing the sampler still has plenty of real novel
+  ground left, the "switch sampling strategy" question from 2026-10-13
+  is deferred again; it's worth revisiting once novel-signature coverage
+  gets much closer to saturating (say >90%), not before.
+
 - **Data currency: wired the 2026-10-11 snapshot-age signal into the two
   whole-act badge spots it hadn't reached yet — closed 2026-10-14.**
   Rotated to Data currency (oldest of the three: last touched 2026-10-11;
@@ -59,42 +123,6 @@ How to use this file each session:
   of this area still open; next Data currency rotation should pick one of
   those or invent a new angle rather than re-running today's wiring.
 
-- **Gold set: 380 -> 420 records, tenth signature-stratified batch
-  2026-10-13; first fully clean batch (0 new findings) since batch 1;
-  thread stays open, now watching for a second clean batch in a row before
-  deciding whether to switch sampling strategy.** Continued the
-  already-open Extractor thread (last touched 2026-10-10; Extractor was
-  the oldest of the three focus areas, Data currency 10-11 and Cleanup
-  10-12 both more recent). Drew batch 10 (`build_gold_sample_novel.py
-  --seed 20261013 --n 40`, novelty coverage 337/451 signatures before
-  drawing). Hand-read all 40 against the raw parquet text and the live
-  `extract()` output: **40/40 verdict `correct`**, including a close check
-  of one genuinely novel signature (row 46565: a chapter citation
-  immediately followed by its own parenthetical article range, confirmed
-  as intended multi-granularity behavior, not a double-count bug — see
-  Log). **Score after merging**: precision 1895/1906 (99.4%), recall
-  1895/1929 (98.2%) on 420 windows (up from 1608/1619 = 99.3% / 1608/1642 =
-  97.9% on 380), zero drift against the pre-existing 380 records — the 11
-  remaining FP/FN pairs are exactly the 5 already-documented known_gap
-  records. **New signature coverage: 377/451** (up from 337/451, the
-  biggest single-batch jump so far — this draw specifically targeted the
-  rarest never-covered signatures); 958/3251 candidate windows still sit in
-  never-annotated territory. Also backfilled two missing `_meta.batches[]`
-  entries in `gold_citations.json` (batches 7 and 9, both already fully
-  described in `_meta.description` and this file's own history, just never
-  got a structured row) — pure bookkeeping, no `expected`/`verdict` data
-  touched. `verify_transfer.py` green, `python -m unittest
-  test_transfer_e2e.py` 14/14, both apps smoke-tested live (HTTP 200, no
-  exceptions). Thread stays open — next Extractor rotation should draw
-  batch 11. Flagging for whoever picks this up: today is the *first* 0/40
-  batch since the project started signature-stratified sampling in
-  earnest; one clean batch isn't yet strong evidence the well is dry
-  (958/3251 windows and 74/451 signatures remain unannotated), but if
-  batch 11 also comes back clean, that's the signal to stop drawing more
-  signature-novelty batches and switch to a different angle (e.g.
-  stratifying by `doc_type`/anchor kind instead of surface-text signature,
-  or revisiting one of the still-open qism/band-grain backlog items where
-  the underlying data — not the extractor's recall — is the open question).
 
 - **Cleanup: a seventh repeatable check, `check_fstring_interp.py` —
   built and closed 2026-10-12, one real bug found and fixed.** Container
@@ -1699,25 +1727,30 @@ How to use this file each session:
   to 220 via two more signature-stratified batches 2026-09-28, to 260 via
   a third 2026-09-29, to 300 via a fourth 2026-10-02, to 340 via a fifth
   2026-10-04, to 380 via a sixth 2026-10-10, to 420 via a seventh
-  2026-10-13** — see Active threads and Log for the full detail.
-  `gold_citations.json` (420 hand-verified anchor occurrences, ten batches
-  — two uniform-random, eight signature-stratified) + `score_gold.py` (the
-  scorer) + `build_gold_sample.py`/`build_gold_sample_novel.py` (the two
-  samplers) now exist; current score **precision 1895/1906 (99.4%), recall
-  1895/1929 (98.2%)** — the mismatches are the documented "paragrif"
-  spelling gap, the 2026-09-25 Roman-chapter+paragraf gap, the 2026-09-28
-  "hamda" list-separator gap, the 2026-09-28 chapter+paragraph-list-with-
-  parenthetical gap, the 2026-09-28/2026-10-10 "bare article number before
-  an interposed different act name" gap (4 rows), the 2026-10-04 "§ N"
-  section-mark-notation gap, the 2026-10-10 chapter+paragraph space-
-  separator gap, and the 2026-10-10 "moddsi" typo gap (see below), each
-  recorded with its true expected output rather than silently marked
-  correct — unchanged from the 380-record set, since 2026-10-13's batch
-  found nothing new. Not closed outright — 420 windows is still a small
-  fraction of the 3251 real candidate windows corpus-wide (377/451 distinct
-  window *signatures* covered as of 2026-10-13, up from 337/451 after
-  2026-10-10's batch — see Active threads). **Next step, whenever
-  Extractor rotation comes up again**: run `build_gold_sample_novel.py`
+  2026-10-13, to 460 via an eighth 2026-10-15** — see Active threads and
+  Log for the full detail. `gold_citations.json` (460 hand-verified anchor
+  occurrences, eleven batches — two uniform-random, nine signature-
+  stratified) + `score_gold.py` (the scorer) + `build_gold_sample.py`/
+  `build_gold_sample_novel.py` (the two samplers) now exist; current score
+  **precision 1988/2001 (99.4%), recall 1988/2024 (98.2%)** — the
+  mismatches are the documented "paragrif" spelling gap, the 2026-09-25
+  Roman-chapter+paragraf gap, the 2026-09-28 "hamda" list-separator gap,
+  the 2026-09-28 chapter+paragraph-list-with-parenthetical gap, the
+  2026-09-28/2026-10-10 "bare article number before an interposed
+  different act name" gap (4 rows, now all 4 consistently recorded as
+  `known_gap` — see 2026-10-15 log entry for a gold-set bookkeeping fix),
+  the 2026-10-04 "§ N" section-mark-notation gap, the 2026-10-10
+  chapter+paragraph space-separator gap, and the 2026-10-10 "moddsi" typo
+  gap (see below), each recorded with its true expected output rather
+  than silently marked correct. Not closed outright — 460 windows is still
+  a small fraction of the 3251 real candidate windows corpus-wide (417/451
+  distinct window *signatures* covered as of 2026-10-15, up from 377/451
+  after 2026-10-13's batch — signature-stratified sampling's own novelty
+  guarantee means every one of batch 11's 40 windows added a signature the
+  gold set had never seen, the biggest single-batch signature jump yet;
+  737/3251 candidate windows remain in never-annotated territory, down
+  from 958/3251 — see Active threads). **Next step, whenever Extractor
+  rotation comes up again**: run `build_gold_sample_novel.py`
   again (not `build_gold_sample.py` — see below for why) with a fresh
   `--n`/`--seed`, hand-annotate the batch, and merge into
   `gold_citations.json` — or add a targeted record for any new bug a
@@ -2380,6 +2413,140 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-10-15 — Extractor rotation: eleventh gold batch, 420 -> 460 records; broke the clean-batch streak not with a new bug but a fixed gold-set inconsistency
+
+Container toolchain gap, same shape as recent sessions: `duckdb`, `pandas`,
+`streamlit`, `pyflakes`, `vulture`, `bandit` all absent from this fresh
+container. `pip3 install duckdb` appeared to succeed but installed into the
+wrong interpreter — `python3` resolves to `/usr/bin/python3.11` (3.11.17)
+but `pip3` is wired to a separate Python 3.13 (`pip 24.0 from
+/usr/lib/python3/dist-packages/pip (python 3.13)`), so `import duckdb`
+still failed after a "successful" install. Fixed with `python3 -m pip
+install duckdb pandas` (and later `pyflakes vulture bandit streamlit` the
+same way) — same fix pattern 2026-10-14's entry already documented, worth
+restating since it keeps recurring across fresh containers.
+`articles/train-00000-of-00001.parquet` was a 134-byte git-lfs pointer
+stub, not the real 163MB file; `git lfs install && git lfs pull` fetched
+the real file before `verify_transfer.py` would even import successfully.
+
+Rotation: the Extractor thread (last closed-batch touch 2026-10-13) was
+mid-flight per its own closing note ("next Extractor rotation should draw
+batch 11"), so continued it directly rather than re-deriving rotation order
+from the other two areas' dates (Cleanup 10-12, Data currency 10-14).
+Re-verified the baseline first: `verify_transfer.py` green, `score_gold.py`
+on the as-is 420-record set reproduced the exact numbers the last log entry
+claimed (precision 1895/1906, recall 1895/1929) before touching anything.
+
+Drew batch 11: `python build_gold_sample_novel.py --seed 20261015 --n 40`.
+Pre-draw stats matched the 2026-10-13 entry exactly (3251 candidate windows,
+451 distinct signatures, 377 already covered, 958 windows/91 signatures
+novel) — a good cross-session consistency check that nothing about the
+corpus or the signature function had silently drifted. Hand-read all 40
+windows against the raw parquet text and `citation_extractor.py`'s live
+`extract()` output, checking every list/range expansion, every RE_STOP
+boundary against an interposed different act or code name, and every
+chapter/section/part grain. **39/40 verdict `correct`** — list expansions
+("va"/comma/dash/doubled-en-dash ranges, including a 13-article range and
+a 21-item-wide one), Roman-numeral chapters and parts, chapter+paragraf
+sections, bare-act fallbacks for true act-level mentions (including two
+cases where "Fuqarolik kodeksi" appears only inside the quoted *title* of
+an unrelated Plenum resolution — correctly still falls back to the weak
+`act` signal per the project's existing by-design behavior, not a bug),
+and multiple different-act/different-code stop boundaries all matched
+hand-verification exactly.
+
+The 1 exception, gold_id 451 (row 26159): "Tushuntirilsinki, Fuqarolik
+kodeksining 38, Oila kodeksining 228, Fuqarolik protsessual kodeksining
+274-moddalari..." — Article 38 of the Civil Code is named but the suffix
+"-moddalari" that would pin it is captured by the *third* code's own
+number instead, so `extract()` falls through to the bare-`act` fallback
+and silently drops Article 38. This is not a new bug: it is the identical
+failure class gold_id 194-196 documented on 2026-09-28 ("bare article
+number before an interposed different code's own name"), and that
+session's own corpus-wide measurement already named this exact row
+(regex-matched 5 raw occurrences across 3 distinct rows: 26159, 37948 x3,
+53186) — it just never got its own `gold_citations.json` record until
+today, the same kind of five-week prose-only backlog gap gold_id 341
+formalized on 2026-10-10. Recorded it as `known_gap` with the honest
+`expected: [article 38]` rather than counting it as a fresh finding.
+
+Formalizing gold_id 451 meant re-reading the other two rows gold_id 194's
+measurement named, to confirm they're each represented correctly. Row
+37948 already has its 3 `known_gap` records (gold_id 194-196). **Row
+53186 did not**: `gold_citations.json` already contained two records for
+this row (gold_id 295, 331), and gold_id 295 — the exact same
+"Fuqarolik kodeksining 38, Oila kodeksining 228, 233-moddalari" phrase,
+same anchor pattern — was recorded `verdict: correct` with
+`expected: [{"target_kind": "act", ...}]`. Ran `citation_extractor.py`
+directly against row 53186's actual `article_text` to double check this
+wasn't a subtly different, genuinely-`act`-only occurrence: it produces
+the identical bare-`act` fallback citation_extractor.py always does for
+this failure class, at the exact anchor position gold_id 295 recorded.
+This was a real gold-set inconsistency, not a code bug — gold_id 295 pre-
+dates the 2026-09-28 discovery of this failure class entirely (it reads
+like an earlier, less-informed annotation pass that hadn't yet learned to
+recognize the pattern), and no session since had revisited it even though
+2026-09-28's own measurement already named row 53186 by number. Corrected
+gold_id 295 to `known_gap` with `expected: [article 38]`, matching its
+siblings. All 3 rows gold_id 194 originally counted (26159, 37948, 53186)
+are now consistently `known_gap` in the gold set for the first time; the
+corpus-wide count for this failure class is unchanged at 6 occurrences /
+4 rows (the 4th row, 42229, is the separate *Qonun*-interposing variant
+gold_id 379 found on 2026-10-10) — today's work only fixed how faithfully
+the gold set represents a count that was already correct, it didn't
+change the count itself.
+
+Merged batch 11 into `gold_citations.json` (420 -> 460 records) via a
+one-off script (not committed — scratch merge logic, same pattern every
+prior batch-merge session has used) and fixed gold_id 295 in the same
+pass; appended the new `_meta.batches[]` entry and extended
+`_meta.description`. **Score after merging**: precision 1988/2001
+(99.4%), recall 1988/2024 (98.2%) on 460 windows — both percentages
+essentially unchanged from 420 (1895/1906 = 99.4% / 1895/1929 = 98.2%),
+because gaining one `known_gap` record (451) and converting a second
+existing record to `known_gap` (295) is a 2-citation swing against 39
+fully-clean windows' worth of new citations, not enough to move a
+rounded percentage; zero drift against the pre-existing 420 records
+(`score_gold.py`'s own drift check: 0 flagged). **New signature
+coverage: 417/451** (up from 377/451) — the single biggest jump of any
+batch so far, because every one of today's 40 windows was drawn
+specifically from a signature the gold set had never seen, and none of
+them collided with each other's signature group; 737/3251 candidate
+windows now sit in never-annotated territory (down from 958/3251), 34
+signatures remain uncovered (down from 74). Given how much headroom that
+jump revealed, deferred the "switch sampling strategy" decision
+2026-10-13's clean batch raised — the well is clearly not dry yet.
+
+Verified before merging and after: `verify_transfer.py` green throughout
+(this change never touches any table/view or `corpus.duckdb` — confirmed
+`corpus.duckdb`'s mtime unchanged start-to-finish); `python -m unittest
+test_transfer_e2e.py` 14/14; `check_sql_bindings.py` 106/106;
+`check_fstring_interp.py` 54/54 call sites clean; `check_code_clones.py`
+still exactly the same 5 cross-file pairs, 0 new (expected — no `.py` file
+changed today, only `gold_citations.json`); `pyflakes` clean;
+`vulture --min-confidence 60` unchanged; `bandit -r . -x
+./articles,./documents,./okoz,./structure` 61 issues, same 57 B608/3
+B311/1 B110 breakdown as every prior session. Both `app_hierarchy.py` and
+`app_llc.py` started live on separate ports, both HTTP 200 with clean
+logs (no exceptions, no tracebacks), both torn down after — neither
+reads `gold_citations.json` at all, so this was a pure regression check,
+not an expected-impact one.
+
+Decided: gold_citations.json is accumulating real annotation batches
+faster than code fixes are landing (11 batches, only a handful of actual
+regex changes among them) — that's expected and fine for a
+signature-novelty sampler whose whole point is measuring coverage, not
+forcing a fix per batch, but worth flagging for whoever next considers
+the "switch sampling strategy" question: the 34 remaining never-covered
+signatures are now a small enough set that a future session could
+plausibly eyeball all of them directly (print each one's representative
+window) rather than drawing another random batch, to decide up front
+which of them look like real extractor gaps worth hypothesis-driven
+investigation versus harmless shape variations (punctuation/whitespace
+noise) not worth a 41st annotation round. Not done today — out of scope
+for this rotation's time, and a deliberate hand-crafted next step rather
+than something to rush.
 
 ### 2026-10-14 — Data currency rotation: wired the snapshot-age signal into the LLC dossier's two remaining whole-act badge spots — 43/135 implementing acts now show it
 
