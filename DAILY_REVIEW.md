@@ -22,6 +22,74 @@ How to use this file each session:
 
 ## Active threads
 
+- **Cleanup: closed a structural blind spot in `check_fstring_interp.py`
+  itself — 2026-10-16, no live SQL-injection bug found, but a real class of
+  call sites the tool could never have seen.** Rotation: Cleanup was the
+  oldest of the three (last touched 2026-10-12; Data currency 10-14,
+  Extractor 10-15). Re-ran all seven existing checks first as a baseline —
+  `pyflakes`/`vulture --min-confidence 60` clean, `bandit` 61 issues (same
+  57 B608/3 B311/1 B110 breakdown), `check_sql_bindings.py` 106/106,
+  `check_code_clones.py` 5 cross-file pairs (same as 2026-10-09, nothing
+  new), `check_fstring_interp.py` 54/54 — all unchanged from their
+  last-recorded baselines, confirming no drift since 2026-10-12. Then
+  looked for an eighth gap-class rather than re-running the same seven
+  blind: grepped for SQL built via `.format()` or `+`-string-concatenation
+  outside the already-audited f-string/literal paths (zero hits, dead
+  end), then asked a sharper question of `check_fstring_interp.py`
+  specifically — its own `find_calls()` requires `node.args[0]` to be
+  *literally* `ast.JoinedStr`, so `query = f"...{x}..."` followed by
+  `conn.execute(query)` on a later line never even enters its result set.
+  That's the same shape of blind spot the 2026-09-26 grep (single-line
+  literal match) and the 2026-10-12 rewrite (that replaced it) each found
+  in their predecessor — one level deeper this time: not "wrong line
+  layout" but "one assignment away from the call". Proved it's real with a
+  mutation test: a scratch copy of `test_transfer_e2e.py` with a
+  runtime-derived value (`str(-111189)`, not a hardcoded constant) spliced
+  into exactly this indirected shape inside
+  `test_r3_alignment_key_matching` passed the pre-fix script clean, with
+  the call count unchanged (19 before and after — the mutated call was
+  never even counted, not merely misjudged safe). Measured the real
+  population across the whole codebase before fixing: exactly 6
+  `execute(<bare name>)` call sites total — 4 are the `q()`/`qdf()` helper
+  definitions in `app_hierarchy.py`/`app_llc.py` (out of scope, same as
+  `check_sql_bindings.py` already treats them), 1
+  (`measure_extractor_recall.py`'s `check_cross_reference_disagreement()`)
+  is a fully literal triple-quoted string with zero interpolation, and 1
+  is the real indirected f-string case this script should have been
+  checking all along
+  (`test_transfer_e2e.py::test_r3_alignment_key_matching`'s `query =
+  f"...{PARQUET_PATH}..."` then `self.conn.execute(query)`) — safe today
+  because `PARQUET_PATH` is a SCREAMING_CASE module constant, but reached
+  purely by luck of this script's blind spot, not by its design. Fixed by
+  adding `_contains_joinedstr()` (mirrors `_is_safe()`'s own Name-chasing
+  traversal, but asks "does this resolve through an f-string at all" rather
+  than "is it safe") and widening `find_calls()` to also accept a bare
+  `ast.Name` first argument when it traces back to at least one f-string,
+  reusing the existing `_is_safe()`/`assigns_by_name` machinery unchanged
+  for the actual safety verdict — no new tool, no second duplicate
+  resolver. Re-ran the mutation test post-fix: now correctly flagged
+  (`checked 20... 1 interpolated expression(s) that don't resolve to a
+  hardcoded constant: ...:436 {query}`), and the real unmutated file scores
+  20/20 clean (one more call now in scope than the pre-fix 19, resolved
+  safe via `PARQUET_PATH`). Corpus-wide: `check_fstring_interp.py` now
+  checks 55 f-string execute() calls (up from 54), all clean. Re-verified
+  nothing else moved: `pyflakes`/`vulture` clean on the changed file;
+  `check_code_clones.py` 100 functions parsed (up from 99 — the new
+  `_contains_joinedstr()` helper), still exactly the same 5 cross-file
+  pairs, no new clone; `bandit` unchanged (61, same breakdown);
+  `verify_transfer.py` green; `test_transfer_e2e.py` 14/14; both apps
+  started live (HTTP 200, clean logs) and torn down after. `corpus.duckdb`
+  untouched — this entire session only ever read it. Thread closed —
+  eight repeatable Cleanup checks now exist; next Cleanup rotation should
+  re-run all eight before deciding whether a ninth is worth adding. One
+  deliberately-deferred residual noted but not fixed today, same
+  single-occurrence low-value precedent this project already applies
+  elsewhere: `check_sql_bindings.py` still never traces *plain-literal*
+  indirection (`measure_extractor_recall.py`'s `execute(q)`, see above) —
+  zero risk since that one query has no interpolation at all, so it's a
+  schema-binding-coverage gap, not a security gap; not worth a second
+  indirection-tracing pass for exactly 1 call site today.
+
 - **Gold set: 420 -> 460 records, eleventh signature-stratified batch
   2026-10-15; the clean-batch streak broke (batch 10 was 0/40), but not
   with a new extractor bug — instead found and fixed a real gold-set
@@ -2409,10 +2477,174 @@ How to use this file each session:
   (`execute(f"` grep) going forward — next rotation should re-run all
   seven, which in practice means the six scripted checks plus this one;
   the plain grep itself doesn't need a separate re-run anymore.
+- ~~**An eighth check / a fix to the seventh: `check_fstring_interp.py`'s
+  own `find_calls()` only matches `execute()` calls whose f-string is the
+  *direct* argument, so `query = f"..."` then `execute(query)` on a later
+  line was invisible to it entirely (not even counted), not merely
+  unresolved.**~~ **Fixed 2026-10-16**: added `_contains_joinedstr()` and
+  widened `find_calls()` to trace a bare-name argument back to an f-string
+  via the same intra-function `Assign` chase `_is_safe()` already does,
+  reusing that existing resolver unchanged for the safety verdict itself.
+  Proved the gap with a mutation test first (a runtime value spliced into
+  a scratch copy of `test_transfer_e2e.py` in exactly this indirected
+  shape passed the pre-fix script clean, with the call count unchanged).
+  Measured the real population: exactly 6 `execute(<bare name>)` sites
+  codebase-wide — 4 are the `q()`/`qdf()` helper definitions (out of
+  scope), 1 is a fully literal string with no interpolation
+  (`measure_extractor_recall.py`), 1 is a real indirected f-string
+  (`test_transfer_e2e.py::test_r3_alignment_key_matching`, safe today via
+  the `PARQUET_PATH` constant but reached by luck of the blind spot, not
+  by design). Zero live bugs found, but the structural gap was real — same
+  precedent as `check_sql_bindings.py`'s own 106/106-clean debut. See
+  Active threads and Log for the full trace. Now an eighth repeatable
+  Cleanup check (folded into the existing script, not a new file); next
+  rotation should re-run all eight. One deliberately-deferred residual:
+  `check_sql_bindings.py` still doesn't trace *plain-literal* indirection
+  (the `measure_extractor_recall.py` site above) — zero injection risk
+  since it has no interpolation, so left alone for a single call site, same
+  single-occurrence-scope precedent as several Extractor items above.
 
 ---
 
 ## Log
+
+### 2026-10-16 — Cleanup rotation: closed a structural blind spot in `check_fstring_interp.py` itself (eighth repeatable check), zero live bugs
+
+Container started detached from `refs/heads/main`, one commit *ahead* of
+the local `main` ref (local `main` was stuck at `9834165`, `HEAD` and
+`origin/main` both already at `00a5935` — 2026-10-15's eleventh-gold-batch
+commit). Same recovery as every prior session that's hit this: `git fetch
+origin main` confirmed `origin/main` already matched `HEAD` exactly, then
+`git checkout -B main origin/main`. Toolchain gap, same shape as recent
+sessions: `duckdb`/`pandas`/`pyflakes`/`vulture`/`bandit`/`streamlit` all
+missing from this fresh container; `python3 -m pip install -U ...` fixed
+it (this time a plain `pip install` without `-U` landed in the right
+3.11 interpreter already — the 3.11-vs-3.13 split some prior sessions hit
+didn't reproduce today, so that one may be container-image-revision-
+dependent rather than permanent; worth a one-line note in case it recurs).
+`articles/train-00000-of-00001.parquet` was already the real 163MB file,
+not a pointer stub, so no `git lfs pull` was needed this time either.
+
+Rotation: Cleanup last touched 2026-10-12, older than Data currency
+(10-14) and Extractor (10-15) — clear next pull per the rotation rule.
+Baselined all seven existing checks before looking for anything new:
+`pyflakes`/`vulture --min-confidence 60` clean; `bandit -r . -x
+./articles,./documents,./okoz,./structure` 61 issues (4 Low/57 Medium by
+severity, same 57 B608/3 B311/1 B110 breakdown as every prior session);
+`check_sql_bindings.py` 106/106 bind cleanly; `check_code_clones.py` 99
+functions parsed, the same 5 cross-file pairs as 2026-10-09 (2 identical,
+1 near-dup, 2 similar — all previously hand-verified, nothing new);
+`check_fstring_interp.py` 54/54 clean. All seven unchanged from their
+last-recorded baselines — no drift since 2026-10-12.
+
+Looked for an eighth gap-class rather than re-running the same seven
+blind. First tried the obvious extension of the project's own rule —
+grepped the whole codebase for SQL assembled via `.format()` or
+`+`-string-concatenation involving a non-literal — zero hits either way;
+dead end, but cheap to rule out and now ruled out. Then asked a sharper
+question specifically of `check_fstring_interp.py`, the newest and most
+structurally sophisticated of the seven: its own `find_calls()` requires
+`node.args[0]` to be *literally* `ast.JoinedStr` before it even tries to
+resolve anything, so `query = f"...{x}..."` followed by `conn.execute
+(query)` on a later line never enters its result set at all — the same
+shape of blind spot the 2026-09-26 `execute(f"` grep (single-line literal
+match) and the 2026-10-12 AST rewrite that replaced it each found in
+their own predecessor, one level deeper this time: not "wrong line
+layout" but "one assignment away from the call entirely".
+
+Proved it with a mutation test before fixing anything, same methodology
+every prior check-script addition in this project has used: copied
+`test_transfer_e2e.py` to scratch, spliced a runtime-derived value
+(`runtime_doc_id = str(-111189)` — a function call result, not a
+hardcoded constant) into `test_r3_alignment_key_matching`'s existing
+`query = f"...{PARQUET_PATH}..."` / `self.conn.execute(query)` shape. Ran
+the pre-fix script against the mutated file: `checked 19 f-string
+execute() calls` — identical count to the unmutated original, meaning the
+mutated call site was never even seen, not merely misjudged safe. That's
+the sharpest possible confirmation the gap is structural.
+
+Measured the real population across the whole codebase before fixing —
+every `*.execute(<bare name>)` call site, regardless of what the name
+resolves to: exactly 6, corpus-wide.
+  - 4 are the `q()`/`qdf()` helper definitions in `app_hierarchy.py`
+    (`:113`,`:117`) and `app_llc.py` (`:48`,`:52`) — `check_sql_bindings.py`
+    already treats these as out of its own scope by name; they're the
+    generic plumbing every other query in those two files calls through,
+    not a SQL string to audit in themselves.
+  - 1 is `measure_extractor_recall.py::check_cross_reference_disagreement()`'s
+    `q = """...multi-line literal..."""` then `con.execute(q)` — a fully
+    literal triple-quoted string with zero interpolation anywhere in it;
+    zero injection risk regardless of indirection.
+  - 1 is the real case: `test_transfer_e2e.py::test_r3_alignment_key_matching`'s
+    `query = f"SELECT ... FROM read_parquet('{PARQUET_PATH}') WHERE doc_id
+    = -111189"` then `self.conn.execute(query)`. Safe today only because
+    `PARQUET_PATH` is a SCREAMING_CASE module-level constant (verified at
+    its definition, line 47) — but safe by luck of what currently happens
+    to be assigned there, not because the tool meant to check it. This is
+    structurally the same family as the `query_db_article_text_en()` bug
+    `check_fstring_interp.py` was built to catch on 2026-10-12; it simply
+    hadn't been written one assignment away from its `execute(` call at
+    the time.
+
+Fixed by adding `_contains_joinedstr()` — a small sibling to the existing
+`_is_safe()` that asks "does resolving this pass through an f-string at
+all" (chasing `Name` -> `Assign` the same way `_is_safe()` already does)
+rather than "is it safe" — and widening `find_calls()`'s match condition
+to accept a bare `ast.Name` first argument when `_contains_joinedstr()`
+says yes, in which case the whole argument (not a sub-expression) becomes
+the one thing `main()` asks `_is_safe()` to verify. No new resolution
+logic was needed for the safety verdict itself: `_is_safe()`'s existing
+`ast.Name` branch (chase every `Assign` to that name within the same
+function, recurse) already handled exactly this shape — it just never
+used to be *reached* from a top-level call argument, only from inside an
+f-string's own interpolations.
+
+Re-ran the mutation test post-fix: now correctly flagged — `checked 20
+f-string execute() calls` / `1 interpolated expression(s) that don't
+resolve to a hardcoded constant: ...mut_test.py:436 {query}`. Ran the
+fixed script against the real, unmutated `test_transfer_e2e.py`: 20/20
+clean (one more in-scope call than the pre-fix 19, the
+`PARQUET_PATH`-indirected one, resolved safe exactly as expected).
+Corpus-wide: `check_fstring_interp.py` now checks 55 f-string execute()
+calls (54 -> 55), all clean — no new bug, but a closed blind spot that
+could have hidden one.
+
+Re-verified nothing else moved after the fix: `pyflakes`/`vulture
+--min-confidence 60` clean on the changed file; `check_code_clones.py` 100
+functions parsed (99 -> 100, the new `_contains_joinedstr()` helper),
+still the same 5 cross-file pairs, no new clone introduced; `bandit`
+unchanged (61 issues, same breakdown); `check_sql_bindings.py` 106/106
+unaffected (disjoint scope); `verify_transfer.py` green end to end;
+`python -m unittest test_transfer_e2e.py` 14/14; both `app_hierarchy.py`
+and `app_llc.py` started live (HTTP 200, clean logs, no exceptions) and
+torn down after — unaffected by this change but checked per the project's
+own standing constraint. `corpus.duckdb` and
+`articles/train-00000-of-00001.parquet` both untouched — this entire
+session only ever read the database, never wrote it. Deleted all scratch
+mutation-test files before committing.
+
+**Decided and why**: eight repeatable Cleanup checks now exist
+(`pyflakes`, `vulture`, `bandit`, `check_sql_bindings.py`,
+`check_code_clones.py`, `check_fstring_interp.py` plus its own newly-fixed
+indirection handling — the `execute(f"` grep is still fully subsumed, not
+revived). One residual gap noted but deliberately not fixed today, same
+single-occurrence-scope precedent this project already applies elsewhere
+(the "paragrif"/Roman-chapter/"§ N" Extractor gaps, all left unfixed at
+exactly 1-2 occurrences): `check_sql_bindings.py` still never traces
+*plain-literal* indirection, so `measure_extractor_recall.py`'s
+`execute(q)` stays unchecked for schema drift specifically (not for
+injection — it has no interpolation at all, so there's nothing to inject).
+Fixing that would mean teaching `check_sql_bindings.py` the same
+Name-chasing `check_fstring_interp.py` already has, for exactly one call
+site with zero security relevance — not worth it today; worth revisiting
+only if a second such site ever appears. Next Cleanup rotation should
+re-run all eight checks before deciding whether a ninth gap-class exists;
+candidates not yet tried: whether any `CREATE VIEW` built by the
+`build_*.py` pipeline scripts has gone unqueried by both apps and all
+analysis scripts (a SQL-object-level `vulture`), or whether any numeric
+threshold (e.g. the 3-year snapshot-age cutoff, still on the Data-currency
+backlog as "untuned") is duplicated as a second hardcoded literal
+somewhere instead of a single named constant.
 
 ### 2026-10-15 — Extractor rotation: eleventh gold batch, 420 -> 460 records; broke the clean-batch streak not with a new bug but a fixed gold-set inconsistency
 

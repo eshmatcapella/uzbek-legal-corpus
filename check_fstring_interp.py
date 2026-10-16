@@ -16,9 +16,35 @@ hardcoded constant -- fixed in the same commit that added this script by
 parameterizing it (`article_number = ?` + a bound param) rather than adding
 it to this script's allowlist.
 
+Measured gap (2026-10-16): the original version of this script only
+matched calls whose first *argument* was literally an `ast.JoinedStr` --
+`conn.execute(f"...")` -- so `query = f"..."` followed by
+`conn.execute(query)` on a later line was invisible to it, not merely
+unresolved: the call never even entered `find_calls()`'s result set, so it
+didn't count toward "checked N calls" either. Proved with a mutation test
+(see the 2026-10-16 log entry): a scratch copy of `test_transfer_e2e.py`
+with a runtime-derived value spliced into exactly this indirected shape
+passed clean, with the same "checked 19 calls" count before and after the
+mutation. Measuring the real population across the whole codebase found
+exactly 6 `execute(<bare name>)` call sites total: the 4 `q()`/`qdf()`
+helper definitions in `app_hierarchy.py`/`app_llc.py` (already excluded by
+name from `check_sql_bindings.py`'s own scope, not this script's concern),
+one in `measure_extractor_recall.py` whose variable holds a fully literal
+string with zero interpolation, and one real f-string-via-variable case in
+`test_transfer_e2e.py::test_r3_alignment_key_matching` (`query = f"...
+{PARQUET_PATH}..."` then `self.conn.execute(query)`) -- safe today
+(`PARQUET_PATH` is a SCREAMING_CASE module constant) but reachable from
+this script's own blind spot before the fix below, exactly the way the
+`query_db_article_text_en()` bug this script was built to catch would have
+been invisible too, had it been written one assignment away from its
+`execute(` call instead of inline.
+
 Method: AST-walk every `*.execute(...)` call whose first argument is an
-f-string (`ast.JoinedStr`), regardless of line layout, and recursively
-resolve each top-level interpolated expression:
+f-string (`ast.JoinedStr`) *or* a bare name that traces back (through the
+same intra-function `Assign` resolution used below) to at least one
+f-string, regardless of line layout, and recursively resolve each
+top-level interpolated expression (or, for the indirected case, the whole
+traced value):
   - a SCREAMING_CASE name/attribute (this project's own consistent
     convention for a module-level constant, e.g. `CC_GENERAL_PART`,
     `cx.DOC_GENERAL`) is safe;
@@ -112,6 +138,24 @@ def _is_safe(node: ast.AST, assigns_by_name: dict[str, list[ast.AST]], seen: set
     return False
 
 
+def _contains_joinedstr(node: ast.AST, assigns_by_name: dict[str, list[ast.AST]], seen: set[str] | None = None) -> bool:
+    """True if resolving `node` passes through at least one f-string literal --
+    i.e. this call is in this script's scope at all, independent of whether it
+    turns out safe. Mirrors _is_safe's own traversal shape so a Name is chased
+    through the same intra-function Assign chain."""
+    seen = seen or set()
+    if isinstance(node, ast.JoinedStr):
+        return True
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return _contains_joinedstr(node.left, assigns_by_name, seen) or _contains_joinedstr(node.right, assigns_by_name, seen)
+    if isinstance(node, ast.Name):
+        if node.id in seen:
+            return False  # cycle guard
+        return any(_contains_joinedstr(rhs, assigns_by_name, seen | {node.id})
+                   for rhs in assigns_by_name.get(node.id, []))
+    return False
+
+
 def _assigns_by_name(func: ast.AST) -> dict[str, list[ast.AST]]:
     out: dict[str, list[ast.AST]] = {}
     for node in ast.walk(func):
@@ -136,11 +180,18 @@ def find_calls(path: str) -> list[tuple[int, list[ast.AST], dict[str, list[ast.A
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
                 and node.func.attr == "execute" and node.args):
             continue
-        if not isinstance(node.args[0], ast.JoinedStr):
-            continue
-        exprs = [v.value for v in node.args[0].values if isinstance(v, ast.FormattedValue)]
         scope = scope_of.get(id(node), tree)
-        found.append((node.lineno, exprs, _assigns_by_name(scope)))
+        assigns = _assigns_by_name(scope)
+        arg0 = node.args[0]
+        if isinstance(arg0, ast.JoinedStr):
+            exprs = [v.value for v in arg0.values if isinstance(v, ast.FormattedValue)]
+        elif isinstance(arg0, ast.Name) and _contains_joinedstr(arg0, assigns):
+            # indirected: the argument itself (not just one of its sub-expressions)
+            # is what must resolve safe, via the same Name-chasing _is_safe already does.
+            exprs = [arg0]
+        else:
+            continue
+        found.append((node.lineno, exprs, assigns))
     return found
 
 
