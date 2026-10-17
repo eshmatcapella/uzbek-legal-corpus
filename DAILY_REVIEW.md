@@ -22,6 +22,82 @@ How to use this file each session:
 
 ## Active threads
 
+- **Data currency: tested the snapshot-age threshold against real
+  ground truth for the first time — found scrape age does NOT predict
+  staleness, softened the UI copy accordingly; closed 2026-10-17.**
+  Rotated to Data currency (oldest of the three: last touched
+  2026-10-14; Extractor 10-15, Cleanup 10-16). Re-checked backlog item
+  (1) first: `curl` to `lex.uz` still fails with a 403 at the proxy
+  gateway (`CONNECT tunnel failed`), confirmed via
+  `$HTTPS_PROXY/__agentproxy/status` — still not in this environment's
+  allowed domains, no change since 2026-10-11. Picked up item (2)
+  instead: "the 3-year threshold is round-number legible, not tuned
+  against any labeled staleness data (none exists corpus-wide)." That
+  claim turned out to be false — `repeal_clause` already gives exactly
+  that: 357 distinct acts this project has positively confirmed were
+  repealed, each with its own `version_date` (scrape date). Used that as
+  ground truth to test the premise the snapshot-age note has carried
+  since 2026-10-11 (that an old scrape correlates with elevated
+  staleness risk). First measured a confound: `act.version_date` is
+  heavily batch-clustered — 4850 distinct dates across 24,267 acts, with
+  the single busiest date (`2021-02-22`) alone covering 1228 acts (5.1%
+  of the whole corpus) — these are clearly bulk LexUZ re-crawl sweeps,
+  not individually-triggered re-checks, and acts caught in one of these
+  mass sweeps (batch size >=100/day, 3485 acts corpus-wide) show a
+  **0.00% repeal-signal rate**, vs. 2.33%/1.27%/0.83% for medium/small/
+  unique-day batches — confirming the confound is real and large.
+  Restricting to the "clean" non-mass-crawl population (batch size <10,
+  11,197 acts, 1.20% overall repeal rate) to get a cleaner read: binning
+  by scrape age in 1-year buckets gives a flat, noisy repeal rate
+  (0.44%-3.04%) with no inflection anywhere near 3 years or any other
+  age — not the rising-hazard-with-age curve the threshold's premise
+  implies. Pearson r(age, has_repeal) = -0.04; comparing means directly,
+  confirmed-repealed acts average **6.86y** scrape age vs. **9.98y** for
+  acts with no repeal signal (n=134 vs 11,063) — a 3.13-year difference
+  in the *opposite* direction from "older scrape -> more likely stale,"
+  with a bootstrap 95% CI of [-4.14, -2.08] clearly excluding zero. Read
+  as: LexUZ appears to re-crawl a page somewhat preferentially around
+  when its status changes, so a stale-looking old `version_date` is, if
+  anything, weak evidence of *no* detected change rather than elevated
+  risk of an undetected one. **Decision**: per the hard constraint
+  ("if you think a documented decision is wrong, say so and propose the
+  change rather than quietly reverting it") — did not delete the
+  feature (the scrape date itself is still honest, useful provenance
+  information, and the original 2026-10-11 docstring already disclaimed
+  it as "not a verdict, just how old the snapshot is"), and did not
+  pick a new "tuned" threshold number (there's no signal in this data to
+  tune a number against — doing so would be fitting noise). Instead
+  fixed the one place the shipped copy drifted from that original
+  intent: `snapshot_age_note()`'s caption read "(~Ny old — **verify at
+  lex.uz**)", an imperative that implies elevated suspicion the data
+  doesn't support. Changed both apps' identical copies (deliberate
+  duplicate, per `check_code_clones.py`'s existing precedent for this
+  function) to "(~Ny since last scrape)" — same information, no
+  risk-implying imperative — and added the measurement as a comment
+  above both functions so the next session doesn't have to re-derive
+  why the number is 3.0 and still unverified-against-data. Verified:
+  `pyflakes`/`vulture --min-confidence 60` clean on both changed files;
+  `bandit` unchanged (61 issues, same 57 B608/3 B311/1 B110 breakdown);
+  `check_sql_bindings.py` 106/106; `check_fstring_interp.py` 55/55 call
+  sites clean; `check_code_clones.py` still exactly the same 5
+  cross-file pairs, `snapshot_age_note()`'s pair still IDENTICAL
+  1.000 (the copy changed in lockstep in both files, so it's still a
+  true duplicate, not drift); `test_transfer_e2e.py` 14/14;
+  `verify_transfer.py` green; both apps started live (HTTP 200, clean
+  logs, no exceptions) and torn down after. `corpus.duckdb` and the raw
+  parquet untouched — this entire session only ever read them (no
+  rebuild needed; this was an app-layer copy/comment change only, no
+  schema or view touched). Thread closed — backlog item (1) (live
+  lex.uz comparison) stays blocked on egress policy, re-check
+  periodically rather than every rotation; item (2) is now resolved
+  with a measured "no" rather than an open question; the one open
+  thread this leaves is whether `snapshot_age_note()`'s copy should go
+  further and drop the number entirely in favor of a neutral
+  "last scraped" framing with no implied age judgment at all — not done
+  today since the current copy no longer makes an unsupported claim,
+  just worth a second look if a future session wants to push this
+  further.
+
 - **Cleanup: closed a structural blind spot in `check_fstring_interp.py`
   itself — 2026-10-16, no live SQL-injection bug found, but a real class of
   call sites the tool could never have seen.** Rotation: Cleanup was the
@@ -2339,7 +2415,25 @@ How to use this file each session:
   **Done 2026-10-14**: wired into the LLC dossier's two remaining whole-act
   badge spots, `app_llc.py::page_acts()` and `page_currency()`'s
   governing-law chip (see Active threads/Log) — 43/135 LLC implementing
-  acts now show the note. (1) and (2) above remain open.
+  acts now show the note. ~~(2) the 3-year threshold is round-number
+  legible, not tuned against any labeled staleness data (none exists
+  corpus-wide).~~ **Tested 2026-10-17, resolved as "no tunable signal
+  exists"**: `repeal_clause`'s 357 confirmed-repealed acts ARE labeled
+  staleness data (the claim "none exists" was itself wrong); tested
+  scrape age against them and found no positive correlation with
+  repeal risk — if anything, a measured *negative* one (confirmed-
+  repealed acts average 6.86y scrape age vs. 9.98y for unflagged acts,
+  bootstrap 95% CI [-4.14, -2.08], after controlling for a real
+  crawl-batch-clustering confound in `version_date`). See Active
+  threads/Log for the full measurement. Decision: keep 3.0 as a
+  legible round number (there's no data-driven alternative to tune to),
+  but stopped implying a risk verdict in the UI copy — "verify at
+  lex.uz" became "since last scrape" in both apps'
+  `snapshot_age_note()`. (1) the live lex.uz comparison remains open,
+  still blocked on this environment's egress policy as of 2026-10-17 —
+  re-check only occasionally, not every rotation, since this is an
+  environment-policy question, not something more measurement against
+  `corpus.duckdb` can resolve.
 
 ### Cleanup
 - ~~**Retire superseded prototypes.**~~ **Done 2026-09-07**: deleted
@@ -2507,6 +2601,120 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-10-17 — Data currency rotation: tested the snapshot-age threshold against real ground truth for the first time, found it has no predictive signal, softened the UI copy to match
+
+Rotated to Data currency per the rotation rule — oldest of the three
+(last touched 2026-10-14; Extractor 10-15, Cleanup 10-16). Environment
+setup: `git lfs install && git lfs pull` (parquet starts as a 134-byte
+pointer stub); `python3` resolves to 3.11 but the pre-wired `pip3`
+targets a separate 3.13 install, so `python3 -m pip install duckdb
+pandas numpy streamlit pyflakes vulture bandit` (not bare `pip3
+install`) — same interpreter mismatch 2026-10-15 already documented.
+
+Re-checked backlog item (1) (the live lex.uz comparison) first, since
+it's a one-line check: `curl -sS https://lex.uz/` still fails
+(`CONNECT tunnel failed, response 403`), and
+`$HTTPS_PROXY/__agentproxy/status`'s `recentRelayFailures` confirms it
+as a policy denial, `lex.uz:443` — unchanged since 2026-10-11, nothing
+new to report.
+
+Picked up item (2): "the 3-year threshold is round-number legible, not
+tuned against any labeled staleness data (none exists corpus-wide)."
+Questioned that last clause — `repeal_clause` already records 357
+distinct acts (`dst_doc_id`) this project's own text detector has
+positively confirmed were repealed by a later act, each carrying its
+own `act.version_date` (LexUZ's scrape date for that act). That's
+exactly the labeled ground truth the backlog note said didn't exist:
+for these 357 acts we KNOW the staleness-detector's answer is "yes,
+actually changed," independent of scrape age. The open question
+`snapshot_age_note()` is implicitly answering is "does an old
+`version_date` predict that an act is more likely to be in this
+confirmed-changed state" — directly testable.
+
+**Confound found first**: `act.version_date` is heavily batch-
+clustered, not a smooth per-act timeline. 24,267 acts carry a
+`version_date`, but only 4850 distinct date values — the single
+busiest date, 2021-02-22, alone accounts for 1228 acts (5.1% of the
+whole corpus with a date), and the top 10 dates range from 104 to 1228
+acts each. These are clearly bulk LexUZ re-crawl sweeps (an entire
+batch of unrelated acts scraped the same calendar day), not
+individually-triggered "someone flagged this page" events. Confirmed
+this confound actually matters by bucketing every dated act by how
+many other acts share its exact `version_date`: acts in a >=100/day
+mass-crawl bucket (3485 acts) show a **0.00%** repeal-signal rate,
+vs. 2.33% (medium batch, 10-99/day, 9585 acts), 1.27% (small batch,
+2-9/day, 9279 acts), 0.83% (unique day, 1918 acts) — a mass-crawl
+`version_date` carries essentially zero information about an
+individual act's real status, since it's a scheduling artifact, not a
+content-triggered check.
+
+**Controlling for the confound**: restricted to the "clean" population
+(batch size <10, so each `version_date` was shared by at most 9 other
+acts — far more likely to be an individually-relevant re-check), n =
+11,197, overall repeal rate 1.20%. Binned scrape age into 1-year
+buckets (0-1, 1-2, 2-3, 3-4, 4-5, 5-7, 7-10, 10-15, 15+): repeal rate
+by bucket is 0.59%, 3.04%, 0.94%, 1.65%, 1.70%, 2.14%, 0.44%, 1.08%,
+0.61% — flat and noisy, no rising trend with age and no inflection
+point anywhere near 3 years (or anywhere else). Pearson
+r(age, has_repeal) = -0.04. Comparing the two groups' mean scrape age
+directly: acts WITH a confirmed repeal signal average **6.86 years**
+old (n=134), acts with NO repeal signal average **9.98 years** old
+(n=11,063) — the *opposite* direction from "an older scrape means
+higher staleness risk." A 5000-resample bootstrap on that 3.13-year
+difference gives a 95% CI of [-4.14, -2.08], clearly excluding zero —
+this isn't noise, the effect (such as it is) runs backward from the
+threshold's premise. Plausible reading: LexUZ's crawler seems to
+revisit a page somewhat preferentially around when something about it
+changes, so an old, never-refreshed `version_date` is weak evidence
+the page's content hasn't needed attention — not evidence it's
+drifted out of date unnoticed.
+
+**Decision**: this falsifies "scrape age predicts staleness risk" for
+the one ground truth available, so there is no empirical basis for
+picking a different, "tuned" number — fitting a threshold to a signal
+with no measured correlation would just be fitting noise, and 3.0
+remains exactly as legible a round number as any other choice would
+be. Per the hard constraint on documented design decisions ("if you
+think one is wrong, say so and propose the change rather than quietly
+reverting it"): did not remove the feature — the scrape date is still
+genuine, useful provenance information, and 2026-10-11's own docstring
+already took care to disclaim it as "not a verdict, just how old the
+snapshot is." What *had* drifted from that stated intent was the
+shipped copy: `snapshot_age_note()` in both apps rendered "LexUZ
+snapshot: DATE (~Ny old — **verify at lex.uz**)" — an imperative that
+reads as a risk alarm, which today's measurement shows isn't earned.
+Changed the return string in both apps' identical `snapshot_age_note()`
+copies (same deliberate-duplicate function `check_code_clones.py`
+already tracks) to "LexUZ snapshot: DATE (~Ny since last scrape)" —
+keeps every fact (date, computed age), drops the unsupported
+imperative — and added a comment above each copy recording today's
+numbers so a future session doesn't have to re-run this measurement to
+know why 3.0 is unvalidated-but-not-worth-re-tuning.
+
+Verified: `pyflakes app_hierarchy.py app_llc.py` and
+`vulture --min-confidence 60 app_hierarchy.py app_llc.py` both clean;
+`bandit -r . -x ./articles,./documents,./okoz,./structure` unchanged
+at 61 issues (4 low/57 medium/0 high, same 57 B608/3 B311/1 B110
+breakdown as every prior session back to 2026-10-01); `check_sql_bindings.py`
+106/106; `check_fstring_interp.py` 55/55 call sites clean (no new
+f-string call introduced); `check_code_clones.py` 100 functions, same
+exactly 5 cross-file pairs as baseline, `snapshot_age_note()`'s pair
+still `[IDENTICAL 1.000]` (both copies' return strings changed in
+lockstep, so it's a true duplicate still, not drift);
+`python -m unittest test_transfer_e2e.py` 14/14;
+`python verify_transfer.py` — all AC1-AC7 checks green ("VERIFICATION
+PASSED — all checks green"); both apps started live via
+`streamlit run ... --server.headless true` on throwaway ports (8601,
+8602), both HTTP 200 with clean logs (only the normal Streamlit/
+Uvicorn startup banner, no exceptions), torn down after. `corpus.duckdb`
+and `articles/train-00000-of-00001.parquet` both untouched — this
+entire session only ever read them; no rebuild was needed since this
+was an app-layer copy/comment change, not a schema or view change.
+
+`git diff --stat`: `app_hierarchy.py` +15/-1, `app_llc.py` +6/-2 — the
+scoped comment-and-copy change only, confirmed via `git status
+--short` before staging.
 
 ### 2026-10-16 — Cleanup rotation: closed a structural blind spot in `check_fstring_interp.py` itself (eighth repeatable check), zero live bugs
 

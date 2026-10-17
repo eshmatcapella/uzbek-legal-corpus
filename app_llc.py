@@ -68,7 +68,9 @@ def excerpt(text: str, around: str, pad: int = 400) -> str:
 # (LexUZ's scrape date) is the one honest currency signal left once
 # `derived_status` is silent -- 33/43 LLC implementing acts >3y stale carry no
 # positive repeal signal either way. Surfaced here, not derived from, the LLC
-# dossier's own currency verdicts.
+# dossier's own currency verdicts. 2026-10-17: scrape age tested against the
+# repeal_clause ground truth and found not predictive (see app_hierarchy.py's
+# copy for the measurement) -- copy softened to drop the "verify" imperative.
 def snapshot_age_note(version_date: str | None, threshold_years: float = 3.0) -> str:
     if not version_date:
         return ""
@@ -78,7 +80,7 @@ def snapshot_age_note(version_date: str | None, threshold_years: float = 3.0) ->
         return ""
     if age_years < threshold_years:
         return ""
-    return f"LexUZ snapshot: {version_date}  (~{age_years:.0f}y old — verify at lex.uz)"
+    return f"LexUZ snapshot: {version_date}  (~{age_years:.0f}y since last scrape)"
 
 
 def status_chip(derived: str) -> str:

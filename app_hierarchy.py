@@ -75,6 +75,19 @@ def excerpt(text: str, around: str, pad: int = 400) -> str:
 # it managed to scrape -- 78/102 realizing acts >3y stale corpus-wide carry no
 # such positive signal either way. Surfacing the scrape date itself is the one
 # honest thing left to say: not a verdict, just how old the snapshot is.
+#
+# 2026-10-17: tested that premise against the one ground truth this corpus
+# has for "actually went stale" -- the 357 acts repeal_clause positively
+# matches. In the "clean" (non-mass-crawl) 11,197-act population, confirmed-
+# repealed acts average 6.86y scrape age vs. 9.98y for acts with no repeal
+# signal (bootstrap 95% CI on the difference [-4.14, -2.08], i.e. the
+# opposite direction from "older scrape -> more likely stale"). Across 1-year
+# age buckets the repeal rate is flat/noisy (0.4%-3.0%) with no inflection
+# near 3y or anywhere else. So scrape age doesn't predict this signal at all
+# in the one labeled case we can check -- the 3.0 threshold stays a legible
+# round number, not a tuned one, and isn't worth tuning further against this
+# data. Softened the copy below to match: it must not read as a risk verdict
+# since the data doesn't support one.
 def snapshot_age_note(version_date: str | None, threshold_years: float = 3.0) -> str:
     if not version_date:
         return ""
@@ -84,7 +97,7 @@ def snapshot_age_note(version_date: str | None, threshold_years: float = 3.0) ->
         return ""
     if age_years < threshold_years:
         return ""
-    return f"LexUZ snapshot: {version_date}  (~{age_years:.0f}y old — verify at lex.uz)"
+    return f"LexUZ snapshot: {version_date}  (~{age_years:.0f}y since last scrape)"
 
 
 @st.cache_resource
