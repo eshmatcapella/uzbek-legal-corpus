@@ -224,6 +224,47 @@ RE_QISM = re.compile(
 # (e.g. "185-moddasi, 186-moddasi toʻqqizinchi qismi" — the ninth part is
 # 186's, not 185's). Gates the non-"sining" qism/band attachment below.
 RE_QISM_BLOCK = re.compile(r",|\d+\s*-\s*(?:modda|bob)", re.IGNORECASE)
+# A single modda can itself carry SEVERAL qism/band references at once --
+# "497-moddasi birinchi, ikkinchi qismlari" (parts one AND two of article
+# 497, not a list of different articles), or with "va" instead of a comma,
+# "377-moddasining oltinchi va yettinchi qismlarida" (parts six and seven).
+# RE_QISM alone only ever grabs the ONE ordinal immediately adjacent to the
+# unit word -- for "birinchi, ikkinchi qismlari" that's "ikkinchi", and
+# RE_QISM_BLOCK's own comma check (correctly tuned for the *different-article*
+# list case above) then discards even that, so today's code silently drops
+# every qism but at most the last one. Measured 2026-10-18 (see
+# DAILY_REVIEW.md): 63 real in-scope citations corpus-wide carry 2+ qism/band
+# ordinals this way. This pattern is anchored at the START of the post-modda
+# tail (optionally through one leading comma, same position RE_QISM_BLOCK's
+# gate already inspects) specifically so it can never fire on the
+# different-article shape: a bare digit token is excluded via lookahead
+# whenever it's itself the START of another "N-modda/bob" citation (e.g.
+# "186-moddasi" in the example above), so that shape still falls through to
+# the existing single-match/gate logic below, unchanged.
+RE_QISM_MULTI = re.compile(
+    r"^\s*,?\s*(?P<list>"
+    r"(?:\d+(?!\s*-?\s*(?:modda|bob))|" + "|".join(ORDINALS) + r")"
+    r"(?:\s*,\s*(?:\d+(?!\s*-?\s*(?:modda|bob))|" + "|".join(ORDINALS) + r"))*"
+    r"(?:\s+va\s+(?:\d+(?!\s*-?\s*(?:modda|bob))|" + "|".join(ORDINALS) + r"))?"
+    r")\s*-?\s*(?P<unit>qism|band)",
+    re.IGNORECASE,
+)
+RE_QISM_TOKEN = re.compile(r"\d+|" + "|".join(ORDINALS), re.IGNORECASE)
+
+
+def _qism_list(tail: str) -> list[str] | None:
+    """Multiple qism/band ordinals attached to ONE modda (see RE_QISM_MULTI).
+    Returns None (defer to the single-match path, unchanged) unless at least
+    two ordinals are found -- a single-ordinal match here would just
+    duplicate what the existing RE_QISM/RE_QISM_BLOCK logic already does."""
+    m = RE_QISM_MULTI.match(tail)
+    if not m:
+        return None
+    unit = m.group("unit").lower()
+    tokens = RE_QISM_TOKEN.findall(m.group("list"))
+    if len(tokens) < 2:
+        return None
+    return [f"{t} {unit}" for t in tokens]
 # The Code's OWN bibliographic/publication-record parenthetical, when it sits
 # immediately after the anchor -- e.g. "Fuqarolik kodeksi (Oʻzbekiston
 # Respublikasi Oliy Majlisining Axborotnomasi, 1996-yil, 2-songa ilova; ...
@@ -379,21 +420,27 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
                 tail = window[m.end(): m.end() + 60]
                 suffix = m.group("suffix").lower()
                 if suffix.startswith("sining"):
-                    qm = RE_QISM.search(tail)
+                    qms = _qism_list(tail)
+                    if qms is None:
+                        qm = RE_QISM.search(tail)
+                        qms = [qm.group(0).strip() if qm else None]
                 elif len(nums) == 1:
                     # Not the genitive "moddasining" form (e.g. bare "moddasi",
                     # "moddasiga muvofiq") — still attach a qism/band if one
                     # immediately follows, but only when nothing between here
                     # and there suggests it belongs to a different citation.
-                    cand = RE_QISM.search(tail)
-                    qm = cand if cand and not RE_QISM_BLOCK.search(tail[:cand.start()]) else None
+                    qms = _qism_list(tail)
+                    if qms is None:
+                        cand = RE_QISM.search(tail)
+                        qm = cand if cand and not RE_QISM_BLOCK.search(tail[:cand.start()]) else None
+                        qms = [qm.group(0).strip() if qm else None]
                 else:
-                    qm = None
+                    qms = [None]
                 for n in nums:
-                    out.append(Citation("article", n, None, None,
-                                        qm.group(0).strip() if qm else None,
-                                        kind, listing, abs_start, abs_end,
-                                        _evidence(text, abs_start, abs_end)))
+                    for q in qms:
+                        out.append(Citation("article", n, None, None, q,
+                                            kind, listing, abs_start, abs_end,
+                                            _evidence(text, abs_start, abs_end)))
             elif unit == "bob":
                 # "37-bobining 3-paragrafi", or with LexUZ's comma-separated
                 # punctuation style, "57-bobi, 4-paragrafi". The optional comma
@@ -582,6 +629,25 @@ def _selftest() -> int:
          {"is_the_code": True}, [None, "toʻqqizinchi qism"]),
         ("FKning 591-moddasi va FPKning 14-moddasining uchinchi qismiga koʻra",
          {"allow_fk_alias": True}, [None]),
+        # ONE modda carrying several qism/band ordinals at once -- comma-
+        # separated ("birinchi, ikkinchi qismlari") and "va"-separated
+        # ("oltinchi va yettinchi qismlarida") both mean every listed part
+        # belongs to THIS article, not a list of different articles (measured
+        # 2026-10-18, see DAILY_REVIEW.md: 63 real corpus-wide citations).
+        ("Fuqarolik kodeksining 497-moddasi birinchi, ikkinchi qismlari", {},
+         ["birinchi qism", "ikkinchi qism"]),
+        ("ushbu Kodeksning 377-moddasining oltinchi va yettinchi qismlarida",
+         {"is_the_code": True}, ["oltinchi qism", "yettinchi qism"]),
+        ("Fuqarolik kodeksi 175-moddasining birinchi, ikkinchi, uchinchi, "
+         "beshinchi va oltinchi qismlarida", {},
+         ["birinchi qism", "ikkinchi qism", "uchinchi qism", "beshinchi qism",
+          "oltinchi qism"]),
+        # the different-article shape must still resolve exactly as before:
+        # a real "N-moddasi" between the first number and the trailing qism
+        # blocks the multi-qism read, falling through to the old single/gate
+        # logic unchanged (regression guard for the new regex).
+        ("mazkur Kodeksning 185-moddasi, 186-moddasi toʻqqizinchi qismi",
+         {"is_the_code": True}, [None, "toʻqqizinchi qism"]),
     ]
     for text, kwargs, expected in qism_cases:
         got = [c.qism for c in extract(text, **kwargs) if c.target_kind == "article"]

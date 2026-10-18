@@ -22,6 +22,161 @@ How to use this file each session:
 
 ## Active threads
 
+- **Extractor rotation: twelfth gold batch, 460 -> 500 records; found and
+  fixed a real, 63-citation-wide qism/band grain bug, re-ran build_links.py
+  (not a full rebuild) to carry the fix into link_edge — closed
+  2026-10-18, a dash-range sub-form (7 citations) stays open for a future
+  session.** Extractor was the oldest of the three focus areas (last
+  touched 2026-10-15; Cleanup 10-16, Data currency 10-17), so today's
+  rotation. Environment setup: `git lfs install && git lfs pull` (parquet
+  starts as a 134-byte pointer stub), `python3 -m pip install duckdb
+  pandas streamlit pyflakes vulture bandit` (`python3` resolves to 3.11,
+  the pre-wired `pip3` targets a separate 3.13 install — same mismatch
+  every recent session has hit). Also found the container's local `main`
+  branch ref one push *behind* `origin/main` (HEAD started detached 3
+  commits ahead of the stale local `main`, at 2026-10-17's own commit,
+  `616e294`) — `git fetch origin main` confirmed `origin/main` already had
+  everything; `git checkout main && git reset --hard origin/main` brought
+  the local ref back in sync, same recurring stale-local-pointer pattern
+  earlier sessions have documented (2026-09-09, 2026-10-09, 2026-10-12),
+  just inverted (behind rather than ahead) — no data at risk either way,
+  `origin/main` is always the actual source of truth here.
+
+  Drew batch 12 (`build_gold_sample_novel.py --seed 20261018 --n 40`,
+  novelty coverage 417/451 signatures before drawing). Hand-read all 40
+  against the raw parquet text and the extractor's own output. 37/40 were
+  immediately correct. 3/40 (gold_id 11, 23, 32 in the batch's own local
+  numbering — row 46800, row 46795, row 46916) shared one surface shape:
+  a single modda citation whose text names TWO OR MORE qism/band ordinals
+  at once — "497-moddasi birinchi, ikkinchi qismlari" (comma), "377-
+  moddasining oltinchi va yettinchi qismlarida" ("va"), "735-moddasining
+  uchinchi, toʻrtinchi qismlari" (comma again, inside a longer list
+  window). `citation_extractor.py`'s `RE_QISM` only ever grabs the ONE
+  ordinal immediately adjacent to the unit word; worse, the comma-list
+  form was actively *blocked down to None* by `RE_QISM_BLOCK` — a gate
+  correctly tuned for the genuinely different case "185-moddasi, 186-
+  moddasi toʻqqizinchi qismi" (comma separates two DIFFERENT articles, the
+  trailing qism belongs only to the second), but firing on the exact same
+  surface shape for the wrong reason when the comma instead separates two
+  qisms of the SAME article.
+
+  This isn't a new discovery — it's the precise gap the "Qism-level
+  (article-part) grain" backlog item already measured on 2026-09-25 (a
+  regex-shape count: "14 digit-list + 68 ordinal-list occurrences...an
+  upper bound") and explicitly deferred: "not fixed...same 'qism isn't
+  consumed downstream' reasoning as always — worth revisiting this whole
+  item together if qism grain is ever wired into a real table/view."
+  Re-checked that precondition today rather than assuming it still held:
+  it doesn't. `build_links.py` has written `link_edge.dst_qism` from
+  `Citation.qism` since 2026-09-04 (689/9535 edges carried a value before
+  today), and `app_hierarchy.py`'s own article-detail panel (`page_article()`,
+  ~line 308) has rendered it to users as `· part: {qism}` since before this
+  session — "not consumed downstream" was stale, not current. Per the hard
+  constraint ("if you think a documented decision is wrong, say so and
+  propose the change rather than quietly reverting it"): decided the
+  deferral no longer applies to the *extraction* layer (fixing
+  `citation_extractor.py` is low-risk and self-contained regardless of
+  what schema decisions get made later) even though the separate decision
+  of whether to expand `link_edge`'s *schema* beyond the existing
+  `dst_qism` column is untouched today — that's a bigger call left for the
+  owner, not something this session expanded scope into.
+
+  Measured the TRUE corpus-wide count against the actual `extract()`
+  output, not a regex-shape upper bound: 63 real in-scope article
+  citations carry 2+ qism/band ordinals in this comma-or-"va" list shape.
+  Fixed via `RE_QISM_MULTI` + `_qism_list()`: matches an unbroken run of
+  ordinals/digits (a bare digit excluded via lookahead whenever it's
+  itself the start of a different "N-modda/bob" citation, so the
+  different-article shape still falls through to the untouched old
+  single-match/gate logic) immediately before qism/band, and only engages
+  when 2+ tokens are found — a single-ordinal match defers to the old path
+  entirely unchanged, by design, to minimize regression risk. Emits one
+  `Citation` per qism/band found, same article/struct/listing. Added 4 new
+  self-test cases (comma list, "va" list, a 5-way comma+"va" list, and the
+  different-article regression guard) — `61/61` extractor self-tests pass.
+
+  Re-measuring post-fix: 62/63 locations now resolve completely (124
+  correct qism/band values where there was 1 or 0 before); the 63rd (row
+  46795's OWN "564-moddasi birinchi, ikkinchi qismlari", a few hundred
+  characters further into the same long list gold_id 23 sampled) still
+  reads `qism=None` — traced it to the anchor's `WINDOW=260` cutoff simply
+  running out before reaching "564-moddasi" at all in that unusually long
+  list; same result before and after this fix, a separate, pre-existing
+  truncation limit this change doesn't touch (not worth widening `WINDOW`
+  for one row today).
+
+  Re-running `score_gold.py` against the fix surfaced 9 PRE-EXISTING gold
+  records (gold_id 6, 131, 224, 242, 244, 259, 329, 348, 349) that flipped
+  from `correct` to a spurious false positive — each one's original
+  hand-annotation (dated between 2026-09-04 and 2026-10-04) had checked
+  that the ARTICLE number was right but not that every qism/band ordinal
+  was captured, so each one's stored `expected` silently carried the same
+  under-measurement this fix now corrects. Re-read all 9 against the raw
+  text and the fixed extractor's actual window-bounded output, corrected
+  each `expected` to the true multi-entry list (documented inline in each
+  record's own `notes`) rather than leaving them as new noise. Final
+  score: precision 2120/2133 (99.4%), recall 2120/2156 (98.3%) on 500
+  windows (up from 460) — unchanged in percentage from before (qism isn't
+  part of the headline signature), and the only mismatches left are the
+  same 13 pre-existing documented `known_gap`/bookkeeping records (52, 123,
+  140, 148, 194-196, 295, 324, 341, 370, 379, 451) — confirmed via a direct
+  diff against the pre-fix mismatch list that these 9 corrections
+  introduced zero new mismatches of their own. **New signature coverage:
+  456 covered / 115 windows remain in never-covered territory** (down from
+  737) — the biggest single-batch novelty drop yet, consistent with
+  signature-stratified sampling's guarantee.
+
+  While measuring, found one more, DIFFERENT qism sub-form still open: a
+  dash-RANGE of qisms ("uchinchi — beshinchi qismlari" = parts three
+  through five, as opposed to a comma/"va" LIST) — this is the sub-form
+  2026-09-15 already flagged but never measured precisely. Measured today
+  against the fixed extractor's real output: exactly 7 in-scope citations
+  corpus-wide (rows 21303, 25801, 26169, 41003, 43296, 46794, 46898), still
+  collapsing to only the range's last ordinal. Not fixed today — a
+  genuinely different implementation (needs the same kind of ordinal-range
+  expansion `_expand()` already does for article numbers, not reachable by
+  extending today's list-shaped regex) and a much smaller footprint than
+  the 63 just fixed; left as an explicit, precisely-measured Backlog item
+  instead of folding it into today's claim.
+
+  Re-ran `build_links.py` (not `build_corpus_db.py` — only the extractor
+  changed, not the base tables) to carry the fix into the actual
+  database: `link_edge` 9535 -> 9620 edges (+85, one new edge per extra
+  qism/band now split out), `dst_qism` populated on 660 -> 755 edges (+95,
+  includes previously-`None` cases like article 497 and 141 that now
+  resolve). Re-ran `build_llc.py` too since it joins `link_edge` (output
+  unchanged, as expected — the fix changes which qism string attaches to
+  an edge, not which edges exist at the article-number grain that script
+  keys on; `build_okoz.py` doesn't touch `link_edge` at all, confirmed via
+  grep, so left alone). Confirmed the fix is actually visible, not just
+  theoretically available: queried `app_hierarchy.py`'s own
+  `v_realization`-based article panel query directly against the rebuilt
+  `corpus.duckdb` for Article 377 — now returns both `'oltinchi qism'` and
+  `'yettinchi qism'` self-reference rows where before only the latter
+  existed. Verified: `61/61` extractor self-tests; `python -m unittest
+  test_transfer_e2e.py` 14/14; `verify_transfer.py` green (AC5's "9620
+  edges carry evidence" and AC7 all PASS, no new FAIL/INFO); `pyflakes`/
+  `vulture --min-confidence 60` clean on every touched file; `bandit`
+  unchanged (61 issues, same 57 B608/3 B311/1 B110 breakdown);
+  `check_sql_bindings.py` 106/106; `check_fstring_interp.py` 55/55;
+  `check_code_clones.py` still exactly the same 5 cross-file pairs (no new
+  clone — the new `_qism_list()` helper isn't a duplicate of anything);
+  both apps started live (HTTP 200, clean logs, no exceptions) and torn
+  down after. Raw parquet untouched throughout (sha256 unchanged per
+  `verify_transfer.py`'s own AC3 check) — only `corpus.duckdb` (via
+  `build_links.py`/`build_llc.py`, both `CREATE OR REPLACE`, no wholesale
+  rebuild), `citation_extractor.py`, and `gold_citations.json` changed.
+  `llc_norm`'s foundation mappings have no `validated_by`/`validated_at`
+  column at all (checked `build_llc.py`'s own `CREATE TABLE` — that
+  validation lives in the curated `FOUNDATION` dict in source, not a
+  runtime flag), so re-running it touched no human validation state;
+  `okoz_assignment` was never touched (`build_okoz.py` wasn't re-run).
+
+  Thread stays open — next Extractor rotation should draw batch 13. The
+  dash-range qism sub-form (7 citations, see above) is now a precisely-
+  measured, ready-to-pick-up Backlog item rather than a vague "sub-form
+  exists" note.
+
 - **Data currency: tested the snapshot-age threshold against real
   ground truth for the first time — found scrape age does NOT predict
   staleness, softened the UI copy accordingly; closed 2026-10-17.**
@@ -1871,30 +2026,31 @@ How to use this file each session:
   to 220 via two more signature-stratified batches 2026-09-28, to 260 via
   a third 2026-09-29, to 300 via a fourth 2026-10-02, to 340 via a fifth
   2026-10-04, to 380 via a sixth 2026-10-10, to 420 via a seventh
-  2026-10-13, to 460 via an eighth 2026-10-15** — see Active threads and
-  Log for the full detail. `gold_citations.json` (460 hand-verified anchor
-  occurrences, eleven batches — two uniform-random, nine signature-
-  stratified) + `score_gold.py` (the scorer) + `build_gold_sample.py`/
-  `build_gold_sample_novel.py` (the two samplers) now exist; current score
-  **precision 1988/2001 (99.4%), recall 1988/2024 (98.2%)** — the
-  mismatches are the documented "paragrif" spelling gap, the 2026-09-25
-  Roman-chapter+paragraf gap, the 2026-09-28 "hamda" list-separator gap,
-  the 2026-09-28 chapter+paragraph-list-with-parenthetical gap, the
-  2026-09-28/2026-10-10 "bare article number before an interposed
-  different act name" gap (4 rows, now all 4 consistently recorded as
-  `known_gap` — see 2026-10-15 log entry for a gold-set bookkeeping fix),
-  the 2026-10-04 "§ N" section-mark-notation gap, the 2026-10-10
-  chapter+paragraph space-separator gap, and the 2026-10-10 "moddsi" typo
-  gap (see below), each recorded with its true expected output rather
-  than silently marked correct. Not closed outright — 460 windows is still
-  a small fraction of the 3251 real candidate windows corpus-wide (417/451
-  distinct window *signatures* covered as of 2026-10-15, up from 377/451
-  after 2026-10-13's batch — signature-stratified sampling's own novelty
-  guarantee means every one of batch 11's 40 windows added a signature the
-  gold set had never seen, the biggest single-batch signature jump yet;
-  737/3251 candidate windows remain in never-annotated territory, down
-  from 958/3251 — see Active threads). **Next step, whenever Extractor
-  rotation comes up again**: run `build_gold_sample_novel.py`
+  2026-10-13, to 460 via an eighth 2026-10-15, to 500 via a ninth
+  2026-10-18** — see Active threads and Log for the full detail.
+  `gold_citations.json` (500 hand-verified anchor occurrences, twelve
+  batches — two uniform-random, ten signature-stratified) + `score_gold.py`
+  (the scorer) + `build_gold_sample.py`/`build_gold_sample_novel.py` (the
+  two samplers) now exist; current score **precision 2120/2133 (99.4%),
+  recall 2120/2156 (98.3%)** — the mismatches are the documented "paragrif"
+  spelling gap, the 2026-09-25 Roman-chapter+paragraf gap, the 2026-09-28
+  "hamda" list-separator gap, the 2026-09-28 chapter+paragraph-list-with-
+  parenthetical gap, the 2026-09-28/2026-10-10 "bare article number before
+  an interposed different act name" gap (4 rows, now all 4 consistently
+  recorded as `known_gap` — see 2026-10-15 log entry for a gold-set
+  bookkeeping fix), the 2026-10-04 "§ N" section-mark-notation gap, the
+  2026-10-10 chapter+paragraph space-separator gap, and the 2026-10-10
+  "moddsi" typo gap (see below), each recorded with its true expected
+  output rather than silently marked correct. Not closed outright — 500
+  windows is still a small fraction of the 3251 real candidate windows
+  corpus-wide (456 distinct window *signatures* covered as of 2026-10-18,
+  up from 417/451 after 2026-10-15's batch — signature-stratified
+  sampling's own novelty guarantee means every one of batch 12's 40
+  windows added a signature the gold set had never seen, the biggest
+  single-batch novelty drop yet; 115/3251 candidate windows remain in
+  never-annotated territory, down from 737/3251 — see Active threads).
+  **Next step, whenever Extractor rotation comes up again**: run
+  `build_gold_sample_novel.py`
   again (not `build_gold_sample.py` — see below for why) with a fresh
   `--n`/`--seed`, hand-annotate the batch, and merge into
   `gold_citations.json` — or add a targeted record for any new bug a
@@ -2048,28 +2204,37 @@ How to use this file each session:
   between them isn't a validity signal. Superseded by the naive-regex method
   in the Log entry below, which found the real recall gap (zero, for the
   forms it covers).
-- **Qism-level (article-part) grain.** 689 edges now carry a `dst_qism`
-  attribute (was 522 before 2026-09-04's attachment fix — see Log). The
-  original scope decision (grain stays article-level) hasn't been
-  revisited: worth a measurement pass on whether citing at the qism level
-  would change which stage/institution the citation should attach to, now
-  that the underlying data is meaningfully more complete. **2026-09-15**
-  measured the dash-RANGE collapse sub-form ("ikkinchi — toʻrtinchi
-  qismlarida" keeping only "toʻrtinchi"), not fixed given qism's
-  not-yet-load-bearing status. **2026-09-25** measured two more sub-forms
-  via the signature-stratified gold sample (row 21303, see Active
-  threads): a comma-separated DIGIT list ("11-moddasining 1, 4-bandlari",
-  keeping only "4-band") and a comma-separated ORDINAL-word list
-  ("377-moddasining ikkinchi, toʻrtinchi, oltinchi qismlari", keeping only
-  "oltinchi qism") — same root cause (`RE_QISM`'s tail search finds only
-  the one ordinal/digit immediately before "qism"/"band"), different
-  surface shape. Corpus-wide count inside anchor windows: 14 digit-list +
-  68 ordinal-list occurrences (regex-shape count, an upper bound on how
-  often this specific collapse actually fires — not all 82 necessarily hit
-  a case where the collapse changes anything visible). Still not fixed,
-  same "qism isn't consumed downstream" reasoning as always — worth
-  revisiting this whole item together if qism grain is ever wired into a
-  real table/view.
+- **Qism-level (article-part) grain.** `dst_qism` on `link_edge` is
+  displayed to users (`app_hierarchy.py::page_article()`, `· part:
+  {qism}`), so it IS load-bearing, not just stored — the "not consumed
+  downstream" framing this item carried since 2026-09-04 turned out to be
+  stale, not current, when re-checked 2026-10-18 (see Log and Active
+  threads). **The comma/"va"-separated LIST sub-form is fixed as of
+  2026-10-18** — "11-moddasining 1, 4-bandlari" and "377-moddasining
+  ikkinchi, toʻrtinchi, oltinchi qismlari" (measured at 68 ordinal-list +
+  14 digit-list regex-shape occurrences by 2026-09-25, 63 real in-scope
+  citations by the precise 2026-10-18 recount) now correctly emit one
+  `Citation` per listed qism/band instead of collapsing to the single
+  ordinal nearest the unit word (or to nothing, when a comma triggered
+  `RE_QISM_BLOCK`'s unrelated different-article gate). `link_edge` now
+  carries 755 `dst_qism` values (was 660) across 9620 edges (was 9535).
+  **Still open — the dash-RANGE sub-form, a DIFFERENT shape from the one
+  just fixed**: "ikkinchi — toʻrtinchi qismlarida" (parts two through
+  four) still collapses to only the range's last ordinal, because
+  expanding it needs the same kind of range-expansion `_expand()` already
+  does for article numbers, not reachable by extending the just-shipped
+  list regex. Measured precisely against the fixed extractor's real
+  output (not a regex-shape estimate) on 2026-10-18: exactly 7 in-scope
+  citations corpus-wide (rows 21303, 25801, 26169, 41003, 43296, 46794,
+  46898). Worth picking up on a future Extractor rotation given it's now
+  the ONLY unfixed sub-form of this gap and precisely scoped, but small
+  enough (7 citations) that it's reasonable to leave for whenever this
+  area comes up again rather than today. If picked up: add a
+  `RE_QISM_RANGE` alongside today's `RE_QISM_MULTI` that recognizes
+  `ORD[-–—]+ORD` immediately before qism/band and expands the ordinal
+  pair the same way `_expand()` expands a numeric article range (the
+  ordinal list `ORDINALS` is already ordered, so expansion is a simple
+  slice, not a new numbering scheme).
 - **One remaining chapter+paragraph-list attachment gap (single occurrence).**
   Found 2026-09-10 while fixing the comma-punctuated case (see Log): row
   25634's `cross_references` reads "Fuqarolik kodeksi 4-bobining 1
@@ -2601,6 +2766,126 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-10-18 — Extractor rotation: twelfth gold batch (460 -> 500), found and fixed a real 63-citation qism/band grain bug, corrected 9 pre-existing gold records it exposed, rebuilt link_edge
+
+Rotated to Extractor per the rotation rule — oldest of the three (last
+touched 2026-10-15; Cleanup 10-16, Data currency 10-17). Environment:
+`git lfs install && git lfs pull`, `python3 -m pip install duckdb pandas
+streamlit pyflakes vulture bandit` (`python3` is 3.11, `pip3` targets a
+separate 3.13 — same recurring mismatch). Container started with its
+local `main` ref 3 commits *behind* `origin/main` (the inverse of the
+usual "ahead" stale-pointer pattern earlier sessions documented) — `git
+fetch origin main` then `git checkout main && git reset --hard
+origin/main` fixed it; no data at risk, `origin/main` is always correct.
+
+Drew batch 12 (`build_gold_sample_novel.py --seed 20261018 --n 40`,
+417/451 signatures covered before drawing). Hand-read all 40 against the
+raw text. 37/40 immediately correct; 3/40 shared one surface shape: a
+single modda citation naming 2+ qism/band ordinals at once ("497-moddasi
+birinchi, ikkinchi qismlari"; "377-moddasining oltinchi va yettinchi
+qismlarida"). `RE_QISM` only ever grabbed the ordinal adjacent to the
+unit word, and the comma form was actively zeroed out by
+`RE_QISM_BLOCK` — a gate correctly built for "185-moddasi, 186-moddasi
+toʻqqizinchi qismi" (comma separates two DIFFERENT articles) firing on
+the same shape for the wrong reason when the comma instead separates two
+qisms of the SAME article.
+
+This is the exact gap the "Qism-level (article-part) grain" backlog item
+measured on 2026-09-25 (a regex-shape upper bound: "14 digit-list + 68
+ordinal-list occurrences") and deliberately deferred, reasoning "qism
+isn't consumed downstream" every time it came up since. Re-checked that
+premise today instead of taking it on faith: it's false.
+`build_links.py` has written `Citation.qism` into `link_edge.dst_qism`
+since 2026-09-04 (689/9535 edges already carried a value), and
+`app_hierarchy.py::page_article()` has rendered it to users as `· part:
+{qism}` since before this session. Per the hard constraint ("if you
+think a documented decision is wrong, say so and propose the change
+rather than quietly reverting it"): fixed the extraction-layer bug today
+(self-contained, low-risk, independently correct regardless of later
+schema decisions) while leaving the separate, bigger question — whether
+to expand `link_edge`'s schema further around qism — untouched for the
+owner.
+
+Measured the TRUE count against `extract()`'s real output rather than a
+regex-shape estimate: **63 real in-scope article citations** carry 2+
+qism/band ordinals this way. Fixed via `RE_QISM_MULTI`/`_qism_list()` in
+`citation_extractor.py`: matches an unbroken ordinal/digit run
+immediately before qism/band (a bare digit excluded via lookahead
+whenever it starts a different "N-modda/bob" citation, so the
+different-article shape still falls through to the untouched old
+single-match/gate path), only engaging when 2+ tokens are found so a
+single-ordinal match defers entirely to the old logic, unchanged. Emits
+one `Citation` per qism/band found. Added 4 self-test cases (comma list,
+"va" list, a 5-way list, the different-article regression guard) —
+`61/61` extractor self-tests pass.
+
+Post-fix: 62/63 locations resolve completely. The 63rd (row 46795's own
+"564-moddasi birinchi, ikkinchi qismlari", later in the same long list
+gold_id 23 sampled) still reads `qism=None` — traced to the anchor's
+`WINDOW=260` cutoff simply running out before reaching that modda at all;
+identical before and after this fix, an unrelated pre-existing
+truncation limit not worth widening for one row.
+
+`score_gold.py` against the fix surfaced 9 PRE-EXISTING records (gold_id
+6, 131, 224, 242, 244, 259, 329, 348, 349, dated 2026-09-04 through
+2026-10-04) that flipped from `correct` to a spurious false positive —
+each one's original hand-annotation had verified the article number but
+not that every qism/band was captured, so each `expected` silently
+carried the same under-measurement. Re-read all 9 against the raw text
+and the fixed extractor's window-bounded output, corrected each
+`expected` to the true multi-entry list, documented inline in each
+record's `notes`. **Final score: precision 2120/2133 (99.4%), recall
+2120/2156 (98.3%) on 500 windows** (up from 460) — unchanged in
+percentage (qism isn't part of the scoring signature); diffed the full
+mismatch list against the pre-fix run and confirmed the only remaining
+mismatches are the same 13 pre-existing documented records, zero new
+noise from today's 9 corrections. **New signature coverage: 456 covered,
+115/3251 windows remain never-annotated** (down from 737) — the biggest
+single-batch novelty drop yet.
+
+While measuring, found a second, DIFFERENT qism sub-form still open: a
+dash-RANGE ("uchinchi — beshinchi qismlari" = parts three through five,
+not a list) — the sub-form 2026-09-15 flagged but never measured
+precisely. Measured against the fixed extractor: exactly 7 in-scope
+citations corpus-wide. Not fixed today (genuinely different
+implementation, needs range-expansion like `_expand()` already does for
+article numbers; much smaller footprint than the 63 just fixed) — left
+as a precisely-scoped Backlog item instead of folding it into today's
+claim or silently leaving it undocumented.
+
+Re-ran `build_links.py` (not `build_corpus_db.py` — only the extractor
+changed) to carry the fix into the actual database: `link_edge` 9535 ->
+9620 edges (+85), `dst_qism` populated on 660 -> 755 edges (+95). Re-ran
+`build_llc.py` too since it joins `link_edge` (output unchanged, as
+expected — the fix changes which qism attaches to an edge, not which
+edges exist at the article-number grain `build_llc.py` keys on);
+`build_okoz.py` doesn't touch `link_edge` at all (confirmed via grep), so
+left alone, and `okoz_assignment`'s `validated_by`/`validated_at` was
+never touched. Confirmed the fix is actually visible: queried
+`app_hierarchy.py`'s own `v_realization` article-panel query directly
+against the rebuilt `corpus.duckdb` for Article 377 — now returns both
+`'oltinchi qism'` and `'yettinchi qism'` self-reference rows where only
+the latter existed before. `llc_norm`'s foundation mappings have no
+`validated_by`/`validated_at` column at all (checked `build_llc.py`'s own
+`CREATE TABLE` — that validation lives in the curated `FOUNDATION` dict
+in source, not a runtime flag), so re-running it touched no human
+validation state.
+
+Verified: `61/61` extractor self-tests; `python -m unittest
+test_transfer_e2e.py` 14/14; `verify_transfer.py` green (AC5's "9620
+edges carry evidence" and AC7 all PASS); `pyflakes`/`vulture
+--min-confidence 60` clean on every touched file; `bandit` unchanged (61
+issues, same 57 B608/3 B311/1 B110 breakdown); `check_sql_bindings.py`
+106/106; `check_fstring_interp.py` 55/55; `check_code_clones.py` still
+exactly the same 5 cross-file pairs (no new clone); both apps started
+live (HTTP 200, clean logs, no exceptions) and torn down after. Raw
+parquet untouched throughout (sha256 unchanged per `verify_transfer.py`'s
+own AC3 check) — only `corpus.duckdb` (via `build_links.py`/
+`build_llc.py`, both `CREATE OR REPLACE`, no wholesale rebuild),
+`citation_extractor.py`, and `gold_citations.json` changed. Thread stays
+open — next Extractor rotation should draw batch 13; the dash-range qism
+sub-form is now a precisely-measured, ready-to-pick-up Backlog item.
 
 ### 2026-10-17 — Data currency rotation: tested the snapshot-age threshold against real ground truth for the first time, found it has no predictive signal, softened the UI copy to match
 
