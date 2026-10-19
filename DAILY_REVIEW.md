@@ -22,1999 +22,63 @@ How to use this file each session:
 
 ## Active threads
 
-- **Extractor rotation: twelfth gold batch, 460 -> 500 records; found and
-  fixed a real, 63-citation-wide qism/band grain bug, re-ran build_links.py
-  (not a full rebuild) to carry the fix into link_edge — closed
-  2026-10-18, a dash-range sub-form (7 citations) stays open for a future
-  session.** Extractor was the oldest of the three focus areas (last
-  touched 2026-10-15; Cleanup 10-16, Data currency 10-17), so today's
-  rotation. Environment setup: `git lfs install && git lfs pull` (parquet
-  starts as a 134-byte pointer stub), `python3 -m pip install duckdb
-  pandas streamlit pyflakes vulture bandit` (`python3` resolves to 3.11,
-  the pre-wired `pip3` targets a separate 3.13 install — same mismatch
-  every recent session has hit). Also found the container's local `main`
-  branch ref one push *behind* `origin/main` (HEAD started detached 3
-  commits ahead of the stale local `main`, at 2026-10-17's own commit,
-  `616e294`) — `git fetch origin main` confirmed `origin/main` already had
-  everything; `git checkout main && git reset --hard origin/main` brought
-  the local ref back in sync, same recurring stale-local-pointer pattern
-  earlier sessions have documented (2026-09-09, 2026-10-09, 2026-10-12),
-  just inverted (behind rather than ahead) — no data at risk either way,
-  `origin/main` is always the actual source of truth here.
+**Convention change, 2026-10-19 (see Log for the full measurement/reasoning):
+this section now holds only the current state of each rotation area, not a
+growing day-by-day narrative.** Before today, every closed thread's full
+write-up was appended here and never trimmed, even though this section's
+own stated purpose ("read Active threads, continue one if mid-flight") only
+needs the *current* state. `DAILY_REVIEW.md` had grown to 534KB/8014 lines
+(the Read tool's own 256KB cap can no longer load it in one call) — Active
+threads alone was 1998 lines/140KB, almost entirely closed-thread detail
+that already exists, verbatim, in the Log section below (organized by
+date) and in git history. Rewrote this section down to one current-state
+bullet per focus area; moved the two genuinely-still-open residuals this
+section held that Backlog didn't yet have into Backlog (qism/band tail
+truncation; see Backlog > Extractor recall/precision), confirmed every
+other residual mentioned in the old text was already present in Backlog,
+and dropped the ~117-line rotation-order diary (each area's own
+current-state bullet already states its own last-touched date and the
+other two areas', which is all the rotation rule needs). Nothing is lost:
+every dropped paragraph's full text is still in this file's own git
+history and in the dated Log entry it summarized. Going forward, when a
+thread closes, fold its outcome into Backlog (if a residual remains) or
+just let the Log entry be the permanent record — don't also keep growing a
+paragraph here.
 
-  Drew batch 12 (`build_gold_sample_novel.py --seed 20261018 --n 40`,
-  novelty coverage 417/451 signatures before drawing). Hand-read all 40
-  against the raw parquet text and the extractor's own output. 37/40 were
-  immediately correct. 3/40 (gold_id 11, 23, 32 in the batch's own local
-  numbering — row 46800, row 46795, row 46916) shared one surface shape:
-  a single modda citation whose text names TWO OR MORE qism/band ordinals
-  at once — "497-moddasi birinchi, ikkinchi qismlari" (comma), "377-
-  moddasining oltinchi va yettinchi qismlarida" ("va"), "735-moddasining
-  uchinchi, toʻrtinchi qismlari" (comma again, inside a longer list
-  window). `citation_extractor.py`'s `RE_QISM` only ever grabs the ONE
-  ordinal immediately adjacent to the unit word; worse, the comma-list
-  form was actively *blocked down to None* by `RE_QISM_BLOCK` — a gate
-  correctly tuned for the genuinely different case "185-moddasi, 186-
-  moddasi toʻqqizinchi qismi" (comma separates two DIFFERENT articles, the
-  trailing qism belongs only to the second), but firing on the exact same
-  surface shape for the wrong reason when the comma instead separates two
-  qisms of the SAME article.
+- **Extractor rotation — current state: gold set at 500 records (twelfth
+  signature-stratified batch), precision 2120/2133 (99.4%), recall
+  2120/2156 (98.3%), 456/3251 window signatures covered. Last touched
+  2026-10-18** (fixed a real 63-citation qism/band list-collapse bug, see
+  Backlog > Extractor recall/precision "Qism-level grain" for the one
+  remaining sub-form it didn't fix). **Thread stays open — next Extractor
+  rotation should draw gold batch 13** via `build_gold_sample_novel.py`
+  (`--seed`/`--n` fresh each time), hand-annotate, merge into
+  `gold_citations.json`. Full detail: Log, 2026-10-18.
 
-  This isn't a new discovery — it's the precise gap the "Qism-level
-  (article-part) grain" backlog item already measured on 2026-09-25 (a
-  regex-shape count: "14 digit-list + 68 ordinal-list occurrences...an
-  upper bound") and explicitly deferred: "not fixed...same 'qism isn't
-  consumed downstream' reasoning as always — worth revisiting this whole
-  item together if qism grain is ever wired into a real table/view."
-  Re-checked that precondition today rather than assuming it still held:
-  it doesn't. `build_links.py` has written `link_edge.dst_qism` from
-  `Citation.qism` since 2026-09-04 (689/9535 edges carried a value before
-  today), and `app_hierarchy.py`'s own article-detail panel (`page_article()`,
-  ~line 308) has rendered it to users as `· part: {qism}` since before this
-  session — "not consumed downstream" was stale, not current. Per the hard
-  constraint ("if you think a documented decision is wrong, say so and
-  propose the change rather than quietly reverting it"): decided the
-  deferral no longer applies to the *extraction* layer (fixing
-  `citation_extractor.py` is low-risk and self-contained regardless of
-  what schema decisions get made later) even though the separate decision
-  of whether to expand `link_edge`'s *schema* beyond the existing
-  `dst_qism` column is untouched today — that's a bigger call left for the
-  owner, not something this session expanded scope into.
+- **Data currency rotation — current state: snapshot-age signal (3-year
+  threshold) shipped in both apps as honest provenance, not a staleness
+  verdict. Last touched 2026-10-17** (tested the threshold against
+  `repeal_clause`'s 357 confirmed-repealed acts as real ground truth for
+  the first time — found no predictive signal, in fact a small *negative*
+  correlation — so softened the UI copy from "verify at lex.uz" to "since
+  last scrape" rather than inventing a tuned number with no data behind
+  it). Live `lex.uz` comparison stays blocked on this environment's
+  egress policy (re-check occasionally, not every rotation — see Backlog).
+  No thread currently mid-flight; next Data currency rotation should pull
+  from Backlog > Data currency. Full detail: Log, 2026-10-17.
 
-  Measured the TRUE corpus-wide count against the actual `extract()`
-  output, not a regex-shape upper bound: 63 real in-scope article
-  citations carry 2+ qism/band ordinals in this comma-or-"va" list shape.
-  Fixed via `RE_QISM_MULTI` + `_qism_list()`: matches an unbroken run of
-  ordinals/digits (a bare digit excluded via lookahead whenever it's
-  itself the start of a different "N-modda/bob" citation, so the
-  different-article shape still falls through to the untouched old
-  single-match/gate logic) immediately before qism/band, and only engages
-  when 2+ tokens are found — a single-ordinal match defers to the old path
-  entirely unchanged, by design, to minimize regression risk. Emits one
-  `Citation` per qism/band found, same article/struct/listing. Added 4 new
-  self-test cases (comma list, "va" list, a 5-way comma+"va" list, and the
-  different-article regression guard) — `61/61` extractor self-tests pass.
-
-  Re-measuring post-fix: 62/63 locations now resolve completely (124
-  correct qism/band values where there was 1 or 0 before); the 63rd (row
-  46795's OWN "564-moddasi birinchi, ikkinchi qismlari", a few hundred
-  characters further into the same long list gold_id 23 sampled) still
-  reads `qism=None` — traced it to the anchor's `WINDOW=260` cutoff simply
-  running out before reaching "564-moddasi" at all in that unusually long
-  list; same result before and after this fix, a separate, pre-existing
-  truncation limit this change doesn't touch (not worth widening `WINDOW`
-  for one row today).
-
-  Re-running `score_gold.py` against the fix surfaced 9 PRE-EXISTING gold
-  records (gold_id 6, 131, 224, 242, 244, 259, 329, 348, 349) that flipped
-  from `correct` to a spurious false positive — each one's original
-  hand-annotation (dated between 2026-09-04 and 2026-10-04) had checked
-  that the ARTICLE number was right but not that every qism/band ordinal
-  was captured, so each one's stored `expected` silently carried the same
-  under-measurement this fix now corrects. Re-read all 9 against the raw
-  text and the fixed extractor's actual window-bounded output, corrected
-  each `expected` to the true multi-entry list (documented inline in each
-  record's own `notes`) rather than leaving them as new noise. Final
-  score: precision 2120/2133 (99.4%), recall 2120/2156 (98.3%) on 500
-  windows (up from 460) — unchanged in percentage from before (qism isn't
-  part of the headline signature), and the only mismatches left are the
-  same 13 pre-existing documented `known_gap`/bookkeeping records (52, 123,
-  140, 148, 194-196, 295, 324, 341, 370, 379, 451) — confirmed via a direct
-  diff against the pre-fix mismatch list that these 9 corrections
-  introduced zero new mismatches of their own. **New signature coverage:
-  456 covered / 115 windows remain in never-covered territory** (down from
-  737) — the biggest single-batch novelty drop yet, consistent with
-  signature-stratified sampling's guarantee.
-
-  While measuring, found one more, DIFFERENT qism sub-form still open: a
-  dash-RANGE of qisms ("uchinchi — beshinchi qismlari" = parts three
-  through five, as opposed to a comma/"va" LIST) — this is the sub-form
-  2026-09-15 already flagged but never measured precisely. Measured today
-  against the fixed extractor's real output: exactly 7 in-scope citations
-  corpus-wide (rows 21303, 25801, 26169, 41003, 43296, 46794, 46898), still
-  collapsing to only the range's last ordinal. Not fixed today — a
-  genuinely different implementation (needs the same kind of ordinal-range
-  expansion `_expand()` already does for article numbers, not reachable by
-  extending today's list-shaped regex) and a much smaller footprint than
-  the 63 just fixed; left as an explicit, precisely-measured Backlog item
-  instead of folding it into today's claim.
-
-  Re-ran `build_links.py` (not `build_corpus_db.py` — only the extractor
-  changed, not the base tables) to carry the fix into the actual
-  database: `link_edge` 9535 -> 9620 edges (+85, one new edge per extra
-  qism/band now split out), `dst_qism` populated on 660 -> 755 edges (+95,
-  includes previously-`None` cases like article 497 and 141 that now
-  resolve). Re-ran `build_llc.py` too since it joins `link_edge` (output
-  unchanged, as expected — the fix changes which qism string attaches to
-  an edge, not which edges exist at the article-number grain that script
-  keys on; `build_okoz.py` doesn't touch `link_edge` at all, confirmed via
-  grep, so left alone). Confirmed the fix is actually visible, not just
-  theoretically available: queried `app_hierarchy.py`'s own
-  `v_realization`-based article panel query directly against the rebuilt
-  `corpus.duckdb` for Article 377 — now returns both `'oltinchi qism'` and
-  `'yettinchi qism'` self-reference rows where before only the latter
-  existed. Verified: `61/61` extractor self-tests; `python -m unittest
-  test_transfer_e2e.py` 14/14; `verify_transfer.py` green (AC5's "9620
-  edges carry evidence" and AC7 all PASS, no new FAIL/INFO); `pyflakes`/
-  `vulture --min-confidence 60` clean on every touched file; `bandit`
-  unchanged (61 issues, same 57 B608/3 B311/1 B110 breakdown);
-  `check_sql_bindings.py` 106/106; `check_fstring_interp.py` 55/55;
-  `check_code_clones.py` still exactly the same 5 cross-file pairs (no new
-  clone — the new `_qism_list()` helper isn't a duplicate of anything);
-  both apps started live (HTTP 200, clean logs, no exceptions) and torn
-  down after. Raw parquet untouched throughout (sha256 unchanged per
-  `verify_transfer.py`'s own AC3 check) — only `corpus.duckdb` (via
-  `build_links.py`/`build_llc.py`, both `CREATE OR REPLACE`, no wholesale
-  rebuild), `citation_extractor.py`, and `gold_citations.json` changed.
-  `llc_norm`'s foundation mappings have no `validated_by`/`validated_at`
-  column at all (checked `build_llc.py`'s own `CREATE TABLE` — that
-  validation lives in the curated `FOUNDATION` dict in source, not a
-  runtime flag), so re-running it touched no human validation state;
-  `okoz_assignment` was never touched (`build_okoz.py` wasn't re-run).
-
-  Thread stays open — next Extractor rotation should draw batch 13. The
-  dash-range qism sub-form (7 citations, see above) is now a precisely-
-  measured, ready-to-pick-up Backlog item rather than a vague "sub-form
-  exists" note.
-
-- **Data currency: tested the snapshot-age threshold against real
-  ground truth for the first time — found scrape age does NOT predict
-  staleness, softened the UI copy accordingly; closed 2026-10-17.**
-  Rotated to Data currency (oldest of the three: last touched
-  2026-10-14; Extractor 10-15, Cleanup 10-16). Re-checked backlog item
-  (1) first: `curl` to `lex.uz` still fails with a 403 at the proxy
-  gateway (`CONNECT tunnel failed`), confirmed via
-  `$HTTPS_PROXY/__agentproxy/status` — still not in this environment's
-  allowed domains, no change since 2026-10-11. Picked up item (2)
-  instead: "the 3-year threshold is round-number legible, not tuned
-  against any labeled staleness data (none exists corpus-wide)." That
-  claim turned out to be false — `repeal_clause` already gives exactly
-  that: 357 distinct acts this project has positively confirmed were
-  repealed, each with its own `version_date` (scrape date). Used that as
-  ground truth to test the premise the snapshot-age note has carried
-  since 2026-10-11 (that an old scrape correlates with elevated
-  staleness risk). First measured a confound: `act.version_date` is
-  heavily batch-clustered — 4850 distinct dates across 24,267 acts, with
-  the single busiest date (`2021-02-22`) alone covering 1228 acts (5.1%
-  of the whole corpus) — these are clearly bulk LexUZ re-crawl sweeps,
-  not individually-triggered re-checks, and acts caught in one of these
-  mass sweeps (batch size >=100/day, 3485 acts corpus-wide) show a
-  **0.00% repeal-signal rate**, vs. 2.33%/1.27%/0.83% for medium/small/
-  unique-day batches — confirming the confound is real and large.
-  Restricting to the "clean" non-mass-crawl population (batch size <10,
-  11,197 acts, 1.20% overall repeal rate) to get a cleaner read: binning
-  by scrape age in 1-year buckets gives a flat, noisy repeal rate
-  (0.44%-3.04%) with no inflection anywhere near 3 years or any other
-  age — not the rising-hazard-with-age curve the threshold's premise
-  implies. Pearson r(age, has_repeal) = -0.04; comparing means directly,
-  confirmed-repealed acts average **6.86y** scrape age vs. **9.98y** for
-  acts with no repeal signal (n=134 vs 11,063) — a 3.13-year difference
-  in the *opposite* direction from "older scrape -> more likely stale,"
-  with a bootstrap 95% CI of [-4.14, -2.08] clearly excluding zero. Read
-  as: LexUZ appears to re-crawl a page somewhat preferentially around
-  when its status changes, so a stale-looking old `version_date` is, if
-  anything, weak evidence of *no* detected change rather than elevated
-  risk of an undetected one. **Decision**: per the hard constraint
-  ("if you think a documented decision is wrong, say so and propose the
-  change rather than quietly reverting it") — did not delete the
-  feature (the scrape date itself is still honest, useful provenance
-  information, and the original 2026-10-11 docstring already disclaimed
-  it as "not a verdict, just how old the snapshot is"), and did not
-  pick a new "tuned" threshold number (there's no signal in this data to
-  tune a number against — doing so would be fitting noise). Instead
-  fixed the one place the shipped copy drifted from that original
-  intent: `snapshot_age_note()`'s caption read "(~Ny old — **verify at
-  lex.uz**)", an imperative that implies elevated suspicion the data
-  doesn't support. Changed both apps' identical copies (deliberate
-  duplicate, per `check_code_clones.py`'s existing precedent for this
-  function) to "(~Ny since last scrape)" — same information, no
-  risk-implying imperative — and added the measurement as a comment
-  above both functions so the next session doesn't have to re-derive
-  why the number is 3.0 and still unverified-against-data. Verified:
-  `pyflakes`/`vulture --min-confidence 60` clean on both changed files;
-  `bandit` unchanged (61 issues, same 57 B608/3 B311/1 B110 breakdown);
-  `check_sql_bindings.py` 106/106; `check_fstring_interp.py` 55/55 call
-  sites clean; `check_code_clones.py` still exactly the same 5
-  cross-file pairs, `snapshot_age_note()`'s pair still IDENTICAL
-  1.000 (the copy changed in lockstep in both files, so it's still a
-  true duplicate, not drift); `test_transfer_e2e.py` 14/14;
-  `verify_transfer.py` green; both apps started live (HTTP 200, clean
-  logs, no exceptions) and torn down after. `corpus.duckdb` and the raw
-  parquet untouched — this entire session only ever read them (no
-  rebuild needed; this was an app-layer copy/comment change only, no
-  schema or view touched). Thread closed — backlog item (1) (live
-  lex.uz comparison) stays blocked on egress policy, re-check
-  periodically rather than every rotation; item (2) is now resolved
-  with a measured "no" rather than an open question; the one open
-  thread this leaves is whether `snapshot_age_note()`'s copy should go
-  further and drop the number entirely in favor of a neutral
-  "last scraped" framing with no implied age judgment at all — not done
-  today since the current copy no longer makes an unsupported claim,
-  just worth a second look if a future session wants to push this
-  further.
-
-- **Cleanup: closed a structural blind spot in `check_fstring_interp.py`
-  itself — 2026-10-16, no live SQL-injection bug found, but a real class of
-  call sites the tool could never have seen.** Rotation: Cleanup was the
-  oldest of the three (last touched 2026-10-12; Data currency 10-14,
-  Extractor 10-15). Re-ran all seven existing checks first as a baseline —
-  `pyflakes`/`vulture --min-confidence 60` clean, `bandit` 61 issues (same
-  57 B608/3 B311/1 B110 breakdown), `check_sql_bindings.py` 106/106,
-  `check_code_clones.py` 5 cross-file pairs (same as 2026-10-09, nothing
-  new), `check_fstring_interp.py` 54/54 — all unchanged from their
-  last-recorded baselines, confirming no drift since 2026-10-12. Then
-  looked for an eighth gap-class rather than re-running the same seven
-  blind: grepped for SQL built via `.format()` or `+`-string-concatenation
-  outside the already-audited f-string/literal paths (zero hits, dead
-  end), then asked a sharper question of `check_fstring_interp.py`
-  specifically — its own `find_calls()` requires `node.args[0]` to be
-  *literally* `ast.JoinedStr`, so `query = f"...{x}..."` followed by
-  `conn.execute(query)` on a later line never even enters its result set.
-  That's the same shape of blind spot the 2026-09-26 grep (single-line
-  literal match) and the 2026-10-12 rewrite (that replaced it) each found
-  in their predecessor — one level deeper this time: not "wrong line
-  layout" but "one assignment away from the call". Proved it's real with a
-  mutation test: a scratch copy of `test_transfer_e2e.py` with a
-  runtime-derived value (`str(-111189)`, not a hardcoded constant) spliced
-  into exactly this indirected shape inside
-  `test_r3_alignment_key_matching` passed the pre-fix script clean, with
-  the call count unchanged (19 before and after — the mutated call was
-  never even counted, not merely misjudged safe). Measured the real
-  population across the whole codebase before fixing: exactly 6
-  `execute(<bare name>)` call sites total — 4 are the `q()`/`qdf()` helper
-  definitions in `app_hierarchy.py`/`app_llc.py` (out of scope, same as
-  `check_sql_bindings.py` already treats them), 1
-  (`measure_extractor_recall.py`'s `check_cross_reference_disagreement()`)
-  is a fully literal triple-quoted string with zero interpolation, and 1
-  is the real indirected f-string case this script should have been
-  checking all along
-  (`test_transfer_e2e.py::test_r3_alignment_key_matching`'s `query =
-  f"...{PARQUET_PATH}..."` then `self.conn.execute(query)`) — safe today
-  because `PARQUET_PATH` is a SCREAMING_CASE module constant, but reached
-  purely by luck of this script's blind spot, not by its design. Fixed by
-  adding `_contains_joinedstr()` (mirrors `_is_safe()`'s own Name-chasing
-  traversal, but asks "does this resolve through an f-string at all" rather
-  than "is it safe") and widening `find_calls()` to also accept a bare
-  `ast.Name` first argument when it traces back to at least one f-string,
-  reusing the existing `_is_safe()`/`assigns_by_name` machinery unchanged
-  for the actual safety verdict — no new tool, no second duplicate
-  resolver. Re-ran the mutation test post-fix: now correctly flagged
-  (`checked 20... 1 interpolated expression(s) that don't resolve to a
-  hardcoded constant: ...:436 {query}`), and the real unmutated file scores
-  20/20 clean (one more call now in scope than the pre-fix 19, resolved
-  safe via `PARQUET_PATH`). Corpus-wide: `check_fstring_interp.py` now
-  checks 55 f-string execute() calls (up from 54), all clean. Re-verified
-  nothing else moved: `pyflakes`/`vulture` clean on the changed file;
-  `check_code_clones.py` 100 functions parsed (up from 99 — the new
-  `_contains_joinedstr()` helper), still exactly the same 5 cross-file
-  pairs, no new clone; `bandit` unchanged (61, same breakdown);
-  `verify_transfer.py` green; `test_transfer_e2e.py` 14/14; both apps
-  started live (HTTP 200, clean logs) and torn down after. `corpus.duckdb`
-  untouched — this entire session only ever read it. Thread closed —
-  eight repeatable Cleanup checks now exist; next Cleanup rotation should
-  re-run all eight before deciding whether a ninth is worth adding. One
-  deliberately-deferred residual noted but not fixed today, same
-  single-occurrence low-value precedent this project already applies
-  elsewhere: `check_sql_bindings.py` still never traces *plain-literal*
-  indirection (`measure_extractor_recall.py`'s `execute(q)`, see above) —
-  zero risk since that one query has no interpolation at all, so it's a
-  schema-binding-coverage gap, not a security gap; not worth a second
-  indirection-tracing pass for exactly 1 call site today.
-
-- **Gold set: 420 -> 460 records, eleventh signature-stratified batch
-  2026-10-15; the clean-batch streak broke (batch 10 was 0/40), but not
-  with a new extractor bug — instead found and fixed a real gold-set
-  bookkeeping inconsistency; thread stays open, well still clearly not
-  dry.** Continued the already-open Extractor thread (last touched
-  2026-10-13; Extractor was the oldest of the three focus areas, Cleanup
-  10-12 and Data currency 10-14 both more recent). `pip install duckdb
-  pandas` was needed first — this container's `python3` resolves to
-  3.11 but the pre-wired `pip3` targets a separate 3.13 install, so
-  `pip3 install duckdb` silently installs into the wrong interpreter;
-  used `python3 -m pip install duckdb pandas` instead. `corpus.duckdb`
-  and the raw parquet were both present (git-lfs pulled the parquet,
-  134-byte pointer stub by default — `git lfs install && git lfs pull`
-  before anything else). Drew batch 11 (`build_gold_sample_novel.py
-  --seed 20261015 --n 40`, novelty coverage 377/451 signatures before
-  drawing). Hand-read all 40 against the raw parquet text and the live
-  `extract()` output: 39/40 verdict `correct`. The one exception, gold_id
-  451 (row 26159, "Fuqarolik kodeksining 38, Oila kodeksining 228,
-  Fuqarolik protsessual kodeksining 274-moddalari"), is the identical
-  failure class already documented at gold_id 194-196 (2026-09-28: a bare
-  article number swallowed by an interposed different code's name before
-  any unit word attaches) — one of the 5 occurrences / 3 rows that
-  class's own corpus-wide measurement already counted (26159, 37948 x3,
-  53186) but had never gotten its own gold record, so formalized it as
-  `known_gap` rather than counting it as a "new" finding. Formalizing it
-  meant re-checking the other two rows named in that same 2026-09-28
-  count, which surfaced a real inconsistency: **gold_id 295 (row 53186)
-  — the exact same phrase pattern, same dropped Article 38 — had been
-  recorded `verdict: correct` with `expected: [act]`**, not `known_gap`.
-  That record predates the 2026-09-28 discovery of the failure class and
-  nobody had revisited it since; re-ran `citation_extractor.py` on row
-  53186's actual text to confirm it produces the identical bare-`act`
-  fallback as row 26159 and row 37948, not a different, genuinely-correct
-  case. Corrected gold_id 295 to `known_gap` with the honest
-  `expected: [article 38]`. All 3 rows gold_id 194 originally counted
-  (26159, 37948, 53186) are now consistently represented in the gold set
-  for the first time. **Score after merging**: precision 1988/2001
-  (99.4%), recall 1988/2024 (98.2%) on 460 windows (steady from
-  1895/1906 = 99.4% / 1895/1929 = 98.2% on 420 — precision/recall
-  percentages barely move because this was almost entirely more of the
-  same well-handled surface forms, as expected for a clean-leaning
-  batch), zero drift against the pre-existing 420 records. **New
-  signature coverage: 417/451** (up from 377/451 — the biggest
-  single-batch jump yet, because signature-stratified sampling's own
-  novelty guarantee means every one of this batch's 40 windows added a
-  signature the gold set had never annotated before); 737/3251 candidate
-  windows remain in never-annotated territory (down from 958/3251), 34
-  signatures remain uncovered (down from 74). `verify_transfer.py`
-  green; `python -m unittest test_transfer_e2e.py` 14/14;
-  `check_sql_bindings.py` 106/106; `check_fstring_interp.py` 54/54 call
-  sites clean; `check_code_clones.py` still exactly the same 5 cross-file
-  pairs (no new pair — this change touched no code, only
-  `gold_citations.json`); `pyflakes`/`vulture --min-confidence
-  60`/`bandit` all unchanged (61 bandit issues, same 57 B608/3 B311/1
-  B110 breakdown); both apps started live (HTTP 200, clean logs, no
-  exceptions) and torn down after. `corpus.duckdb` untouched — this
-  entire session only ever read it, never wrote. Thread stays open —
-  next Extractor rotation should draw batch 12. With 34/451 signatures
-  and 737/3251 windows still never-annotated, and today's jump from
-  377->417 covered showing the sampler still has plenty of real novel
-  ground left, the "switch sampling strategy" question from 2026-10-13
-  is deferred again; it's worth revisiting once novel-signature coverage
-  gets much closer to saturating (say >90%), not before.
-
-- **Data currency: wired the 2026-10-11 snapshot-age signal into the two
-  whole-act badge spots it hadn't reached yet — closed 2026-10-14.**
-  Rotated to Data currency (oldest of the three: last touched 2026-10-11;
-  Cleanup 10-12, Extractor 10-13). Picked up backlog item (3) from
-  2026-10-11's own entry: `src_version_date`/`snapshot_age_note()` had only
-  been wired into the two *realization-citation* panels
-  (`app_hierarchy.py::page_article()`'s pyramid, `app_llc.py::page_norm()`'s
-  "Below" panel) — the LLC dossier's two other whole-act badge spots,
-  `page_acts()` (the 135-act `llc_implementing_act` listing, 🔴/⚠️ badges
-  sourced from `v_act_currency`/`v_act_partial_repeal`) and
-  `page_currency()`'s "LLC's own governing law" two-act chip, still showed
-  supersession/voided-provision badges with no sense of *how stale the
-  underlying scrape is* for acts that carry no positive repeal signal.
-  Added a live join to `act.version_date` in both queries (additive, no
-  schema change, no `corpus.duckdb` rebuild) and called the existing
-  `snapshot_age_note()` helper, matching the exact display pattern
-  `page_norm()` already uses — no new helper, no second duplicate.
-  **Measured**: 43/135 (31.9%) of LLC implementing acts now show the note
-  in `page_acts()` — the same rate 2026-10-11 found for this vertical, now
-  surfaced where a browsing user actually lands on it; the two
-  governing-law acts (2001 LLC Law, 2026 LLC Law) currently show no note
-  (scraped 2026-07-22 and 2026-04-21 respectively, both under the 3-year
-  threshold) — correct, not a bug, that display slot is just quiet right
-  now. Verified: `check_sql_bindings.py` 106/106, `check_fstring_interp.py`
-  54/54 call sites clean, `check_code_clones.py` still 5 cross-file pairs
-  (no new pair — reused the existing shared helper rather than duplicating
-  it again), `pyflakes`/`vulture --min-confidence 60`/`bandit` all
-  unchanged (61 bandit issues, same B608/B311/B110 breakdown); ran both new
-  queries directly against `corpus.duckdb` to confirm they bind and return
-  the expected columns before wiring them into the apps; `verify_transfer.py`
-  green, `test_transfer_e2e.py` 14/14; both apps started live (HTTP 200,
-  clean logs, no exceptions) and torn down after. Thread closed — backlog
-  items (1) the live lex.uz comparison (still blocked on this environment's
-  egress policy) and (2) the untuned 3-year threshold are the only pieces
-  of this area still open; next Data currency rotation should pick one of
-  those or invent a new angle rather than re-running today's wiring.
-
-
-- **Cleanup: a seventh repeatable check, `check_fstring_interp.py` —
-  built and closed 2026-10-12, one real bug found and fixed.** Container
-  started detached one commit ahead of the local `main` ref (at `f62ce8d`,
-  2026-10-11's own commit); `git fetch origin main` confirmed `origin/main`
-  already matched `HEAD` exactly — same stale-local-pointer shape as
-  2026-10-09/earlier, recovered the same way (`git checkout -B main
-  origin/main`). Rotation: Cleanup last ran 2026-10-09 (oldest of the
-  three; Extractor 10-10, Data currency 10-11) — clear next pull. Re-ran
-  all six existing checks first: `pyflakes`/`vulture --min-confidence
-  60`/`bandit` (61 issues, same 57 B608/3 B311/1 B110 breakdown, no new
-  issue) all clean/unchanged; `check_sql_bindings.py` 106/106;
-  `check_code_clones.py` found the one new, expected pair from 10-11's
-  `snapshot_age_note()` duplicate, nothing else. The `execute(f"` grep's
-  own count moved 33 -> 35 raw hits, which is where today's real finding
-  came from: one of the 35 is a docstring's own self-reference (not a
-  call), and AST cross-validation found the grep itself has a structural
-  blind spot — it's a single-line literal match, so `execute(\n    f"...")`
-  (opening paren and f-string literal on different lines) is invisible to
-  it. `test_transfer_e2e.py` has 20 such call sites that no prior Cleanup
-  rotation's grep audit had ever seen (the file never appeared in the
-  grep's own output). Hand-auditing those 20 found one real violation of
-  the project's own f-string-SQL rule: `query_db_article_text_en()`'s
-  `else` branch interpolated `norm_id` — a value derived at runtime from
-  parsing the English markdown fixture, not a hardcoded constant — straight
-  into the WHERE clause. Fixed by parameterizing it (`article_number = ?`
-  + a bound param) rather than just adding it to an allowlist. Built
-  `check_fstring_interp.py` as the permanent replacement for the grep:
-  AST-walks every f-string `execute()` call regardless of line layout and
-  recursively resolves each interpolated expression to a hardcoded
-  constant via intra-function dataflow (does `raw` only ever get assigned
-  from a SCREAMING_CASE constant, transitively?) rather than trusting a
-  variable's *name*. That distinction mattered in practice: a first draft
-  allowlisted the bare name `where_clause`, and a mutation test against
-  the pre-fix file proved that version would have missed the exact bug
-  just fixed (the name was unchanged, only its unsafe content differed) —
-  redesigned to resolve structurally, re-ran the same mutation test,
-  confirmed it now correctly flags the pre-fix file and passes the fixed
-  one. Verified: `verify_transfer.py` green (no table/view touched,
-  `corpus.duckdb` untouched); `python -m unittest test_transfer_e2e.py`
-  14/14 (including the two edge tests that exercise the fixed function);
-  `pyflakes`/`vulture`/`bandit`/`check_sql_bindings.py`/`check_code_clones.py`
-  all re-confirmed clean on the new file too; both apps smoke-tested live
-  (HTTP 200, no exceptions). Thread closed; next Cleanup rotation should
-  re-run all seven checks (the plain `execute(f"` grep is now subsumed by
-  `check_fstring_interp.py` and doesn't need a separate re-run).
-
-- **Gold set: 340 -> 380 records, ninth signature-stratified batch
-  2026-10-10; two new bugs found (a dropped-article typo and an
-  under-measured existing gap class widened), one old backlog item
-  finally formalized; thread stays open.** Rotated to Extractor (oldest
-  of the three areas: last touched 2026-10-04 vs Data currency 2026-10-08
-  and Cleanup 2026-10-09). Container started in detached HEAD, 2 commits
-  ahead of the local `main`/`origin/main` refs as seen by this checkout
-  (at 7b9d503, 2026-10-09's own commit) — recovered the same way the
-  2026-10-09 session documented: `git fetch origin main` (confirmed
-  origin was already current, this checkout's remote-tracking ref was
-  just stale) then `git checkout main && git merge --ff-only`. Drew batch
-  9 (`build_gold_sample_novel.py --seed 20261010 --n 40`, novelty coverage
-  298/451 signatures before drawing), hand-read all 40 against the raw
-  parquet text and the live `extract()` output. 37/40 verdict `correct`
-  (several nice confirmations that complex multi-act, multi-list windows
-  are handled right — e.g. gold_id 351/356/360/374 each correctly stop a
-  Civil Code list before a second or third different act's own number run
-  bleeds in). 3/40 real findings: (1) **gold_id 370** (row 38339): LexUZ
-  typo "Fuqarolik kodeksining 43-moddsi." (missing the 'a' in "moddasi")
-  — `RE_CLAUSE` doesn't recognize "moddsi" as any unit word at all, so the
-  whole clause falls through to a bare-act citation and Article 43 is
-  dropped entirely; confirmed corpus-wide this exact typo touches the
-  Civil Code exactly once (3 other occurrences of the same typo target
-  different, out-of-scope acts). (2) **gold_id 379** (row 42229): "Fuqarolik
-  kodeksining 14, 15, 324 — 339, 985, 989 va 990, Oʻzbekiston
-  Respublikasining "..."gi Qonunining 38-moddasiga..." — a 21-article list
-  (the 324—339 range alone is 16 articles) loses its unit word entirely to
-  a *different Qonun's* own clause that follows, the identical failure
-  mechanism as the existing 2026-09-28 known_gap (gold_id 194-196, "bare
-  article number before an interposed different code's own name") but a
-  case that measurement's own search regex missed, because it only looked
-  for an interposing *kodeks*, not a *Qonun*. Built a wider, general
-  measurement today (any CC anchor whose `extract()` falls back to a bare
-  act/chapter despite a genuine 2+-digit list sitting right after the
-  anchor with no modda/bob/paragraf/qism/band/boʻlim word ever attaching
-  to it) and confirmed this is the only additional in-scope occurrence —
-  true corpus-wide count for that whole failure class corrected from 5/3
-  rows to 6/4 rows (Backlog updated). (3) **gold_id 341** (row 42566):
-  re-independently drew the exact row the 2026-09-15 session already found
-  and described ("Chapter+paragraph's own space-separator gap" — "22-
-  bobining 2 paragrafi" loses its section grain because the lookahead
-  regex requires a hyphen) but had left as prose-only backlog text with no
-  gold record for five weeks; formalized it as the permanent regression
-  check it should always have been. None of the three fixed — all three
-  stay single-occurrence (or, for gold_id 379, single-row) given the same
-  cross-clause-inference/typo-tolerance risk already weighed and rejected
-  for their respective sibling gaps — but all three are now honest,
-  permanent `known_gap` records instead of silent gaps or stale prose.
-  **Combined score after merging**: precision 1608/1619 (99.3%), recall
-  1608/1642 (97.9%) on 380 windows (down from 99.5%/99.3% on 340 — the
-  drop is arithmetic, not regression: gold_id 379 alone adds 21 honest
-  misses in one record, more than any previous single finding).
-  `verify_transfer.py` green (no pipeline code touched — `gold_citations.json`
-  is read only by `score_gold.py`/`build_gold_sample_novel.py`, never by any
-  `build_*.py` script); `python -m unittest test_transfer_e2e.py` 14/14;
-  both apps smoke-tested live (HTTP 200, no exceptions in server logs).
-  **New signature coverage: 337/451** (up from 298/451), 1142/3251
-  candidate windows still sit in never-annotated territory. Thread stays
-  open — next Extractor rotation should keep drawing fresh
-  `build_gold_sample_novel.py` batches; today's ~1 real finding per ~13
-  windows (3/40) is still well above the "diminishing returns" bar this
-  project has used to justify switching sampling strategy before.
-- **Cleanup: a sixth repeatable check, `check_code_clones.py` — built and
-  closed 2026-10-09, no live drift bug found.** Container started in
-  detached HEAD one commit ahead of the local `main` ref (at 68b8bd7,
-  2026-10-08's own commit) — recovered first: `git checkout main && git
-  merge --ff-only 68b8bd7`, then confirmed `origin/main` already had it
-  (the push had actually succeeded; only the local branch pointer in this
-  checkout was stale, likely an artifact of how this environment seeds a
-  detached checkout). No data lost, but noting it here in case the same
-  stale-pointer pattern shows up again. Rotation: Cleanup last ran
-  2026-10-03 (the oldest of the three areas — Extractor 10-04, Data
-  currency 10-08), so today's pull. Re-ran all five existing checks first
-  (`pyflakes`, `vulture --min-confidence 60`, `execute(f"` grep,
-  `bandit -r . -x ./articles,./documents,./okoz,./structure`,
-  `check_sql_bindings.py`) — all clean/unchanged from their last-known
-  state (61 bandit issues, same B608/B311 classes as 2026-10-01, no new
-  B110; 106/106 SQL bindings clean). Per the 2026-10-03 note ("next
-  rotation should re-run all five before deciding whether a sixth is worth
-  adding"), invented a new angle: a cross-file **code-clone-drift**
-  detector. None of the five existing tools catch the bug class this
-  project is structurally exposed to — the same helper logic hand-copied
-  into several scripts (the `alias_docs` query and `_anchors()`/`extract()`
-  call pattern alone appear in 5 files: `build_gold_sample.py`,
-  `build_gold_sample_novel.py`, `build_links.py`,
-  `measure_extractor_recall.py`, `score_gold.py`) where a later fix lands
-  in one copy and never reaches the others. Built `check_code_clones.py`:
-  AST-parses every function (>=4 body lines) in every `*.py` file, diffs
-  every cross-file pair's source text with `difflib.SequenceMatcher`, flags
-  pairs at similarity >= 0.55. Tried a second, SQL-block-level variant
-  first (diffing text inside `execute()`'s triple-quoted SQL directly,
-  rather than whole function bodies) — rejected it: 83 SQL blocks, 54
-  cross-file pairs >= 0.5, almost all coincidental overlap from shared
-  `SELECT ... FROM norm_unit WHERE ...` vocabulary between genuinely
-  unrelated queries, not real duplication. The whole-function version is
-  precise: 91 functions, exactly 4 cross-file pairs >= 0.55, zero noise.
-  Hand-verified all 4: (1) `sha256_file()` in `build_corpus_db.py` and
-  `verify_transfer.py`, byte-identical, fine; (2) `excerpt()` in
-  `app_hierarchy.py`/`app_llc.py`, 0.930 — logic byte-identical, only the
-  docstring wording differs, fine; (3) `citation_dict()`
-  (`build_gold_sample.py`) vs `citation_to_dict()` (`score_gold.py`), 0.795
-  — deliberately different by design: the former serializes `anchor`/
-  `evidence` for a human annotator to read, the latter deliberately omits
-  them from the scoring signature per `score_gold.py`'s own docstring
-  (two logically-equivalent citations found via different anchors should
-  still score as a match), not drift; (4) `build_gold_sample.py:main()` vs
-  `build_gold_sample_novel.py:build_candidates()`, 0.672 — the uniform and
-  signature-stratified samplers' shared candidate-window-generation logic,
-  confirmed byte-identical on the parts that matter (the `alias_docs`/
-  `rows` queries, already independently confirmed byte-identical across
-  all 5 files containing them) with the stratification/output logic
-  differing on purpose. **No drift bug found** — but adopted the tool
-  anyway as a sixth repeatable check: it's cheap (<1s), precise on this
-  codebase (0 false positives above 0.55), and the bug class it targets is
-  real and specific to how this project is built (duplicated helper logic
-  by design, not by accident), something none of the other five tools can
-  see. `verify_transfer.py` green, `python -m unittest
-  test_transfer_e2e.py` 14/14, both apps HTTP 200 with no exceptions
-  logged (schema untouched — this change touches no table/view).
-  `corpus.duckdb` untouched. Thread closed; next Cleanup rotation should
-  re-run all six.
-
-- **Data currency: surfaced `act.version_date` (LexUZ's own per-act scrape
-  date) as a "snapshot age" signal in both apps, 2026-10-11, after
-  measuring how much of the realization graph rests on old, unverified
-  scrapes — closed, shipped.** Rotated to Data currency (oldest of the
-  three: last touched 2026-10-08; Cleanup 10-09, Extractor 10-10). Tried
-  the most direct "data currency" check first — comparing the corpus
-  against the live lex.uz source — but outbound network to `lex.uz` is
-  denied by this environment's egress policy (`curl` CONNECT 403,
-  `WebFetch` DNS failure); no live-vs-corpus diff was possible today.
-  Pivoted to an internal measurement: the raw parquet carries a
-  `version_date` per act (copied into the `act` table by
-  `build_corpus_db.py` since the project's first build) that no prior
-  session had ever queried — not the same signal as the already-known-
-  useless `status` field (100% `in-force`, see `repeal_clause`'s own
-  comment), but a genuine, independent currency signal nobody had looked
-  at. Measured corpus-wide: of 245 distinct acts that currently realize a
-  General Part Civil Code article, ages range 2 months-28 years (mean
-  4.3y, median 1.9y); 102/245 (41.6%) are >3 years stale. Cross-checked
-  those 102 against the project's own text-based repeal detector
-  (`v_act_currency.derived_status`): only 24/102 are independently flagged
-  `superseded` — the other **78/102 (76.5%)**, i.e. **78/245 (31.8%) of
-  all realizing acts corpus-wide**, carry no positive currency signal
-  either way; their "still law" status rests entirely on a scrape with
-  nothing in the pipeline re-checking it since. Same measurement on the
-  LLC vertical alone: 135 implementing acts, 43 (31.9%) >3y stale, 33/43
-  (76.7%) with no repeal signal — consistent with the corpus-wide rate, not
-  an artifact of one vertical. **Decision: shipped, not just measured.**
-  Given the README's own stance ("a pinned consolidated snapshot...
-  always verify at lex.uz") and that no live comparison is possible from
-  here, the honest thing to surface is the scrape date itself, not a
-  derived "risk" verdict this data can't support. Added `src_version_date`
-  to both realization views (`v_realization` in `build_links.py`,
-  `v_llc_realization` in `build_llc.py` — additive, no table schema
-  change) and a `snapshot_age_note()` helper, duplicated deliberately in
-  both apps the same way `check_code_clones.py` already accepts for
-  `excerpt()`, showing "LexUZ snapshot: YYYY-MM-DD (~Ny old — verify at
-  lex.uz)" on a citing act's card, but only past the 3-year threshold
-  used above (showing it at median age 1.9y would bury the signal).
-  Caught one self-inflicted issue before committing: `from datetime import
-  date` collided with 3 pre-existing local loop variables named `date` in
-  the two apps (`pyflakes` caught all 4) — fixed with `import datetime as
-  dt` rather than renaming unrelated pre-existing code. Verified:
-  `pyflakes`/`vulture --min-confidence 60`/`bandit` clean (61 bandit
-  issues, unchanged from baseline), `check_sql_bindings.py` 106/106,
-  `check_code_clones.py`'s only new pair is the expected, intentional
-  `snapshot_age_note()` duplicate; `build_links.py`/`build_llc.py`
-  reproduce identical edge/resolution counts to before (9535 edges, 612
-  amendment rows, 135 LLC implementing acts); `verify_transfer.py` green,
-  `test_transfer_e2e.py` 14/14, both apps HTTP 200 with no exceptions
-  logged, and the exact modified SQL re-run directly against
-  `corpus.duckdb` to confirm old/new realizing acts surface correctly.
-  Thread closed — see Backlog for what's left if this is picked up again
-  (the live lex.uz comparison, the 3-year threshold, and extending the
-  same signal to the General Part's whole-act currency badges).
-
-- **Gold set: 300 -> 340 records, eighth signature-stratified batch
-  2026-10-04; one new surface-form gap found ("§ N" section-mark notation),
-  formalized as a known_gap rather than fixed; thread stays open.**
-  Continued the still-open Extractor thread (last touched 2026-10-02; 10-03
-  rotated to Cleanup instead, per the brief's own "rotate across the three"
-  guidance and that session's own note that Data currency is in
-  diminishing-returns territory on every open item — so this picked the
-  Extractor thread back up as the next-highest-value pull rather than
-  forcing a Data currency session with no new angle). Drew batch 8
-  (`build_gold_sample_novel.py --seed 20261004 --n 40`, novelty coverage
-  258/451 signatures before drawing), hand-read all 40 against the raw
-  text and the live `extract()` output. 39/40 verdict `correct`. The 40th
-  (gold_id 324, row 41858, doc -104720) is a real, novel gap: LexUZ writes
-  "Fuqarolik kodeksining 9-bobi § 2" — a "§ N" section-mark symbol instead
-  of the word "paragraf"/"paragrafi" that `RE_CLAUSE`'s chapter+section
-  lookahead (the `sec = re.match(r"\s*,?\s*(\d+)\s*-\s*paragraf", ...)`
-  call in `citation_extractor.py`) requires literally — so the citation
-  resolves as a bare chapter-9 citation, losing the section-2 grain
-  (`dst_kind` would read `chapter` instead of `section`, same class of gap
-  as the already-known "paragrif" misspelling and Roman-chapter-lookahead
-  items). Measured corpus-wide before deciding whether to fix: a regex scan
-  for `bob\w*\s*§\s*\d+` across every anchor-window candidate row found
-  exactly 2 raw occurrences, but only 1 is in scope — row 35993's "ushbu
-  Qoidalarning XXI bobiga § 84" is a different document's own internal
-  Rules, not a Civil Code citation, and sits nowhere near a Civil Code
-  anchor window. So the real footprint is exactly 1 occurrence corpus-wide.
-  **Decision: did not fix** — same single-occurrence-scope precedent this
-  project has applied consistently to the paragrif/Roman-chapter/
-  chapter+paragraph-space-separator gaps (see Backlog); formalized instead
-  as a new permanent `known_gap` gold record (gold_id 324) with its true
-  `section 9/2` expected output, so it's an honest regression data point
-  rather than a silently-inflated score. **Combined score after merging**:
-  precision 1481/1489 (99.5%), recall 1481/1492 (99.3%) on 340 windows (up
-  from 1189/1196 = 99.4% / 1189/1199 = 99.2% on 300) — consistent with
-  adding one new honest miss and 39 confirmed-correct windows, not a
-  regression. `verify_transfer.py` green (no pipeline code touched —
-  `gold_citations.json` is not read by any `build_*.py` script);
-  `pyflakes`/`vulture --min-confidence 60`/`check_sql_bindings.py` all
-  clean; `python -m unittest test_transfer_e2e.py` 14/14; both apps
-  smoke-tested live (HTTP 200, no exceptions in server logs). **New
-  signature coverage: 298/451** (up from 258/451), 1179/3251 candidate
-  windows still sit in never-annotated territory. Thread stays open — next
-  Extractor rotation should keep drawing fresh `build_gold_sample_novel.py`
-  batches; at the current ~1 new real gap per ~1-2 batches, each batch is
-  still earning its keep.
-
-- **Gold set: 260 -> 300 records, seventh signature-stratified batch
-  2026-10-02; "boʻlim" (Part-level) backlog item built and closed the same
-  day, found while annotating this batch; thread stays open.** Continued
-  the still-open Extractor thread (last touched 2026-09-29; 09-30/10-01
-  rotated to Data currency/Cleanup instead, per the brief's own
-  "rotate across the three" guidance, so this picked the thread back up
-  rather than starting a fourth consecutive non-Extractor day). Drew batch
-  7 (`build_gold_sample_novel.py --seed 20261002 --n 40`, novelty coverage
-  218/451 signatures before drawing), hand-read all 40 against the raw
-  text. Found no NEW extractor bug in the usual sense, but 2 of the 40
-  windows (rows 46656, 48850) are occurrences of the already-known "boʻlim
-  is never a recognized citation unit" backlog item — see Backlog's
-  Extractor recall/precision section for the full build: fixed within this
-  same session (`RE_ROMAN_PART`, a new `target_kind='part'` resolved to the
-  corpus's existing `struct_node` Part rows PI..PVI), so both score
-  `correct` in the merged batch rather than `known_gap`. That fix also
-  caught and corrected 5 pre-existing gold records (134/170/186/193/200)
-  whose previously-"correct" expected output predates the fix. **Combined
-  score after merging**: precision 1189/1196 (99.4%), recall 1189/1199
-  (99.2%) on 300 windows (up from 926/933 = 99.2% / 926/936 = 98.9% on 260)
-  — the improvement is real signal (24 new/corrected part-level edges
-  resolving correctly), not just more records. `verify_transfer.py` green;
-  `pyflakes`/`vulture --min-confidence 60`/`bandit`/`unittest
-  test_transfer_e2e.py` all clean; both apps smoke-tested live. **New
-  signature coverage: 258/451** (up from 218/451), 1257/3251 candidate
-  windows still sit in never-annotated territory. Thread stays open — next
-  Extractor rotation should keep drawing fresh `build_gold_sample_novel.py`
-  batches. Also worth a look, surfaced but not pursued today: whether any
-  of the remaining qism/boʻlim-adjacent known_gaps (the "2-kichik boʻlim"
-  subsection grain inside row 32449/46741, one level finer than the Part
-  grain just built) are now cheap to add given the Part-grain machinery
-  already exists, or whether that's better bundled with the still-open
-  Qism-level-grain backlog item (same "is a coarser/finer-than-article
-  grain worth modeling" question).
-
-- **Cleanup: invented and adopted a fifth repeatable check,
-  `check_sql_bindings.py`, 2026-10-03 — closed.** Data currency's backlog
-  (see Backlog) is now in diminishing-returns territory on every open item
-  (the 39/612 amending-act residual, the OKOZ-granularity item), so picked
-  Cleanup over it this rotation — Cleanup's own backlog explicitly asks for
-  this ("next rotation should re-run all four before deciding whether a
-  fifth is worth adding"), last touched 10-01 vs. Data currency's 09-30, so
-  this is the more net-overdue of the two non-Extractor areas either way.
-  Re-ran all four existing checks first: `pyflakes *.py` (0), `vulture *.py
-  --min-confidence 60` (0), `bandit -r . -x ./articles,./documents,./okoz,
-  ./structure` (61 findings, same 57 `B608`/3 `B311`/1 `B110` breakdown as
-  10-01 — no new issue), and the `execute(f"...")` grep (**32 call sites**,
-  up from 31 at 10-01 — re-verified every one via an AST-based extraction of
-  each f-string's `{...}` expressions rather than eyeballing: all 32 still
-  interpolate only hardcoded module-level constants — `raw`, `CC_GENERAL_PART`,
-  `cx.DOC_GENERAL`, `CC_GENERAL`, `LLC_LAW_CURRENT`, `LLC_LAW_PRIOR`,
-  `REPEALED_COMPANY_ARTICLES`'s own length, and `build_links.py`'s `doc_id`
-  loop variable, which only ever ranges over the fixed 2-tuple `CC_DOCS` —
-  zero violations. Didn't chase exactly which commit moved the count from
-  31 to 32; neither 7c40bed nor 8b7b808's diffs touch any `execute(f` call
-  site, so it's most likely a pre-existing bookkeeping drift in an earlier
-  day's count, not a new site — not worth forensically re-auditing every
-  prior day's number when today's direct re-check is what actually matters
-  and came back clean).
-  **The actual question this rotation asked — is a fifth tool worth
-  adding — got a real, invented answer**: none of the four existing checks
-  understand SQL semantics at all. A column/table rename or typo inside a
-  query string is invisible to `pyflakes` (valid Python syntax), `vulture`
-  (the string literal looks "used"), the f-string grep (governs
-  interpolation safety, not correctness), and `bandit` (pattern-matches
-  injection shapes, not schema binding) — and the project's own
-  smoke-test-both-apps step only proves the *default* page returns HTTP 200,
-  not that every widget's query on every page actually binds against the
-  schema. Built `check_sql_bindings.py`: AST-walks every call to
-  `q()`/`qdf()` (the apps' own query helpers) or `execute()` whose first
-  argument is a plain string literal (or a `+`-concatenation of literals —
-  f-strings are explicitly out of scope, already covered by the grep audit
-  above), and validates each one with DuckDB's `PREPARE <name> AS <query>`
-  against the live `corpus.duckdb` schema — `PREPARE` resolves every
-  table/column name and throws a `BinderException`/`CatalogException` on a
-  bad one *without* needing bound parameter values, so a query full of `?`
-  placeholders validates cleanly with no dummy inputs needed. Scoped the
-  default file list to the read-only layer only — `app_hierarchy.py`,
-  `app_llc.py`, `verify_transfer.py`, `score_gold.py`,
-  `measure_extractor_recall.py`, `build_gold_sample.py`,
-  `build_gold_sample_novel.py` — after testing it against
-  `build_corpus_db.py`/`build_links.py`/`build_okoz.py`/`build_llc.py` too
-  and finding that's the wrong model for them: their `CREATE TABLE`/`CREATE
-  VIEW` statements aren't `PREPARE`-able at all (DDL, not a prepared
-  statement), and one `INSERT` (`build_corpus_db.py:254`) false-fails with
-  "table uz does not exist" because `uz` is a `CREATE TEMP TABLE` from the
-  *previous* statement in that same pipeline run — this check's one-query,
-  fresh-connection model can't see session state a multi-statement script
-  builds up, and isn't the right tool for it anyway: those scripts already
-  self-validate every single time `python build_*.py` runs successfully (a
-  real binding bug there would just crash the build immediately). The actual
-  gap is the read-only layer: a broken query in `app_llc.py` only ever
-  surfaces when a person happens to click that exact page. **Measured
-  coverage**: 106/119 total `q`/`qdf`/`execute` call sites across the 7
-  in-scope files are plain literals and get checked; of the 13 not checked,
-  4 are the `q()`/`qdf()` helper *definitions* themselves (not call sites),
-  8 are f-strings already covered by the grep audit above, and 1
-  (`measure_extractor_recall.py:172`) is a literal assigned to a local
-  variable first and passed by name — not resolved (would need real
-  data-flow tracking for one occurrence), same single-occurrence-not-worth-
-  the-complexity precedent this project already applies elsewhere. All 106
-  checked queries bind cleanly today. **Proved the check has real teeth,
-  not just "nothing's broken right now"**, with a mutation test: copied
-  `app_llc.py` to a scratch file, renamed one column inside a live query
-  (`article_title` → `article_title_TYPO`, line 89) — exactly the shape of
-  drift none of the other four tools can see (valid Python, a "used"
-  string, no injection pattern) — ran the checker against the mutant: caught
-  immediately, `BinderException`, exact line and query text, under a
-  second. Discarded the mutant. **Decision: adopted** as the fifth
-  repeatable Cleanup check (`python check_sql_bindings.py`) — same
-  escalation pattern as `vulture` (09-23) and `bandit` (10-01), each added
-  only after the existing set stayed clean and a real, distinct gap was
-  identified and measured rather than assumed. Zero new dependency (reuses
-  `duckdb`, already required everywhere); read-only connection, no risk to
-  `corpus.duckdb`. Verified: `pyflakes`/`vulture` clean on the new file
-  itself; `verify_transfer.py` all green, same INFO-line numbers as 10-02
-  (zero pipeline/`corpus.duckdb` surface — every connection this check opens
-  is `read_only=True`); `python -m unittest test_transfer_e2e.py` 14/14.
-  Both apps smoke-tested live (HTTP 200 on fresh `streamlit run` on
-  :8601/:8602). Next Cleanup rotation: re-run all five; also worth revisiting
-  the `measure_extractor_recall.py:172` single-occurrence coverage gap only
-  if `check_sql_bindings.py` is otherwise being extended anyway, not alone.
-
-- **Amending-act resolution: 85.1% -> 93.6%, new `date+sole-law-cc-mention`
-  tier built and closed 2026-09-30.** Data currency's turn in the rotation
-  (Extractor had 09-25/09-28/09-29 — three of the last five sessions — so
-  rotated here rather than continuing the Extractor thread a fourth day
-  running; Cleanup's own backlog is fully drained, see Backlog). Picked up
-  the 91/612 (14.9%) residual left open 2026-09-27, specifically its more
-  promising half: 57/91 have a same-date candidate act that mentions the
-  Civil Code somewhere in its full text but not inside the target article's
-  own block. Root-caused the biggest cluster inside that half by hand
-  (36/91, all one omnibus act — OʻRQ-1025, 2025-02-07) by reading the raw
-  parquet rows directly: the act's own text_by_doc is missing its first
-  ~17 numbered items *entirely* — LexUZ's per-provision scrape only
-  captured item 18 onward (verified: all 8 raw rows for doc -7367697 flow
-  seamlessly into each other, file_row_number order preserving true
-  document order correctly; the very first captured row already opens
-  mid-list at item 18) — so neither the Civil-Code-amending block's own
-  header (which would name "Fuqarolik kodeksi") nor the 8 distinct target
-  articles it touches (39, 40, 42, 43, 46, 48, 55, 58) exist anywhere in
-  this act's raw text. This is a genuine source-scrape completeness gap,
-  not a matching-heuristic one — no smarter same-block check (the "next
-  step" 2026-09-27 proposed) can find text that was never scraped. **But
-  the act is still safely identifiable**: `re_amend_event`'s own citing
-  grammar guarantees every amending act named in an `amendment_note` is a
-  `Qonun` (Law) — the citation literally spells out "...son(?:li)?
-  Qonun\w*..." — so restricting a new fallback to `doc_type='law'`
-  candidates matches the source data's own ground truth, not an arbitrary
-  filter. Built `sole_law_cc_mention(iso)` in `build_links.py`: when no
-  same-date `law`-type candidate's own text mentions "Fuqarolik kodeks"
-  except exactly one, resolve to it. **Measured before shipping**: applied
-  retroactively to all 62 (date, doc) pairs already resolved by the two
-  existing tiers, it agrees on 53, is silently ambiguous on 8, and
-  disagrees on exactly 1 (2022-03-29 — the true amending act is itself
-  titled "...Fuqarolik kodeksiga...", but LexUZ's own source `doc_type`
-  tags it `'code'`, not `'law'` — `doc_type` is copied straight from the
-  raw parquet, not derived from the title by this project; already caught
-  by `date+civil-code-title` before this new tier would ever run in the
-  real pipeline, so not an actual collision). **Result: 52/91 newly
-  resolved, zero regressions** — diffed `article_amendment` row-for-row by
-  `event_id` between a throwaway pre/post copy of `corpus.duckdb`: 0
-  previously-resolved rows changed which act they resolved to, 52
-  purely-additive resolutions, `link_edge`/`repeal_clause` byte-identical
-  (this tier only touches `article_amendment`). Amending-act resolution:
-  **521/612 (85.1%) -> 573/612 (93.6%)**; `by match_method`:
-  `date+cc-clause-match` 478 (unchanged), `date+sole-law-cc-mention` 52
-  (new), `date+civil-code-title` 43 (unchanged), `unresolved` 158 -> 91 ->
-  **39**. Verified each of the 4 newly-resolved dates by hand against the
-  raw text, not just structurally: -55080 (2002-12-13) contains exact
-  "587-moddasining"/"589-moddasining"/"595-moddasi"/"597-moddasining"
-  matches for all 4 of that date's target articles; -2388207 (2014-05-14,
-  OʻRQ-372) contains "65 va 66-moddalar chiqarib tashlansin" verbatim — the
-  exact voiding of Articles 65/66 that `verify_transfer.py`'s own
-  reconciliation has listed as an unexplained `md_only`/
-  `structure_missing_articles` gap since the project's very first
-  sessions (2026-09-03), now finally traced to its voiding law and date;
-  -6643526 (2023-10-23, OʻRQ-871) is a land-legislation omnibus act
-  plausibly touching the 173-1..173-7 superscript range it's cited for;
-  -7367697 (2025-02-07, OʻRQ-1025) is independently corroborated by three
-  of its own raw rows being full quoted insertions of new Civil Code
-  articles 181, 358-1 and 962-1 — all real corpus superscript articles
-  this exact reform created. Verified live in `app_hierarchy.py` via
-  Playwright: Article 39's amendment-history expander, blank before today,
-  now shows "Amending act: *Korporativ munosabatlarning huquqiy asoslari
-  yanada takomillashtirilishi...*". Re-ran `build_okoz.py`/`build_llc.py`
-  against a throwaway copy (not the committed db — `link_edge` is
-  byte-identical, so re-running them for real would only add
-  non-deterministic serialization churn for zero content change, the same
-  reasoning as several prior Cleanup entries): `llc_implementing_act`
-  135/135, `llc_norm` 100/100, `okoz_assignment` 39/39, all unchanged, as
-  expected since neither downstream script reads `article_amendment` at
-  all (`build_llc.py` only reads `link_edge`; grepped both to confirm
-  before assuming). `verify_transfer.py`: all checks green, same INFO-line
-  numbers as before (no check is scoped to `article_amendment`'s resolution
-  rate). `pyflakes`/`vulture --min-confidence 60` both clean.
-  `python -m unittest test_transfer_e2e.py`: 14/14. `score_gold.py`:
-  unchanged at 926/933 (99.2%) precision, 926/936 (98.9%) recall (this fix
-  doesn't touch `citation_extractor.py`). Both apps smoke-tested live after
-  hitting an unrelated DuckDB single-writer/many-reader startup race
-  (`app_hierarchy.py`'s `_connect()` opportunistically takes read-write when
-  the file is free, which can starve `app_llc.py`'s read-only connection if
-  hierarchy happens to start first — a pre-existing, already-documented
-  design tradeoff, not something today's change caused; restarting
-  `app_llc.py` first cleared it) — HTTP 200, no exceptions, once started in
-  that order. **Closing this thread, not leaving it active**: characterized
-  the new 39-row residual before stopping rather than declaring victory
-  blind — of the 11 distinct dates left, most (7) have 2+ `law`-type
-  candidates where more than one mentions the Civil Code (genuinely
-  ambiguous, correctly left alone) or the correct act's text isn't captured
-  either; the single largest remaining cluster (2025-04-17, 19 events) has
-  exactly 2 `law`-type candidates on that date, checked both directly —
-  *neither* of their captured texts mentions "Fuqarolik kodeks" anywhere,
-  so this is the same class of scrape-completeness gap as OʻRQ-1025 rather
-  than a solvable ambiguity. Diminishing returns from here in the same way
-  the 2026-09-27 entry already flagged for its own residual — not
-  re-opening this thread without a new angle (e.g. sourcing a more complete
-  scrape of the affected acts, which is a data-acquisition question outside
-  `build_links.py`'s reach, the same conclusion the repeal-resolution
-  thread reached 2026-09-09 for its own non-statute residual).
-
-- **Gold set: 220 -> 260 records, third signature-stratified batch
-  2026-09-29, one real bug found and fixed, thread stays open.**
-  Continued yesterday's still-open Extractor thread rather than rotating
-  (the brief's own priority order: continue a mid-flight thread before
-  pulling a fresh backlog item) — drew one more `build_gold_sample_novel.py`
-  batch (`--seed 20260929 --n 40`, signature coverage 178/451 before
-  drawing), hand-read all 40 against the raw text. **Found and fixed one
-  real, live recall bug**: gold_id 234 (row 43534) and gold_id 237 (row
-  44469) both showed `extract()` falling back to a bare `act` citation
-  where the raw text plainly names a specific article — "Fuqarolik kodeksi
-  (Oʻzbekiston Respublikasi Oliy Majlisining Axborotnomasi, 1996-yil, №
-  11-12) 775-moddasining ikkinchi qismidagi ... soʻzlar chiqarib
-  tashlansin" should resolve to Article 775, part 2. Root cause: `RE_STOP`'s
-  `axborotnoma` branch exists specifically to stop the scan on the Code's
-  own gazette *publication-record* parenthetical (so a locator like
-  "56-modda" inside "(...Axborotnomasi, 1997-yil, № 2, 56-modda)" is never
-  mistaken for a Code article) — but the stop is a whole-window `break`
-  (see the pre-existing "break-vs-continue" backlog note), and when a real
-  article citation legitimately follows the closing paren, the very first
-  `RE_CLAUSE` candidate inside the parenthetical (one of its own gazette
-  locators) trips the break before the real citation downstream is ever
-  reached, discarding it too. **Measured corpus-wide before fixing**: 25
-  anchor windows start with a balanced, signal-bearing publication-record
-  parenthetical; of those, 9 are immediately followed by a real modda/bob/
-  paragraf clause once the paren closes, and all 9 were losing their
-  citation entirely (articles 15, 38, 43, 48, 53, 292, 775, 788, 1015).
-  Fixed in `citation_extractor.py` by blanking out (same length, offsets
-  preserved) a leading balanced pub-record parenthetical before the clause
-  scan starts (`RE_LEADING_PUB_PAREN`), scoped deliberately narrowly to
-  only the parenthetical sitting immediately at the anchor — an
-  `axborotnoma` mention anywhere else in the window still triggers the
-  full, conservative break, unchanged. Added 3 self-test cases (51/51
-  passing, up from 48/48) including a guard that the *unrelated* "(bundan
-  buyon matnda FK deb yuritiladi)" alias-declaration parenthetical (33
-  corpus occurrences, no publication-record signal) is correctly left
-  alone. **Verified corpus-wide after fixing**: all 9 rows now resolve to
-  the correct article (hand-confirmed each against the raw text: e.g. row
-  43534's exact matched span is "775-moddasining", outside the closing
-  paren, not one of the gazette's own locators). Re-ran the full
-  pipeline: `build_links.py` — 9530 edges (same total; 9 useless bare-`act`
-  fallback edges converted in place to real, resolved `article` edges, one
-  of which duplicates an edge already present from a second occurrence of
-  the same citation elsewhere in that row, hence the total not moving by
-  the full +9); `build_okoz.py` unchanged (386/386 classified, same
-  mappings); `build_llc.py` — `llc_implementing_act` 132 -> 135 (**3 new,
-  real implementing acts found**: doc -36953/-42953/-44853, each citing
-  Civil Code articles 48/53/43 that were previously invisible to the LLC
-  foundation-citation scan), `llc_norm` unchanged at 100/100 (no LLC
-  foundation-mapping logic touched). Merged the fixed batch into
-  `gold_citations.json` as gold_id 220-259 (all "correct", including the
-  2 that depended on today's fix), `score_gold.py`: 260 records, 0 drift,
-  **precision 926/933 (99.2%), recall 926/936 (98.9%)** — same 5
-  pre-existing known_gap mismatches, 0 new ones, confirming no collateral
-  regression from the fix. `verify_transfer.py` **initially FAILED** after
-  the fix: its AC5 "no article edge mined from an act's publication
-  record" check is a blunt heuristic (does the edge's 90-char-padded
-  evidence *text* mention "Axborotnomasi, YYYY-yil" and "№" anywhere
-  nearby) built as a permanent regression guard for exactly the bug class
-  this fix touches — and 2 of the 9 newly-correct edges (articles 53, 775)
-  have short enough gazette records that the padding reaches back across
-  the closing paren, tripping the same substring match even though the
-  actual matched digits are provably outside the parenthetical (checked
-  `ev_start`/`ev_end` by hand: "775-moddasining", "53-moddasi", both
-  outside). This is the check's own imprecision surfacing, not a reason to
-  revert a well-measured, zero-regression fix — refined it in
-  `verify_transfer.py` to strip every balanced pub-record parenthetical out
-  of the evidence text first and only flag an edge if its article+"modda"
-  citation doesn't survive outside that stripped text (tested against both
-  a synthetic true-positive, still correctly flagged, and the 2 real
-  false-positives, now correctly cleared). `verify_transfer.py` green
-  again after the refinement, same INFO-line numbers elsewhere.
-  `pyflakes`/`vulture --min-confidence 60` clean on both changed files (same
-  2 pre-existing dataclass-field warnings in `citation_extractor.py`, same
-  2 pre-existing `art_no` warnings in `verify_transfer.py` — confirmed via
-  `git stash` diff, nothing new). `python -m unittest test_transfer_e2e.py`:
-  14/14. Both apps smoke-tested live (HTTP 200, no exceptions in logs; no
-  schema change, so a load check is sufficient per the project's own rule).
-  The other 38/40 batch-6 windows all read correct against the raw text —
-  no other new gaps found this round. **New signature coverage: 218/451
-  (up from 178/451)**, 1299/3251 candidate windows still sit in
-  never-annotated territory. Thread stays open — next Extractor rotation
-  should keep drawing fresh `build_gold_sample_novel.py` batches; consider
-  also, at some point, tightening `RE_STOP`'s `break` for the `axborotnoma`
-  branch specifically (continue past just the stopped clause instead of the
-  whole window) now that this session's fix handles the *leading* case —
-  a publication-record parenthetical appearing *mid-window*, after some
-  other citation was already found, is still unmeasured territory the same
-  way the general "break-vs-continue" backlog item flagged.
-
-- **Gold set: 140 -> 220 records, two signature-stratified batches
-  2026-09-28, thread stays open.** Extractor's turn in the rotation (last
-  ran 09-25). Drew and hand-annotated batch 4 (`--seed 20260928 --n 40`,
-  novelty coverage 98/451 signatures): 38/40 correct, 2/40 known_gap — both
-  re-discoveries of already-documented backlog items never before
-  formalized as gold records (the "hamda" list-separator gap, row 24219;
-  the chapter+paragraph-list-with-parenthetical gap, row 25634), plus one
-  "correct" re-hit of the already-known "boʻlim" gap (row 32449, still 6
-  corpus-wide, not growth). Zero new bugs — but while formalizing "hamda",
-  found and corrected a factual error in the 2026-09-15 log entry's own
-  description of that gap (it claimed "11-12" was already partially
-  recovered; direct re-testing shows it's dropped entirely, same as "12" —
-  see Log and Backlog). Since batch 4 found nothing new, drew a second,
-  disjoint batch 5 the same day (`--seed 20260928002 --n 40`, novelty
-  coverage 138/451) rather than stopping at one dry batch: 37/40 correct,
-  3/40 known_gap — two more "boʻlim" re-hits (rows 35586, 38614), and **one
-  genuinely new finding**: row 37948 (an Oliy sud Plenumi resolution) three
-  times writes "Fuqarolik kodeksining 38, Oila kodeksining 228,
-  233-moddalari" — the bare "38" is unambiguously Civil Code Article 38 by
-  the parallel structure, but no unit word ever touches it directly (a
-  different code's own name interposes before any modda/bob/paragraf is
-  reached), so `RE_CLAUSE` never matches it and it's silently dropped to
-  the bare-act fallback. Measured corpus-wide: exactly 5 raw occurrences
-  across 3 rows (26159, 37948 ×3, 53186), all the same target article — a
-  recurring civil-registry citation idiom in these specific resolutions, not
-  a general grammar gap. Not fixed today (would need real cross-clause unit-
-  word inference, a materially bigger and riskier change than the existing
-  comma/va/hamda separator gaps, for a pattern that only ever names one
-  target so far); formalized as three known_gap records instead (`gold_id`
-  194-196) and a new Backlog item. **New combined score: precision 693/700
-  (99.0%), recall 693/703 (98.6%)** on 220 windows (up from 297/299 = 99.3%/
-  99.3% on 140) — the ratio drop is entirely the newly-formalized known_gaps
-  becoming countable, not a regression (`score_gold.py`: 0 drift).
-  `verify_transfer.py` green, same INFO-line numbers as 2026-09-27 (nothing
-  touched here feeds any of its checks); `pyflakes`/`vulture
-  --min-confidence 60`/`unittest test_transfer_e2e.py`/extractor self-tests
-  all clean, both apps smoke-tested live (HTTP 200, no exceptions). Thread
-  stays open — 220/3251 candidate windows and 138/451 signatures is still
-  partial coverage; next Extractor rotation should keep drawing fresh
-  `build_gold_sample_novel.py` batches, and consider repeating today's
-  "draw a second batch same-day if the first comes back clean" pattern
-  (anecdotally productive once, not yet a settled policy).
-
-- **Amending-act resolution: 74.2% -> 85.1%, built and closed 2026-09-27.**
-  Data currency's turn in the rotation (Extractor had 09-22/09-25, Cleanup had
-  09-23/09-26, Data currency only 09-24 in the last five). Picked up the
-  158/612 (25.8%) residual left open by 2026-09-24's `date+cc-clause-match`
-  tier — that entry's own note flagged "some are same-date candidates whose
-  body doesn't block-match for a reason not yet diagnosed" as the next step.
-  Diagnosed it by reproducing `build_links.py`'s exact `by_date`/`cc_blocks`/
-  `cc_clause_candidates` logic in a standalone script and classifying all 158
-  unresolved rows. Root cause, found by hand-reading the first failing case
-  (doc -6809366, target article 26¹): `text_by_doc` was built by joining
-  `corpus_row` to `src_provision` — but `src_provision` only holds rows that
-  *themselves* produced a `link_edge` (a much narrower set than "every raw row
-  belonging to this doc_id"), and a long omnibus act is scraped as several
-  same-`id` "-full" pagination chunks (doc -6809366 alone is 9 separate raw
-  rows under corpus_id "-6809366-full", 425-16061 chars each, sharing one
-  logical document). Only whichever chunk(s) happened to contain an
-  extractable citation landed in `src_provision`; the rest of the act's text —
-  including, for -6809366, the exact clause "2) quyidagi mazmundagi 261-modda
-  bilan toʻldirilsin" that inserts Article 26¹ — was silently invisible to the
-  amending-act block-match. Fixed by reading every raw parquet row for the
-  doc_id directly (`corpus_row` joined straight to the raw `read_parquet(...)`
-  by `file_row_number`, ordered by `file_row_number` to preserve document/page
-  order) instead of routing through `src_provision`, in `build_links.py`'s
-  `text_by_doc` construction — same matching logic (same-block requirement,
-  same `\b<article>-modda` regex) untouched, just fed complete text.
-  **Measured, before touching the real database**: ran both the original and
-  fixed version against a throwaway copy of `corpus.duckdb`, diffed
-  `article_amendment` row-for-row by `event_id` — **0 regressions** (no
-  previously-resolved row went back to `unresolved`), **0 rows changed which
-  act they resolved to**, **67 newly resolved**, purely additive. Spot-checked
-  several by hand against the raw text (not just structurally): confirmed the
-  "925-modda" match for `OʻRQ-683` is the real target article (not a false
-  positive from "1925-moddaning" — verified the `\b` word boundary correctly
-  rejects that), and confirmed it sits inside the correct "55-modda." block
-  that opens with the Civil Code's own bibliographic citation. **Result:
-  454/612 (74.2%) -> 521/612 (85.1%)** amending-act resolution — `by
-  match_method`: `date+cc-clause-match` 411 -> 478, `unresolved` 158 -> 91,
-  `date+civil-code-title` unchanged at 43. Verified live in `app_hierarchy.py`
-  via Playwright: Article 384 (General Part), unresolved before today, now
-  shows "Amending act: *Oʻzbekiston Respublikasining ayrim qonun
-  hujjatlariga oʻzgartishlar kiritish toʻgʻrisida*" in its amendment-history
-  expander. Also checked `app_llc.py` live (CC art. 39, one of the *still*-
-  unresolved rows) to confirm the LEFT JOIN degrades gracefully — no crash,
-  the "Amending act:" line is simply absent, exactly as designed.
-  **Characterized, not chased, the new 91-row residual** (diminishing returns
-  past this point — each remaining case needs its own per-act forensic read,
-  not one shared root cause): 57/91 have a same-date candidate act that
-  mentions "Fuqarolik kodeks" *somewhere* in its full text but not inside the
-  same top-level block as the target article (often a passing descriptive
-  reference — e.g. "...Fuqarolik kodeksida belgilangan tartibda..." inside a
-  block that's actually amending a *different* named law, not the Code
-  itself — confirmed by hand for the OʻRQ-1025/2025-02-07 cluster, 36 of the
-  91); 34/91 have no same-date candidate mentioning the Civil Code at all
-  (likely a wrong/mistranscribed `amend_date` in the source `amendment_note`,
-  or the true amending act genuinely isn't in this corpus — same class of gap
-  as `repeal_clause`'s already-closed 45-item residual, not re-investigated
-  today). Re-ran `build_okoz.py` and `build_llc.py` against the real database
-  after `build_links.py` (both fully downstream of `link_edge`/
-  `article_amendment`): `llc_implementing_act` 132/132 and `llc_norm` 100/100
-  unchanged, confirming zero LLC-slice impact (expected — no foundation
-  mapping or LLC-specific logic was touched). `verify_transfer.py`: all
-  checks green, same INFO-line numbers as 2026-09-26 (`repeal_clause` is a
-  separate, earlier code path in `build_links.py`, untouched). `pyflakes
-  *.py`/`vulture *.py --min-confidence 60`: both clean. `python -m unittest
-  test_transfer_e2e.py`: 14/14. `score_gold.py`: unchanged at 297/299 (this
-  fix doesn't touch `citation_extractor.py` at all). This closes today's
-  thread — the residual is now honestly measured and categorized rather than
-  a bare "158 unresolved, cause unknown" count, matching this project's
-  established pattern for gaps below the diminishing-returns line (see the
-  2026-09-09 repeal-resolution closure for precedent). If picked up again:
-  the 57-row "CC mentioned elsewhere, not in the article's own block" cluster
-  is the more promising half — it means the *act* is very likely correct and
-  already found, just needs a smarter same-block heuristic (e.g. also
-  accepting a block whose own top-level clause names a *different* law but
-  whose government-citation preamble bibliographically references the Civil
-  Code's own gazette numbers) rather than the "no plausible candidate at all"
-  34-row half, which likely needs date-transcription forensics instead.
-
-- **f-string SQL audit: built and closed 2026-09-26.** Cleanup's turn in the
-  rotation (data currency 09-24, extractor 09-25). The hard constraint this
-  project runs under bans "f-string SQL / string-interpolated queries with
-  any value that isn't a hardcoded constant you wrote," citing
-  `hierarchy_engine.py` (deleted 2026-09-07) as the known offender — but
-  that constraint had never actually been checked against the *rest* of the
-  codebase, only assumed clean once the one named file was gone. Audited
-  every `execute(f"...")` call across all 8 `.py` files that use one (29
-  call sites total: `build_corpus_db.py`, `build_gold_sample.py`,
-  `build_gold_sample_novel.py`, `build_links.py`, `build_llc.py`,
-  `measure_extractor_recall.py`, `score_gold.py`, `verify_transfer.py`) and
-  classified each interpolated value as either a hardcoded constant (the
-  fixed `read_parquet(...)` expression built from the `PARQUET` path
-  constant, or a doc-id constant like `CC_GENERAL_PART`/`CC_DOCS`/
-  `LLC_LAW_CURRENT` — allowed under the rule as written) or a genuine
-  runtime value. **Found 3 real violations**, all the same shape — a
-  dynamically-computed list of ints (`row_ids` from gold-set records, or
-  `hits` dict keys from a query result) joined into the SQL text with
-  `",".join(str(i) for i in ...)` instead of bound as a parameter:
-  `build_gold_sample_novel.py:169-172`, `score_gold.py:90-93`,
-  `build_llc.py:253-257`. None are exploitable today — every value is a
-  Python `int` produced by DuckDB's own typed columns, so `str()`-formatting
-  one can't smuggle SQL — but each one is a live violation of the project's
-  own written rule, and each is exactly the kind of code a future edit could
-  widen into a real hole (e.g. swapping the int list for a string list).
-  Also explicitly checked the actual user-facing surface — both
-  `app_hierarchy.py` and `app_llc.py` — and confirmed **zero** f-string SQL
-  there; every `con.execute()` call in either app already goes through
-  DuckDB's `?` parameter list. So the risk was already correctly quarantined
-  to batch/build scripts, not user input — lower severity than it first
-  looked, but still worth closing so the pattern stops getting copy-pasted
-  forward (this is exactly how `build_llc.py`'s violation was born: copied
-  from `build_gold_sample.py`'s own `alias_docs`/`rows` pattern, which
-  happened to only ever interpolate the hardcoded `raw` constant, not a
-  dynamic list). Fixed all 3 with DuckDB's array-parameter idiom —
-  `WHERE col IN (SELECT * FROM UNNEST(?))` with the list passed as a bound
-  parameter — rather than hand-building `?,?,?,...` placeholders, since
-  DuckDB accepts a Python list bound to a single `?` this way (measured
-  working in isolation first, then applied). **Verified behavior-preserving,
-  not just "looks equivalent"**: ran the *original* (unpatched) and *fixed*
-  `build_llc.py` each against its own fresh throwaway copy of
-  `corpus.duckdb`, then diffed `llc_implementing_act` row-for-row between
-  the two — 132/132 rows byte-identical. `score_gold.py` re-run: precision
-  and recall unchanged at 297/299 (99.3%)/297/299 (99.3%), matching
-  2026-09-25 exactly. `build_gold_sample_novel.py` re-run (`--n 3`): ran
-  clean, and its coverage measurement is itself a nice byproduct check —
-  98/451 signatures now covered (up from 58/451 on 2026-09-22), consistent
-  with yesterday's 40-record batch having landed. Did **not** touch the
-  committed `corpus.duckdb` — the fix is byte-identical in its output, so
-  re-running `build_llc.py` against the real database would only add the
-  non-deterministic serialization byte-churn the 2026-09-23/25 entries
-  already flagged, for zero actual change. `pyflakes`/`vulture
-  --min-confidence 60` both clean on the full `*.py` set (no new dead code
-  introduced by the fix). `python -m unittest test_transfer_e2e.py`: 14/14
-  pass. Both apps smoke-tested live (HTTP 200, no exceptions in logs) — no
-  schema change, load check only per the project's own rule.
-  **Same cold-start environment steps as every session since 09-19**
-  (`apt-get install -y git-lfs && git lfs pull` for the parquet pointer
-  stub; `pip install duckdb pandas pyarrow streamlit pyflakes vulture`) and
-  the same stale-detached-`HEAD`-vs-local-`main` check as most sessions
-  since 09-04 (fast-forwarded local `main` to the detached HEAD after
-  confirming with a fresh `git fetch origin main` that origin already had
-  both 09-24's and 09-25's commits — a stale local ref, not a real gap). No
-  new environment finding, but given how many log entries this exact "no
-  magic bytes found" gotcha has now cost across ~15 sessions with no fix
-  attempted, added a small guard to `verify_transfer.py` while already
-  touching the file for the f-string audit above: `_check_parquet_pulled()`
-  runs first thing in `main()`, checks the parquet's size against the
-  10KB LFS-pointer-file size (real file is 163,356,047 bytes; the pointer
-  is 134) and its content prefix, and raises a `SystemExit` naming the exact
-  fix (`git lfs install && git lfs pull`) instead of letting a bare DuckDB
-  `InvalidInputException` surface from deep inside AC3 with no hint at the
-  real cause. Verified both branches by hand: swapped the real parquet for
-  a synthetic 134-byte LFS-pointer stub and confirmed the new, clear error
-  fires before any DuckDB connection opens; restored the real file and
-  reran the full suite green. This doesn't remove the need to `git lfs
-  pull` each session (the container still starts without it pulled) — it
-  just turns next session's first failure from a 10-minute "why is DuckDB
-  saying no magic bytes" detour into an immediate, actionable message.
-
-- **Signature-stratified gold sampling: built and run 2026-09-25, one real
-  bug found and fixed, methodology validated, thread open for continued use.**
-  Extractor's turn in the rotation (hadn't run since 2026-09-22). The
-  backlog's own suggestion was "draw another disjoint 50-window uniform
-  batch" — but 2026-09-20 and 2026-09-22's batches were the first two (of
-  11 total sampling sessions) not to find a real bug on the first try,
-  which read as diminishing returns from uniform sampling once ~100 windows
-  are already annotated. Built `build_gold_sample_novel.py`: instead of
-  drawing another uniform-random batch, it computes a cheap structural
-  *signature* per anchor window (which separators/unit-words/anchor-kind/
-  oddities the raw text contains — comma vs "va" vs "hamda" list joins,
-  dash type, qism-digit vs qism-ordinal, parens, roman numerals, etc.,
-  independent of what the extractor itself does with the text) and measures
-  which signatures the existing gold set has never once exercised. Measured
-  first, before drawing anything: of 451 distinct signatures across the
-  3251 real candidate windows, the 100-record gold set covers only 58 — 1456
-  windows (44.8% of the corpus's candidate windows) sit in a signature the
-  gold set has never annotated a single example of. This is itself a
-  finding: uniform random sampling was concentrating on the same common
-  shapes over and over, exactly explaining the two dry batches. Drew 40
-  windows prioritizing the rarest never-covered signatures (capped at 3
-  examples per signature so one common "novel" shape doesn't crowd out the
-  batch), read every one by hand against the raw Uzbek text.
-  **Result: found and fixed one real, live precision bug** — row 6071,
-  "...huquqlar toʻgʻrisida"gi qonun (35-modda) asosida qoʻllashlari lozim"
-  inside an FK-alias anchor's window: bare lowercase "qonun" immediately
-  followed by a parenthetical "(35-modda)" shorthand names the OTHER named
-  act's own article 35, not the Civil Code's — but nothing in `RE_STOP`
-  caught it, so `link_edge` carried a live wrong edge (edge_id 187,
-  article "35" misattributed to `DOC_GENERAL`) before today. Fixed by
-  adding a narrow `qonun\s*\(` alternative to `RE_STOP` — deliberately much
-  narrower than the general bare-lowercase-"qonun" stop already measured
-  and rejected 2026-09-05 (49484 generic occurrences vs. only 3 immediately
-  before a modda/bob clause, too high a false-negative risk to stop on
-  unconditionally): requiring the immediate open-paren is a nearly-zero-risk
-  shape — measured corpus-wide, exactly 6 bare "qonun(" occurrences exist
-  at all (any case), and only this one sits inside any Civil-Code/FK
-  anchor's window in the first place. 48/48 extractor self-tests pass (new
-  case added), `measure_extractor_recall.py` still 0 real misses,
-  `score_gold.py` unaffected on the pre-existing 100 records (217/218,
-  unchanged — the fix doesn't touch anything those windows exercise).
-  Re-ran `build_links.py` against the existing `corpus.duckdb`: `link_edge`
-  9531 -> 9530 (exactly the one bad edge removed, confirmed by direct
-  `WHERE src_row_id=6071` lookup before/after); re-ran `build_llc.py`
-  against a throwaway copy to confirm zero LLC-slice impact (132/132/8,
-  unchanged) without adding its own non-deterministic byte-churn to the
-  committed `corpus.duckdb` (see the 2026-09-23 Cleanup entry for why that
-  matters — `CREATE OR REPLACE TABLE` doesn't serialize deterministically
-  even for identical content). Also found, measured, but deliberately
-  **left unfixed** (same single-occurrence and low-priority-grain
-  precedents this project has applied before): (1) a Roman-numeral chapter
-  citation ("Fuqarolik kodeksi IV bobining 2 paragrafi") never gets the
-  paragraf/section lookahead the Arabic-numeral `bob` branch has, silently
-  losing the section grain (`dst_kind` would read `section` not `chapter`,
-  a real `link_edge` column — same class of gap as 2026-09-22's "paragrif"
-  spelling miss) — measured exactly 1 occurrence corpus-wide (row 15441),
-  recorded as a `known_gap` gold record rather than fixed; (2) the
-  already-known qism/band grain-collapse limitation (only the nearest
-  ordinal/digit before "qism"/"band" is kept) now also measured in
-  comma-separated LIST form, not just the previously-documented dash-RANGE
-  form — 14 digit-list ("1, 4-bandlari") and 68 ordinal-list ("ikkinchi,
-  toʻrtinchi, oltinchi qismlari") occurrences corpus-wide, still not
-  load-bearing (qism isn't consumed downstream) so left alone per the
-  existing decision. Merged all 40 annotated windows into
-  `gold_citations.json` as batch 3 (gold_id 100-139, `--seed 20260925`,
-  `method: "signature-stratified"` recorded in `_meta.batches` so future
-  scoring runs can tell this batch apart from the earlier uniform ones).
-  **New combined score: precision 297/299 (99.3%), recall 297/299 (99.3%)**
-  on 140 windows (the two known_gap mismatches: 2026-09-22's "paragrif" +
-  today's Roman-chapter+paragraf, both honestly scored as misses per this
-  project's established "record the true expected output" convention, not
-  silently marked correct). `verify_transfer.py`: all checks green,
-  `pyflakes`/`vulture --min-confidence 60` both clean including the new
-  script, `python -m unittest`/14/14 `test_transfer_e2e.py` tests pass,
-  both Streamlit apps smoke-tested live (HTTP 200, no exceptions — no
-  schema changed, so no query-level check was needed per the project's own
-  rule, just a load check). **Thread stays open, not closed**: this was one
-  batch under the new method, not a full re-sampling of the corpus under it
-  — next Extractor-rotation session should keep using
-  `build_gold_sample_novel.py` (it recomputes novelty coverage fresh each
-  run against whatever the gold set has grown to) rather than reverting to
-  a fifth uniform-random batch, and should watch whether the novel-signature
-  hit rate (1 real bug + 1 known_gap in 40, i.e. a materially higher yield
-  than the two most recent uniform batches' 0-and-1) holds up over a second
-  round or was partly luck from this specific batch.
-
-- **Amending-act resolution: 5.6% -> 74.2%, built and closed 2026-09-24.**
-  Re-opened the "amending-act resolution caps at 5.6% because `act.doc_number`
-  is empty corpus-wide" residual left open since 2026-09-11 (see below) — the
-  empty-`doc_number` root cause was confirmed real (0/54,173 raw parquet rows
-  have one), but found an independent join key that doesn't need it: the
-  target Civil Code article number itself, cross-checked against each
-  same-date candidate act's own body text rather than its title. Naive
-  whole-body search looked like a huge win (435/569 unresolved rows) but was
-  mostly a false-positive artifact of omnibus acts' own sequential article
-  numbering ("1-modda", "2-modda", ...) coincidentally matching low target
-  article numbers — caught by manual inspection before shipping, not after.
-  Fixed by scoping the match to the same top-level "`<N>-modda.`" block as a
-  Civil Code mention (these omnibus acts are themselves structured "one
-  top-level article per law being amended"): 413 unique matches, zero
-  ambiguous, spot-checked by hand across ~10 different candidate acts and
-  dates. Shipped in `build_links.py` as a new `date+cc-clause-match` fallback
-  tier, additive only (no row-count changes anywhere). **Result: 43/612
-  (7.0%) -> 454/612 (74.2%)** amending-act resolution. Wired into both apps:
-  the amendment-history expander in `app_hierarchy.py`'s `page_article()` and
-  `app_llc.py`'s `page_norm()` now names the amending act, not just its bare
-  `OʻRQ-` number, whenever it resolves. Verified live in both apps via
-  Playwright. `verify_transfer.py` green, same INFO-line numbers as
-  2026-09-23. See Log for the full false-positive story and the residual
-  (158/612 still unresolved — chapter-level clauses with no article number to
-  probe, plus some same-date candidates whose body doesn't block-match for a
-  reason not yet diagnosed). This closes today's thread; the "Data currency"
-  angle it grew out of (checking the corpus's calendar-currency against
-  2026-09-24, not just its legal-currency signals) came back clean — see Log
-  — and isn't worth re-trying until a lot more real time has passed.
-
-- **`repeal_clause.target_locator` surfaced: built and closed 2026-09-21.**
-  Picked up the Data currency backlog item flagged 2026-09-18 ("isn't
-  surfaced anywhere yet") — every partial repeal-list item (an act that
-  voids one specific article of another act, not the whole thing) already
-  had its target article/band recorded in `target_locator`, but neither app
-  showed it, so a reader had no way to see that an act which reads
-  "current law" in the whole-act `v_act_currency` sense might still have
-  individual provisions dead. Built `v_act_partial_repeal` in
-  `build_links.py`, right after `v_act_currency`: one row per `dst_doc_id`
-  (article-voiding acts only, i.e. `target_locator IS NOT NULL`), aggregating
-  count of voided provisions, the distinct locator text, and the most
-  recent voiding act/date (joined through `repeal_clause.src_doc_id ->
-  act.doc_date`, since `repeal_clause.cited_date` is the *target* act's own
-  adoption date, not the repeal date — easy to get backwards, checked
-  carefully against the schema comment before writing the join).
-  **Measured, corpus-wide**: 137 acts (of the acts named anywhere in
-  `repeal_clause`) have at least one individually-voided provision while
-  remaining current law overall — 384 are article-level (`modda`), 14 are
-  numbered-item-level (`band`); zero `qism`/`bob`/`paragraf` locators exist
-  in the actual data even though the regex allows them (not a bug — just
-  what the corpus's repeal lists happen to name). Of the 137, 28 *also* have
-  a later whole-act repeal on record — the natural legislative lifecycle of
-  "several cleanup laws prune individual articles over the years, then a
-  final act repeals what's left," both signals correctly coexisting rather
-  than conflicting. Checked where this actually lands in the two apps'
-  existing data before building UI: 20 of the LLC dossier's 129
-  distinct implementing acts (`llc_implementing_act`) carry this signal (2
-  of 74 `cites_cc_foundation`, 19 of the rest under `names_llc_law`, one
-  act counted in both routes) — a real, non-trivial fraction of "acts this
-  dossier calls live" that had zero visibility into partial death. Wired
-  into both apps the same way the existing 🔴 whole-act badge works: a new
-  ⚠️ marker on the act's expander header plus an `st.warning()` inside
-  naming the count, the locators, and who voided them most recently —
-  `app_llc.py`'s `page_acts()` (LEFT JOIN alongside the existing
-  `llc_implementing_act` query) and `app_hierarchy.py`'s `page_article()`
-  realization-pyramid loop (LEFT JOIN alongside the existing
-  `v_act_currency` join, same GROUP BY extension). Verified live in both
-  running apps via Playwright — screenshotted the LLC dossier's
-  `names_llc_law` route showing 12+ ⚠️-marked acts with one expanded
-  (2011 amendment act: "6 provisions individually voided... most recently
-  on 2025-07-10"), and the General Part explorer's Article 14 (cited by a
-  2016 act with 6 voided provisions, one of which is directly relevant:
-  Article 14 of *that citing act itself* was later gutted, "14-modda ...
-  toʻrtinchi qism deb hisoblansin" visible in the same evidence snippet).
-  Re-ran `build_links.py` against the existing `corpus.duckdb` (not a
-  from-scratch rebuild — only this file changed); `repeal_clause`,
-  `article_amendment`, and edge counts are byte-for-byte identical to
-  2026-09-20's run, confirming the new view is additive and touches no
-  existing table. Re-ran `build_llc.py`: `llc_implementing_act` numbers
-  (74/74 route counts, 13/74 superseded on `cites_cc_foundation`) unchanged.
-  `pyflakes build_links.py app_hierarchy.py app_llc.py`: clean.
-  `verify_transfer.py`: all checks green, same INFO-line numbers as
-  2026-09-20 (248 superseded acts, 494 stale edges — this feature doesn't
-  touch whole-act supersession at all, by design). This closes the backlog
-  item outright — nothing scoped to `target_locator` visibility is left
-  open. Possible future angle, not pursued today: the same "count of
-  individually-voided provisions" signal could be surfaced on
-  `app_hierarchy.py`'s `page_structure()` tree view too (currently only
-  shows realizing-act counts, no currency at all there) — not done since
-  today's brief was specifically "surface `target_locator`", and
-  `page_structure()`'s existing scope is Civil Code structure, not
-  third-party acts' own internal currency.
-
-- **Gold-set scoring layer: built 2026-09-20, baseline measured, thread
-  open for the next sampling round.** Picked up the Extractor backlog's
-  longest-standing open item ("Build the gold set") — `build_gold_sample.py`
-  (2026-09-15) drew reproducible samples but had no annotation-storage or
-  scoring script, so every session's precision/recall claim was a fresh,
-  unsaved read-by-hand with no persisted number to compare against over
-  time. Built that missing layer: `gold_citations.json` (committed,
-  hand-verified ground truth — 50 anchor occurrences, drawn via
-  `build_gold_sample.py --seed 20260920`, each hand-read against the raw
-  Uzbek text and against `citation_extractor.py`'s own stop-word/anchor
-  rules) and `score_gold.py` (the scorer, re-runnable any time the
-  extractor changes). Two design decisions worth keeping in mind for future
-  rounds: (1) precision is scored per-anchor (does everything this anchor
-  produced belong there) but recall is scored against the *whole field's*
-  `extract()` output, not just this anchor's bucket — deliberately
-  different scopes, because the 2026-09-17 false-alarm lesson (a citation
-  attributed to a *different*, nearby anchor isn't a miss) would otherwise
-  reproduce itself inside the scorer. (2) `qism` (article-part) is recorded
-  per citation but excluded from the headline score — it isn't consumed by
-  any downstream table/view yet (see Backlog, "Qism-level grain"), and one
-  gold record (gold_id 6) is a live example of why conflating it in would
-  be misleading: `extract()`'s documented, already-known "qism range
-  collapses to its last ordinal" gap (backlog item, found 2026-09-15) means
-  gold_id 6's `expected` can only encode the single ordinal the current
-  `Citation` schema is capable of returning, not the true two-part ground
-  truth — scoring that as a precision failure would conflate a load-bearing
-  article-level correctness bug with a non-load-bearing grain limitation
-  that's already tracked separately. Baseline result: **precision 68/68
-  (100%), recall 68/68 (100%)** on this 50-window sample — every one of the
-  50 read by hand matched what `citation_extractor.py` already produces,
-  including several non-trivial cases (plenum-resolution titles correctly
-  producing only a bare `act` citation via the `qarori`/`axborotnoma`/`№`
-  stop words, `self_reference` anchors with no pinned article correctly
-  producing *nothing* at all — confirmed this is `extract()`'s deliberate,
-  existing design: the bare-act fallback only fires for
-  `kind=='fuqarolik_kodeksi'`, not `self_reference`/`fk_alias`, not a gap —
-  and two cases where a second, different code's own article list sitting
-  right after the Code's citation in the same sentence is correctly
-  excluded by `RE_STOP`'s `kodeksining`/`Qonunining`). This breaks the
-  9-session "always finds a bug" streak (see Backlog note) — a legitimate,
-  informative result in itself (the extractor's edge cases from 9 prior
-  hand-read sessions are holding up), not a failure of today's session.
-  **Still open**: only 50/~3251 candidate anchor windows (2599 hit + 652
-  empty, corpus-wide) are in the gold set so far — a 100% score on 50
-  windows is a promising baseline, not proof the extractor is bug-free
-  corpus-wide. Next Extractor-rotation session should either (a) draw and
-  annotate another disjoint 50-window batch with a new `--seed` and merge
-  it into `gold_citations.json` (grow the set, tighten the confidence
-  interval), or (b) if a future hypothesis-driven session finds and fixes a
-  new bug, add a targeted gold record for that exact case so it's a
-  permanent regression check, not just a one-time fix. Either way, run
-  `score_gold.py` after any `citation_extractor.py` change from now on —
-  it's a real regression signal that didn't exist before today.
-
-  **2026-09-22: grew the set to 100, found one small real gap.** Followed
-  path (a) above — `build_gold_sample.py --seed 20260922 --n 50` (confirmed
-  disjoint from the 09-20 batch: zero `(row_id, field, anchor_start)`
-  overlap), read all 50 windows by hand against the raw Uzbek text, merged
-  into `gold_citations.json` as `gold_id` 50-99. 49/50 read exactly as
-  `extract()` already produces (including a `self_reference` anchor scoped
-  correctly to stop right where the *next* `mazkur Kodeksning` anchor takes
-  over — the same 2026-09-17 "different anchor, not a miss" mechanic this
-  scorer's recall/precision split exists to handle, confirmed still working
-  as designed rather than assumed). The 50th (`gold_id` 52, row 46605, the
-  Code's own cross-reference commentary) is a real, if tiny, gap: LexUZ
-  writes "mazkur Kodeksning 65-bobi[ning] 1-paragrifi" — misspelling
-  "paragrafi" as "paragrifi" — identically twice in the same row. The
-  chapter+section lookahead inside `extract()` requires the literal
-  substring "paragraf", so both occurrences fall back to a bare
-  chapter-65 citation, silently losing the section-1 grain (this *is*
-  downstream-visible, unlike `qism`: `dst_kind` would read `section` not
-  `chapter`, a real `link_edge` column, so it doesn't get the same
-  qism-style exclusion from scoring). Measured corpus-wide before deciding
-  what to do about it: exactly one other row anywhere in the corpus
-  contains any "paragrif" spelling (row 25664), and it's entirely about a
-  different Cabinet committee's own *nizom* — no "Fuqarolik"/"FK" anchor
-  anywhere in that row at all, so it was never even a candidate row for
-  this extractor. That makes the real, in-scope footprint exactly 2
-  occurrences in exactly 1 row, corpus-wide. Recorded the gold entry with
-  its true (typo-corrected) expected output rather than silently matching
-  today's coarser behavior — `verdict: known_gap`, not `correct` — so the
-  score is honest rather than inflated. **Not fixed**, on the same
-  single-occurrence-scope precedent this project already applied to the
-  2026-09-15 chapter+paragraph space-separator gap (1 occurrence, also left
-  unfixed despite a similarly cheap possible fix) — added to Backlog
-  instead (see Extractor recall/precision) rather than special-casing one
-  more spelling variant into the regex for a single row. **New combined
-  score: precision 217/218 (99.5%), recall 217/218 (99.5%)** on 100
-  windows — the one mismatch is exactly the gap above (1 FP + 1 FN, same
-  underlying cause), everything else confirmed correct. This is a more
-  informative number than the previous batch's 100/100: it's the gold
-  set's first genuine, on-the-record miss, and it's now a permanent
-  regression check (`score_gold.py` will flag it again immediately if
-  `citation_extractor.py` changes touch the chapter+section lookahead, and
-  will flag it as *fixed* — precision/recall ticking back to 218/218 — the
-  day someone adds the "paragrif" spelling to the regex). Thread stays
-  open: 100/~3251 candidate windows is still a first few batches, not
-  corpus-wide coverage; next round, draw and annotate another disjoint
-  batch with a fresh `--seed`.
-
-- **`repeal_clause` whole-act/partial-repeal conflation: fixed 2026-09-18,
-  closed.** Investigating whether the General Part explorer (`app_hierarchy.py`,
-  which unlike the LLC dossier never surfaced act-level currency at all)
-  should show a 🔴 badge for superseded realizing acts, first measured the
-  underlying numbers directly against `corpus.duckdb` rather than trusting
-  the existing "357 acts provably superseded" stat — and found that stat
-  itself was substantially wrong. Two compounding bugs in `repeal_clause`/
-  `v_act_currency` (both in `build_links.py`), found by reading raw text,
-  not by inspecting the SQL first: (1) a "kuchini yoʻqotgan deb topilsin"
-  repeal-list item was always treated as voiding the *whole* quoted act, but
-  398/885 (45%) of items actually read "...gi NNN-sonli Qonunining
-  (Axborotnomasi, YYYY, № N, N-modda) M-moddasi ... kuchini yoʻqotgan deb
-  topilsin" — Article M of that act loses force, not the act itself (the
-  parenthetical is a bibliographic gazette locator, not a target, and was
-  being misread as one until a corpus-wide sample confirmed the pattern:
-  verified directly inside doc -8151376's own repeal list, which has both
-  kinds side by side — items 1-2 are genuine whole-act repeals of the two
-  old LLC laws, items 3-21 each void exactly one article of an unrelated
-  act). (2) `v_act_currency`'s `LEFT JOIN repeal_clause` silently fanned out
-  — some acts are named in more than one repeal_clause row (up to 35, for
-  one omnibus 2021 law whose individual articles were voided piecemeal by
-  35 later cleanup acts) — so the view, despite looking like one row per
-  `doc_id`, wasn't; any downstream `JOIN v_act_currency ON doc_id` (both
-  apps do this) silently multiplied whatever it was counting. Confirmed live
-  in `app_llc.py`'s `page_currency()` "Superseded acts still feeding the
-  realization graph" table, which was overcounting per-act edge totals
-  before the fix. Fixed both at the source: `repeal_clause` gained a
-  `target_locator` column (NULL = whole act, else the article/qism/band/bob/
-  paragraf text voided) computed from the same regex family already used
-  elsewhere in the file; `v_act_currency` now only treats `target_locator IS
-  NULL` rows as `superseded`, deduplicated to one row per `dst_doc_id` via
-  `QUALIFY row_number() ... = 1` (picking the earliest repeal when an act is
-  redundantly re-repealed). Net effect, corpus-wide: "acts provably
-  superseded" 357 -> **248** (-31%), "stale realization edges" 1115 ->
-  **494** (-56%); LLC's own `cites_cc_foundation` route 15/74 -> **13/74**
-  superseded. The 2001 LLC Law itself (the load-bearing verify_transfer
-  check) stays correctly `superseded` — it's one of the genuine whole-act
-  items. Then built the originally-scoped feature on the corrected data:
-  `page_article()` in `app_hierarchy.py` now joins `v_act_currency` and
-  shows a 🔴 badge + `st.error` per superseded realizing act, a per-tier
-  "N superseded" count, and a "Hide superseded acts" toggle — **off** by
-  default (unlike the LLC dossier's `value=True`), because this page spans
-  all 386 General Part articles and 4 of them (art. 21, 62, 290, 291 — art.
-  62 is the LLC's own Civil Code anchor, the same one 2026-09-16 already
-  flagged as having zero live LLC-slice evidence) have realizing acts that
-  are *exclusively* superseded; a warning banner explains why nothing shows
-  when the toggle empties a tier, mirroring `app_llc.py`'s existing pattern.
-  Verified live in both apps via Playwright (screenshots of the badge, the
-  toggle hiding/revealing, and the all-dead warning on Article 62) and
-  `verify_transfer.py` stayed green (`sup`/`stale` INFO lines recompute from
-  the same query, no check needed updating). This closes the thread —
-  `target_locator` is stored and available but not yet surfaced anywhere in
-  either app (see Backlog).
-
-- **LLC implementing-acts currency default: closed 2026-09-16.** Picked up
-  the open half of the "Propagate currency into the LLC dossier" backlog
-  item (see Backlog, Data currency) — whether `page_acts`/
-  `llc_implementing_act` should gate "implements" by currency at the data
-  layer by default, instead of today's opt-in `hide_dead` UI toggle.
-  Measured first, then found and fixed two real bugs the measurement
-  surfaced, then decided. See Log for full detail: **decision is to keep
-  the opt-in toggle** — article 62 (the LLC's own defining Civil Code
-  anchor) has zero surviving, non-superseded implementing evidence at all,
-  so a hard data-layer gate would make the dossier's most central article
-  show nothing with no way to recover it. Along the way, fixed a real
-  fan-out bug from two foundation articles (45, 62) each anchoring more
-  than one LLC stage: `build_llc.py`'s `n_hits` used `count(*)` where the
-  `llc_norm` join fans out per stage, inflating hit counts for 9 acts
-  (total 368 -> 307, -16.6%); `app_llc.py`'s `page_norm` "Below" section
-  read `v_llc_realization` without deduping across stages, silently
-  doubling every citation shown for those 2 articles. Both fixed, measured
-  before/after, verified live in the running app via Playwright, and
-  `verify_transfer.py` stayed green. This closes the backlog item fully —
-  nothing scoped to it is left open.
-
-- **Amendment chains: built 2026-09-11, list-swallowing residual fixed
-  2026-09-13, UI wiring done 2026-09-14. Thread closed.** New
-  `article_amendment` table + `v_article_currency` view, mined from the
-  per-article `amendment_note` field rather than the backlog's
-  originally-proposed "kiritilsin"-clause detector (see Log for why that
-  approach was rejected first). 8 of `verify_transfer.py`'s 9 long-standing
-  unexplained `structure_missing_articles`/`md_only` gaps now resolve to an
-  exact voiding law + date. Of the two residuals flagged 2026-09-11: (1) the
-  list-swallowing bug ("65 va 66-moddalar" only registering its last member)
-  is **fixed and measured 2026-09-13** — see Log, 10/594 clauses corpus-wide
-  were affected (28 target articles, 18 previously dropped), not just the 1
-  occurrence originally spotted. (2) amending-act resolution still caps at
-  5.6% (33/594 clauses) because `act.doc_number` is empty corpus-wide, same
-  root cause as `repeal_clause`'s own unresolved tail — not a parsing gap, a
-  data-acquisition one, left as-is. **Residual (2) fixed 2026-09-24** — see
-  Active threads and Log: a body-text join key (matching the target CC
-  article number to a same-date candidate's own Civil-Code-amending block)
-  doesn't need `doc_number` at all, taking resolution to 74.2%. **UI wiring
-  done 2026-09-14** — see Log
-  for the full detail: `page_article()` in `app_hierarchy.py` and
-  `page_norm()`/`page_skeleton()`/`page_currency()` in `app_llc.py` now
-  surface `v_article_currency`/`article_amendment` directly (per-article
-  amendment count, last change type/date, a ⚠️ for removed/voided parts, and
-  the full dated history on demand). Verified live in both apps with
-  Playwright, not just by reading the diff. This closes the thread — nothing
-  scoped to `article_amendment` is left open; residual (2) above stays a
-  documented data-acquisition gap, not further pipeline or UI work.
-
-- **Repeal resolution: closed 2026-09-09.** The 45/885 residual left after
-  2026-09-06's tiered fallback is now fully characterized — every single
-  one is a genuine corpus-coverage gap, not an extraction or matching bug.
-  Root-caused by reading all 45 full clause texts (not the 60-char preview
-  used in the original 09-06 triage) plus a corpus-wide type breakdown: of
-  856 `Qonuni` (law) citations, 82.8% resolve at the exact tier; of 24
-  `Qarori` (resolution) and 3 `Farmon` (decree) citations, **0%** do —
-  confirmed not incidental by searching the whole `act` table for the most
-  common missing kind ("...amalga kiritish tartibi toʻgʻrisida", the
-  enactment-procedure resolution issued alongside a new Code): exactly
-  **one** such act exists in the entire 24,267-row corpus (the 1992
-  Constitution's own), none for the Labor/Urban-Planning/Housing/Civil-
-  Procedure/Economic-Procedure Codes whose enactment resolutions are cited
-  by name. The other main cluster (13 of the 45, all from one citing act,
-  row 16788) cites Qoraqalpogʻiston Respublikasi (Karakalpakstan) statutes
-  on 8 distinct dates — verified directly that **zero** acts exist in the
-  corpus on 6 of those 8 dates, and the 2 with same-day acts have no
-  candidate anywhere near a title match; this national-legislation corpus
-  simply doesn't carry Karakalpakstan's own sub-national lawmaking. A
-  residual few (4 items, all pre-1991 Soviet-era Presidium/Cabinet
-  decrees) have zero acts at all on their cited date, same story. Shipped
-  a small, additive fix in `build_links.py`: when no tier resolves a
-  clause, check the word immediately following the quoted title, and if
-  it's `Qaror`/`Farmon` (not `Qonun`), tag `match_method =
-  'unresolved:non-statute'` instead of bare `'unresolved'` — turns
-  "unresolved, cause unknown" into "verified: target act type isn't in
-  this corpus" for 27 of the 45 (24 Qarori + 3 Farmon, cheap and
-  unambiguous by regex). The remaining 18 (13 Qoraqalpogʻiston + 4 old-era,
-  no comparably cheap detector) stay generic `unresolved` but are now
-  documented here in full instead of deferred. Reran `build_links.py`:
-  `repeal_clause` resolution count unchanged at 840/885 (this is a
-  label-only change, no new edges invented) — `by match_method` now reads
-  `{'date+title': 710, 'date+substring': 81, 'date+fuzzy:*': 48,
-  'unresolved:non-statute': 27, 'unresolved': 18}`. Reran `build_llc.py`:
-  no LLC-slice numbers changed (none of the 45 touch the LLC Law). Grepped
-  both apps for `match_method` first: neither filters on its value, only
-  counts rows and reads `dst_doc_id`/`evidence`, so the new label is safe.
-  **Decision: this thread is done, not deferred.** There is no further
-  extractor or matching work available here — the gap is that the source
-  corpus (LexUZ's national-level act index) doesn't carry these document
-  types/jurisdictions at all, which is a data-acquisition question (adding
-  Qaror/Farmon/Karakalpakstan documents to the raw parquet), not a
-  pipeline bug, and out of scope for `build_links.py` to solve. If the
-  project owner ever sources a corpus update that adds these, `unresolved:
-  non-statute`'s count is the first thing to recheck — a re-run should
-  drop it toward zero without any code change.
-
-- **Superscript-article resolution: fixed and measured 2026-09-08, one small
-  residual left.** `Citation.doc_id` classified a cited article by comparing
-  its raw integer value against `CODE_LAST_ARTICLE` (1199) — but superscript
-  articles are cited with the suffix digit concatenated onto the base number
-  ("173-7" is written "1737", matching `norm_unit.article_number`), so any
-  superscript citation whose concatenated form exceeds 1199 got misclassified
-  as "outside the Code" and silently dropped by `build_links.py`'s
-  `if dst_doc is None: continue` — never even an unresolved/dangling edge, just
-  gone. Found by replicating `build_links.py`'s exact extraction loop
-  corpus-wide and filtering for `c.doc_id is None`: exactly **4** real
-  citations hit this in the whole corpus (173-7 and 259-1 via a `Fuqarolik
-  kodeksi` anchor; 626-1 and 1107-1, both Special Part, via an `FK` alias and a
-  bare anchor respectively) — all 4 manually confirmed as genuine, correctly-
-  anchored Civil Code citations, not false positives. Also discovered along
-  the way: `norm_unit` only ever populated the General Part (articles 1-385,
-  confirmed by `SELECT DISTINCT doc_id FROM norm_unit` returning only
-  `-111189`) — a scope decision already documented in `build_corpus_db.py`'s
-  M0 docstring, not a bug — so the two Special Part hits (626-1, 1107-1) were
-  never going to resolve to a `dst_norm_id` either way; the fix's job for
-  those two is only to stop dropping the edge entirely, matching how every
-  *other* Special Part citation (e.g. a plain "700-moddasi") already produces
-  an edge with `dst_norm_id = NULL` rather than no edge at all. Fixed by
-  reclassifying any concatenated value past `CODE_LAST_ARTICLE` by its base
-  article (`n //= 10`) before the General/Special Part comparison — safe
-  because no plain article number exceeds 1199, so anything past it can only
-  be this concatenation. Added 4 new self-tests exercising exactly the two
-  General Part cases, one Special Part case, and a control (plain "700" must
-  stay `DOC_SPECIAL`, unaffected). 32/32 extractor self-tests pass (was 28).
-  Reran `build_links.py`: edge count 6791 -> 6795 (+4, exactly the 4 found),
-  each new edge inspected directly — the two General Part ones resolved to
-  the correct `dst_norm_id` (`-111189-a1737`, `-111189-a2591`), the two
-  Special Part ones landed as plain unresolved-to-norm edges (`dst_norm_id
-  NULL`, `dst_dangling = false`), exactly as predicted. Reran
-  `measure_extractor_recall.py`: still 0 real misses on article/chapter
-  recall, qism/band residual unchanged at 7/640 (this fix doesn't touch qism
-  attachment). Reran `build_llc.py`: no LLC-slice numbers changed (none of
-  the 4 new edges touch the LLC Law or its foundation articles).
-  **One residual found but not fixed**: row 1390's citation is actually a
-  *range*, "173 – 1737-moddalari", meaning "article 173 through its
-  superscript children 173-1..173-7" (8 provisions) — but `_expand`'s
-  malformed-range guard (rejects any range wider than 200, to catch garbled
-  text) sees `1737 - 173 = 1564` and falls back to a 2-item list of just the
-  literal endpoints, so 173-1 through 173-6 (6 provisions) never get cited at
-  all even after today's fix, which only rescued the "1737" endpoint itself.
-  Checked corpus-wide whether this generalizes: 49 raw occurrences of a
-  range spanning more than 200 exist in the corpus, but 48 of them are in
-  *other* codes (Criminal Code, Criminal Procedure Code, etc., citing their
-  own superscript ranges) that never sit inside a `Fuqarolik kodeksi`/FK-alias/
-  self-reference anchor, so the extractor correctly never touches them — row
-  1390 is the only one that lands inside a real Civil Code anchor. Genuinely
-  a single-occurrence gap (6 missing edges from 1 citation), so left
-  undone rather than special-cased into `_expand` for one instance — recorded
-  as a Backlog item in case a future corpus update introduces more of these.
-
-- **Repeal resolution: tiered fallback shipped, 45 items still genuinely
-  unresolved.** 2026-09-06 added `date+substring` and `date+fuzzy` fallback
-  tiers to `build_links.py`'s exact `(date, title)` repeal match, taking
-  resolution from 710/885 (80.2%) to 840/885 (94.9%). See Log for the full
-  design and measurement. The 45 still unresolved split into two kinds: 13
-  `no_date_match` (the cited date matches no act in the corpus at all — the
-  clause's own date field may be a transcription slip, or the target act
-  genuinely isn't in this 24,267-act corpus; not investigated further) and
-  32 `fuzzy_no_clear_winner` (a date match exists but no candidate clears the
-  0.80-ratio/0.15-gap acceptance bar — several looked like genuinely
-  different acts on inspection, e.g. cid 439/442's "sudyalarning malaka
-  hay'atlari" item has no close title match on its date at all). Next step,
-  if this thread is picked up again: read the 32 fuzzy-rejected cases' full
-  quoted titles by hand (not just the 60-char preview used for triage
-  today) — some may be reconstructable amending-act titles the way the
-  `date+substring` tier handles the common case, just with a middle phrase
-  (e.g. "...ga qaratilgan oʻzgartirishlar...") that breaks the plain
-  substring test. Diminishing returns territory: 45/885 (5%) residual is
-  already small, and the two batches above suggest what's left is a mix of
-  real gaps and un-parseable one-offs rather than one more systematic
-  pattern.
-
-- **"Qonun" precision thread: closed.** See Log — the bare-nominative
-  "Qonun" misattribution (2026-09-04) is fixed, measured, and verified: 38
-  raw edges removed (19 article_text + 19 cross_references, 15 distinct
-  citing rows), 2 correctly-weaker "act" edges added back where no real
-  provision was left to pin, net -36 (6827 -> 6791). The broader hypothesis
-  ("this generalizes to qaror/farmon/nizom") was measured and **falsified
-  as a live bug**: those three nouns' bare-nominative forms were checked
-  against every Civil-Code anchor window in the corpus and cause **zero**
-  actual misattributions today (nizom's bare form was already caught by
-  RE_STOP pre-existing; qaror/farmon's bare capitalized forms simply never
-  sit adjacent to an unstopped modda/bob clause in the current text). Left
-  those three alone rather than adding untested stop words for a gap with
-  no measured impact — see Log for the exact counts and reasoning. New
-  angle if this ever needs revisiting: re-run
-  `measure_bare_act_names.py`-style check (not committed — throwaway,
-  reproducible from citation_extractor._anchors()) after any large corpus
-  update, since new acts could introduce the gap qaror/farmon/nizom don't
-  have today.
-
-- **Precision, more broadly: still open beyond "Qonun".** The "Qonun" fix
-  was one specific, measured misattribution pattern. **The "wrong doc_id
-  resolution" hypothesis named here was tried 2026-09-08 and paid off** — see
-  the superscript-article thread above — though it turned out to be a silent
-  recall drop (a real citation producing zero edges) rather than a precision
-  misattribution (a real citation landing on the wrong target); still no gold
-  set exists (see Backlog). **2026-09-10 tried three more hypotheses**
-  (FK-alias definition generalizing to a non-Civil-Code meaning,
-  `RE_STOP_ABBR` false-stopping on a non-code acronym, a chapter-list
-  wrongly inheriting one paragraph tag) — all three measured corpus-wide and
-  falsified/zero-impact, see Log — **but found and fixed a real one along
-  the way**: comma-punctuated "N-bobi, M-paragrafi" wasn't recognized as a
-  chapter+paragraph attachment at all (3 occurrences), and fixing it exposed
-  a second, smaller bug (one of the 3 then resolved to a struct node that
-  doesn't exist and got silently dropped — fixed with a chapter-level
-  fallback, same principle as the article-level dangling fallback).
-  **2026-09-12 found and fixed the biggest precision bug of this whole
-  thread**: "qonunning" — the genitive of "qonun" *without* the "-i-"
-  thematic vowel (qonun+ning, as opposed to already-stopped qonuni+ning) —
-  was never added to `RE_STOP` at all, in either case. 131 real Civil-Code
-  misattributions fixed corpus-wide (118 capitalized "Qonunning" + 13
-  lowercase "qonunning" — LexUZ doesn't reliably capitalize it even for a
-  named act), more than 3x the original bare-"Qonun" fix's 25. See Log for
-  the full measurement, the collateral-damage false alarm investigation, and
-  why bare "Farmonning"/ordinal-qism/"dan...gacha" ranges were tried and
-  falsified along the way. **2026-09-15 built a reusable sampling tool
-  (`build_gold_sample.py`, see Backlog "Build the gold set") instead of an
-  unsaved one-off query, drew a fresh 50-window stratified sample, and read
-  every window by hand** — found and fixed **three** real bugs in one
-  sitting (a missing "kodeksning" stop-word, a bare-space "N modda" surface
-  form, and list-embedded "N-M"/"N — M" sub-ranges never expanding), plus a
-  confidence-hierarchy bug the third fix exposed in `build_links.py`. See
-  Log for full measurement of each — net `link_edge` 6667 -> 9402. This
-  brings the "read a sample, hypothesize, measure" streak to **8 sessions
-  running** with a real, fixable gap found every time (qism/band 09-04,
-  Qonun 09-05, doc_id 09-08, chapter+paragraph comma-attachment 09-10,
-  qonunning 09-12, and all three of today's). "wrong qism attachment beyond
-  what's already checked" and "other stop-word gaps not yet hypothesized"
-  remain unsearched, and now there's a committed tool to search them with
-  (any `--seed` draws a fresh disjoint sample) rather than a from-scratch
-  query each time. The repeal-resolution thread this note used to point to
-  is now closed (see Active threads, 2026-09-09) — its 45-item residual
-  turned out to be corpus coverage, not extractor precision, so it's not a
-  substitute rotation target here. Cleanup was fully drained 2026-09-07 and
-  re-confirmed empty 2026-09-10. Rotation since: Extractor 09-10, Data
-  currency 09-11, Extractor 09-12, Data currency 09-13 (fixed the amendment-
-  chain list-swallowing residual), Data currency 09-14 (UI wiring for
-  `article_amendment`/`v_article_currency`), Extractor 09-15, Data currency
-  09-16 (closed the LLC implementing-acts currency-default question, see
-  Active threads and Log), Extractor 09-17 (another fresh gold-sample round —
-  a doubled-en-dash range collapse and a missing-vowel anchor gap, see Log —
-  now **9/9** sampling sessions with a real, fixable bug found), Data
-  currency 09-18 (found and fixed the `repeal_clause` whole-act/partial-
-  repeal conflation and its `v_act_currency` join fan-out while building the
-  General Part explorer's currency badge — see Active threads and Log),
-  Cleanup 09-19 (first actual working Cleanup session since 09-07 — a
-  `pyflakes` pass found and fixed 9 real dead-code/import issues, see
-  Active threads and Log), Extractor 09-20 (built the gold-set scoring
-  layer, `gold_citations.json` + `score_gold.py`, baseline 100%/100% on 50
-  windows — see Active threads and Log; first sample not to find a new bug,
-  breaking the 9-session streak), Data currency 09-21 (built and shipped
-  `v_act_partial_repeal`, the "which articles of this act have been
-  individually voided" signal flagged as unbuilt 2026-09-18 — see Active
-  threads and Log), Extractor 09-22 (grew the gold set to 100 records with
-  a second disjoint 50-window batch, seed 20260922; found and documented
-  one small real gap — a "paragrafi"/"paragrifi" misspelling losing
-  chapter+section grain in exactly 1 row/2 occurrences — see Active
-  threads, Backlog, and Log; new combined score 217/218 = 99.5% precision
-  and recall), Cleanup 09-23 (added `vulture` to the toolchain alongside
-  `pyflakes`, found and fixed 6 real dead-code items pyflakes structurally
-  cannot catch — see Active threads and Log), Data currency 09-24 (closed
-  the amending-act-resolution residual open since 2026-09-11: a new
-  `date+cc-clause-match` tier takes resolution from 7.0% to 74.2% without
-  needing `act.doc_number` — see Active threads and Log) — of the last five
-  sessions (09-20 through 09-24), Extractor has two, Cleanup has two, Data
-  currency has one; next session should prefer Extractor, which hasn't run
-  since 09-22. Extractor 09-25 (signature-stratified gold sampling instead
-  of a fourth uniform batch — see Active threads and Log; found and fixed
-  one real bug, a bare "qonun(" parenthetical-shorthand misattribution;
-  grew the gold set to 140 records, new combined score 297/299 = 99.3%
-  precision and recall) — of the last five sessions (09-21 through 09-25),
-  Data currency has two, Extractor has two, Cleanup has one; next session
-  should prefer Cleanup or Data currency. Cleanup 09-26 (audited every
-  f-string SQL call site for the project's own hard constraint, fixed 3 real
-  violations; also closed a 15-session-old cold-start environment paper cut —
-  see Active threads and Log). Data currency 09-27 (diagnosed and fixed the
-  74.2%-resolution residual's root cause: `text_by_doc` was reading amending
-  -act text through `src_provision`, which only holds already-cited rows, so
-  a multi-chunk paginated omnibus act's other chunks were invisible to the
-  block-match; reading the full raw parquet per doc_id instead took
-  resolution to 85.1% with zero regressions — see Active threads and Log) —
-  of the last five sessions (09-23 through 09-27), Cleanup has two, Extractor
-  has one, Data currency has two; next session should prefer Extractor,
-  which hasn't run since 09-25. Extractor 09-28 (two more signature-
-  stratified gold batches, seeds 20260928/20260928002; gold set 140 -> 220,
-  one new bug found — see Active threads and Log) — of the last five
-  sessions (09-24 through 09-28), Data currency has two, Cleanup has one,
-  Extractor has two; next session should prefer Cleanup or Data currency.
-  Extractor 09-29 (continued the still-open gold-set thread rather than
-  rotating — see its own Active threads entry for why; gold set 220 -> 260,
-  one more real bug found) — of the last five sessions (09-25 through
-  09-29), Extractor has three, Cleanup has one, Data currency has one; next
-  session should prefer Cleanup or Data currency, and should lean toward
-  Data currency specifically if Cleanup's own re-confirm-empty checks look
-  likely to come back clean a third time in a row. Data currency 09-30
-  (built the `date+sole-law-cc-mention` amending-act-resolution tier,
-  85.1% -> 93.6% — see Active threads and Log) — of the last five sessions
-  (09-26 through 09-30), Cleanup has one, Extractor has two, Data currency
-  has two; next session should prefer Cleanup, whose own repeatable checks
-  (pyflakes/vulture/f-string grep) haven't been re-run since 09-26.
-  Cleanup 10-01 (re-ran all three existing checks clean, widened the
-  toolchain with `bandit` — found and fixed one real test-suite blind spot
-  in `test_transfer_e2e.py`, see Active threads and Log) — of the last five
-  sessions (09-27 through 10-01), Data currency has two, Extractor has one,
-  Cleanup has two; next session should prefer Extractor, which hasn't run
-  since 09-29.
-
-- **Cleanup: fully drained 2026-09-07, re-confirmed empty 2026-09-10.** All
-  four backlog items (dead prototypes, `test_transfer_e2e.py` redundancy,
-  one-off exploration scripts, `hierarchy_engine.py`'s f-string SQL) were
-  resolved in one session — see Log. 2026-09-10 re-audited every remaining
-  `execute(f"...")` call in the repo before picking a different rotation
-  target: all of them interpolate only the same hardcoded `PARQUET` path
-  constant (the established, safe pattern this project's f-string-SQL rule
-  is actually about), none interpolate a runtime/data-derived value. Nothing
-  left open here unless a future session finds something new to add to the
-  Backlog's Cleanup section. **2026-09-16**: found and deleted one more,
-  opportunistically while working elsewhere — `demo_llc.py`, same class as
-  the four scripts removed 2026-09-07 (hardcoded, nonexistent Windows path,
-  zero references anywhere in the repo). Still nothing left open here.
-  **2026-09-19**: this session's turn in the rotation, and the manual
-  execute-f-string re-audit (above) stayed clean, so widened what "cleanup"
-  means instead of re-confirming the same empty backlog a third time — ran
-  `python3 -m pyflakes *.py` over the whole repo (first install: not a
-  dependency the project already had) and found 9 real issues across 5
-  files (`build_llc.py`, `app_hierarchy.py`, `app_llc.py`, `parser.py`,
-  `test_transfer_e2e.py`): dead locals never read again (`run_id`,
-  `found_arts`, `by_id`), two unused imports, two f-strings with no
-  placeholder. Fixed all 9, verified `pyflakes *.py` is clean (0 issues),
-  re-ran `build_llc.py` against the existing `corpus.duckdb` and confirmed
-  identical output, and checked both apps live via Playwright. See Log for
-  full detail. Nothing left open here — but this is now a repeatable check
-  (`pyflakes *.py`, not previously part of this project's toolchain) worth
-  running again on a future Cleanup rotation rather than assuming it stays
-  empty forever the way the original four backlog items did.
-  **2026-09-23**: re-ran `pyflakes *.py` first — clean, 0 issues, confirming
-  09-19's fixes held. Rather than re-confirm the same empty pyflakes result a
-  second time, widened the toolchain again: installed `vulture` (a dead-code
-  detector that does whole-repo unused-symbol analysis pyflakes structurally
-  can't — pyflakes only flags unused imports/locals within a single scope,
-  not an unused module-level constant or a written-but-never-read instance
-  attribute). At default confidence it found nothing; at `--min-confidence
-  60` it flagged 7 candidates across 6 files. Verified every one by hand
-  (grepped the whole repo for each symbol, read the surrounding code) before
-  touching anything — vulture's own docs warn it has no cross-file call-graph
-  and flags real false positives, so each finding got the same "verify
-  before fixing" treatment as pyflakes's hits, not a blind auto-fix. One
-  (`app_llc.py`'s unused `t_` tuple-unpack element) was already following
-  this codebase's `_`-prefix-for-unused convention and just needed the
-  rename to plain `_`, not a real bug — fixed as a free 1-line nit while in
-  the file, not counted as a "found bug." The other 6 were genuine, each
-  verified independently:
-  (1) `build_corpus_db.py`'s module-level `TIER` dict was never read
-  anywhere — the actual doc_type-to-tier mapping is a hardcoded `CASE`
-  expression inline in the `act` INSERT (found by grepping `tier` across the
-  file), so the dict was a stale, unreferenced duplicate of logic that had
-  already moved inline; deleted it and moved its explanatory comment down to
-  sit on the `CASE` that's actually load-bearing now, instead of orphaned
-  above an unrelated dict.
-  (2) `citation_extractor.py`'s `RE_FK_ALIAS_DEF` regex (matching "bundan
-  buyon matnda FK deb", the clause defining the FK abbreviation) was compiled
-  but never called from `extract()` or anywhere else — `build_links.py:129`
-  independently reimplements the identical pattern as a raw SQL
-  `regexp_matches` string against the parquet directly, which is the version
-  actually driving `allow_fk_alias` corpus-wide. The Python regex was a dead
-  duplicate of logic that lives in SQL now; deleted it (kept the SQL version,
-  since that's the one actually exercised and tested via `verify_transfer.py`
-  AC5).
-  (3) `structure_parser.py`'s `ROMAN` dict (roman numeral -> int) was never
-  read — `RE_PART` captures the roman numeral as a raw string used directly
-  in `node_id`, and each part's `ordinal` field comes from a simple
-  incrementing counter (`counters["part"] += 1`), not a numeral conversion;
-  deleted the dead dict.
-  (4) `test_transfer_e2e.py`'s `EXPECTED_MISSING_ARTICLE = "168"` constant
-  sat unused while the one test it should parametrize
-  (`test_edge_missing_article_168`) hardcoded the literal `"168"` directly —
-  inconsistent with every sibling `EXPECTED_*` constant in the same file,
-  which are all actually threaded into their tests. Fixed the test to use
-  the constant instead of deleting it, matching the established pattern.
-  (5) `parser.py`'s `ContextTracker.paragraph_division` attribute is
-  genuinely tracked (set from `PARAGRAPH_DIV_PATTERN`, reset on each new
-  chapter) but `snapshot()` — the method that turns the tracker into the
-  `structural_hierarchy` field written to `parsed_articles.json` — silently
-  dropped it, keeping only part/section/chapter/subsection. This directly
-  contradicts the module's own docstring, which lists "Paragraph Division"
-  as a tracked structural-context feature. Confirmed the pattern is real,
-  not a null-forever dead field: an independent regex count against the raw
-  markdown found exactly 10 `§`-division headers, matching the "10/10"
-  `--verify` check parser.py already runs on itself. Added
-  `"paragraph_division": self.paragraph_division` to `snapshot()`'s returned
-  dict — one line, matching how part/section/chapter/subsection already
-  flow through the identical mechanism. Regenerated `parsed_articles.json`
-  via `python3 parser.py --verify`: all 10/10 checks still pass, and a
-  before/after diff (scripted, not eyeballed) confirmed **zero** change to
-  any other field on any of the 394 articles — only the new key, populated
-  for exactly 109 articles across the 10 real `§` divisions, matching the
-  regex count exactly. Checked whether this needed a `build_corpus_db.py`
-  rerun: grepped the whole repo for `structural_hierarchy` and found it's
-  produced by `parser.py` but consumed by *nothing* downstream — not
-  `build_corpus_db.py`'s English-transfer alignment (which only reads
-  `title`/`clean_text`/`article_number_display`/`heading_type`/`titleless`/
-  `repealed`/`line_range`/`db_article_number_key`), not either Streamlit app.
-  So this fix makes the shipped `parsed_articles.json` artifact honest about
-  what it tracks, with zero effect on `corpus.duckdb` or either app — no
-  rebuild needed, and none done.
-  (6) `build_llc.py`'s `LLC_OKOZ = "03.03.05.04"` constant was never read in
-  its own file. Before deleting it, checked whether it *should* have been
-  wired into something — cross-referenced it against the independently-built
-  OKOZ classification axis (`build_okoz.py`) rather than assuming it was
-  simple dead weight, since the two axes (curated LLC foundation mapping vs.
-  regex-parsed OKOZ tree) had never been checked against each other before.
-  Confirmed `03.03.05.04` is a real, correctly-spelled OKOZ leaf ("Limited
-  Liability Company. Additional Liability Company") — not a typo or
-  hallucinated code. But queried `okoz_assignment` corpus-wide and found
-  **zero** General Part structural nodes are ever classified under
-  `03.03.05.*` (the "Business Partnerships and Companies" branch, LLC's own
-  parent) at all: article 62 (the LLC's Civil Code anchor) resolves instead
-  to the coarser sibling `03.03.04.00` ("Commercial Organisations"), because
-  its containing struct_node (`C4.S2`, articles 58-72) is literally titled
-  "Commercial Organizations" in the Code's own structure and the General
-  Part isn't subdivided any finer than that at the struct_node level — OKOZ
-  classification here is a title-literal match to the Code's own section
-  headings, not a semantic one, so it can't reach LLC-specific granularity
-  without a struct_node split this project has no reason to make today. Not
-  a bug in either axis — `LLC_OKOZ`'s value is correct as a label for the
-  *institution*, `okoz_assignment`'s value is correct as a classification of
-  the *section that contains it*; they're deliberately different grains that
-  happen to both be right. Confirmed `app_llc.py`'s sidebar caption already
-  displays "OKOZ 03.03.05.04" correctly as a hardcoded literal (not imported
-  from `build_llc.py` — checked, and found this project's apps never import
-  build-layer constants; `app_llc.py` already keeps its own local duplicates
-  of `LLC_LAW_CURRENT`/`LLC_LAW_PRIOR`/`DOC_GENERAL` rather than importing
-  them, an established convention, not an oversight to fix). So the constant
-  really was dead in its own file with no wiring gap to close; deleted it.
-  All 6 fixes verified together: `pyflakes *.py` and `vulture *.py
-  --min-confidence 60` both clean afterward; `python3 -m py_compile` on
-  every touched file; `score_gold.py` unchanged at 217/218 (confirms the
-  `citation_extractor.py` deletion is behaviorally inert); all 14
-  `test_transfer_e2e.py` tests pass, including the fixed one;
-  `python3 -m unittest`/47/47 extractor self-tests and `verify_transfer.py`
-  both green. Re-ran `build_llc.py` against the existing `corpus.duckdb` (the
-  one file among the six with pipeline side effects) and confirmed every
-  table's row count identical before/after — then **discarded** the
-  resulting `corpus.duckdb` diff rather than committing it: the bytes
-  differed (DuckDB's `CREATE OR REPLACE TABLE` doesn't serialize
-  deterministically) but every table's content was confirmed identical, so
-  committing it would have been exactly the "large binary diff for no
-  reason" this project's own build hygiene rule warns against. Checked both
-  apps live via Playwright (screenshots, not just a page-load check): loaded
-  `app_llc.py`'s `page_acts()` — the function with the `t_` rename — and
-  expanded a real row to confirm the tuple-unpack still renders correctly;
-  loaded `app_hierarchy.py` for the general no-exception check the other
-  five fixes need (none of them touch its code path directly). Nothing left
-  open here; `vulture *.py --min-confidence 60` is now a second repeatable
-  check worth re-running on the next Cleanup rotation, the same way 09-19
-  established `pyflakes` as one.
-
-- **Smaller, lower-priority residual: qism/band tail truncation.** The
-  qism/band attachment check added today (see Log) has 10 residual misses
-  out of 667 checked (1.5%). Sampled 3 and confirmed the root cause for all
-  3: the qism/band tail lookup inside `extract()` is
-  `window[m.end():m.end()+60]`, and `window` is capped by the anchor's own
-  limit (next anchor's start, or `+WINDOW`) — when a citation lands close to
-  that limit, the internal tail is shorter than 60 chars and the qism/band
-  clause just past it is never seen, even though it's well within a raw
-  60-char slice of the underlying text. Confirmed window slack of 4-14 chars
-  (vs. the 60 needed) for 2 of 3 sampled misses; the third had two citations
-  for the same article, one truncated (slack 0) and one with ample slack
-  (249) that still missed for a reason not yet diagnosed. Small enough
-  (1.5%) that it's not worth interrupting the "Qonun" precision thread for,
-  but worth a future pass: either widen the window when a modda-with-tail
-  match is the last thing found before the limit, or search the raw text
-  directly (bounded by the *next* anchor, not `+60` past a truncated
-  window) instead of re-slicing an already-cut window. Note: one of the 3
-  originally-sampled misses (row 2767) is now gone on its own — it was the
-  same "Qonun 19-moddasi" misattribution the 2026-09-05 fix removed, not a
-  real qism/band truncation case. Residual count after that fix: 7/640
-  (was 10/667) — still open, still small, still not touched.
+- **Cleanup rotation — current state: eight repeatable checks now exist
+  (`pyflakes`, `vulture --min-confidence 60`, `bandit`, `check_sql_bindings.py`,
+  `check_code_clones.py`, `check_fstring_interp.py`, plus the folded-in
+  f-string grep and its own eighth-check widening). Last touched
+  2026-10-16** (closed a structural blind spot in `check_fstring_interp.py`
+  itself — found 0 live bugs, but a real class of indirected-f-string call
+  sites the tool had never been able to see). One deliberately-deferred,
+  single-call-site residual remains in `check_sql_bindings.py` (doesn't
+  trace plain-literal indirection; zero injection risk, left alone — see
+  Backlog > Cleanup). Next Cleanup rotation should re-run all eight checks
+  as a baseline before deciding whether a ninth is worth adding. Full
+  detail: Log, 2026-10-16.
 
 ---
 
@@ -2343,17 +407,30 @@ How to use this file each session:
   merged as a permanent `gold_citations.json` known_gap record (this
   backlog note alone was never a regression check until now). Re-confirmed
   still exactly 1 occurrence corpus-wide.
-- **Qism range collapses to its last ordinal only.** Found 2026-09-15 (see
-  Log): "FK 154-moddasining ikkinchi — toʻrtinchi qismlarida" (parts two
-  through four) — `RE_QISM`'s tail search only matches one ordinal
-  immediately before "qism", so `Citation.qism` records just "toʻrtinchi
-  qism" (part four), silently losing that parts two and three are also
-  cited. Not measured corpus-wide or fixed today — `qism` is documented in
-  `citation_extractor.py` as "kept for a future finer grain" and isn't
-  consumed by any downstream table/view yet (see the "Qism-level grain" item
-  above), so this is lower priority than a bug that changes an actual
-  `link_edge` row. Worth fixing together with that item if qism grain ever
-  becomes load-bearing.
+- ~~**Qism range collapses to its last ordinal only.**~~ Found 2026-09-15,
+  precisely measured and merged into the "Qism-level (article-part) grain"
+  item above on 2026-10-18 (same dash-range sub-form — see that item for
+  the current, precise 7-citation count and the fix sketch). Duplicate
+  bullet removed 2026-10-19 rather than left to drift from the merged item.
+- **Qism/band tail-window truncation.** Found 2026-09-04 while building the
+  qism/band attachment check (see Log): the qism/band tail lookup inside
+  `extract()` is `window[m.end():m.end()+60]`, and `window` itself is
+  capped by the anchor's own limit (the next anchor's start, or `+WINDOW`)
+  — when a citation lands close to that limit, the available tail is
+  shorter than 60 chars and a qism/band clause just past it is never seen,
+  even though it would be well within a raw 60-char slice of the
+  underlying text. Measured: 10/667 residual misses (1.5%) when first
+  found; re-measured after later fixes, now **7/640 (1.1%)**, unchanged by
+  the 2026-10-18 list/range qism work (that fix touches which *ordinals*
+  attach to a match already found, not the tail-window's reach). Sampled 3
+  by hand: 2 had a confirmed 4-14 char window-slack shortfall vs. the 60
+  needed; the third's cause wasn't fully pinned down (ample 249-char slack
+  yet still missed). Not fixed — small enough (1.1%) to not be worth
+  interrupting other work for, but a real, precisely-measured bug, not a
+  vague note. If picked up: either widen the window when a modda-with-tail
+  match is the last thing found before the anchor's limit, or search the
+  raw text directly (bounded by the *next* anchor, not by `+60` past an
+  already-truncated window) instead of re-slicing a pre-cut window.
 - ~~**"boʻlim" (Part, the structural level above chapter) is never a
   recognized citation unit.**~~ **Built and closed 2026-10-02.** Found
   2026-09-17 while reading a gold sample (see Log): "Fuqarolik kodeksining
@@ -2598,7 +675,11 @@ How to use this file each session:
   still blocked on this environment's egress policy as of 2026-10-17 —
   re-check only occasionally, not every rotation, since this is an
   environment-policy question, not something more measurement against
-  `corpus.duckdb` can resolve.
+  `corpus.duckdb` can resolve. (4) Open, minor: whether `snapshot_age_note()`'s
+  copy should go further and drop the number entirely in favor of a neutral
+  "last scraped" framing with no implied age judgment at all — not done
+  2026-10-17 since the current copy no longer makes an unsupported claim,
+  just worth a second look if a future session wants to push further.
 
 ### Cleanup
 - ~~**Retire superseded prototypes.**~~ **Done 2026-09-07**: deleted
@@ -2766,6 +847,128 @@ How to use this file each session:
 ---
 
 ## Log
+
+### 2026-10-19 — Cleanup rotation: paid down `DAILY_REVIEW.md`'s own unbounded growth — Active threads 1998 lines/140KB -> 61 lines/~4.3KB, whole file 534KB -> 399KB, zero code/data touched
+
+Rotated to Cleanup per the rotation rule — oldest of the three (last
+touched 2026-10-16; Data currency 10-17, Extractor 10-18). Environment:
+`git lfs install && git lfs pull` (parquet and `corpus.duckdb` were both
+already real files, not pointer stubs, for once — no cold-start detour),
+`python3 -m pip install duckdb pandas streamlit pyflakes vulture bandit`.
+Local `main` was one push behind `origin/main` on container start (HEAD
+detached 4 commits ahead of the stale local ref, at 2026-10-18's own
+`a790aee`) — same recurring stale-local-pointer pattern earlier sessions
+have documented (2026-09-09, 2026-10-09, 2026-10-12, 2026-10-18), this
+time inverted the same way 10-18 found it; `git checkout main && git
+reset --hard origin/main` resynced, no data at risk (`origin/main` is
+always the real source of truth here).
+
+Started by re-running the eight repeatable Cleanup checks as the backlog's
+own "next rotation" instruction says: `pyflakes`/`vulture
+--min-confidence 60` clean; `bandit` 61 issues (4 Low/57 Medium, same
+57 B608/3 B311/1 B110 breakdown as every prior baseline); `check_sql_bindings.py`
+106/106; `check_code_clones.py` 5 cross-file pairs (same as every prior
+baseline — no new clone); `check_fstring_interp.py` 55/55. No drift since
+2026-10-16; all eight confirmed healthy before doing anything else.
+
+Then, rather than stopping there (there was no ninth static-analysis gap
+suggesting itself), turned Cleanup's lens on this project's own operating
+document. Tried to read `DAILY_REVIEW.md` whole, the way a fresh session
+does on cold start, and hit a hard wall: the Read tool refused — file was
+534,487 bytes, over its 256KB single-read cap. That's not a hypothetical
+problem; it's the literal first thing this session's own harness hit
+today, and it would hit every session from here on, worse each day.
+Diagnosed why: "Active threads" is documented as holding only *current*
+state ("read Active threads, continue one if mid-flight") but in practice
+every closed thread's full write-up had been appended there and never
+trimmed since the file's creation — 1998 lines / 140,601 bytes (26% of
+the whole file), almost entirely narrative that already exists verbatim
+in the dated "Log" section below and in git history. One single bullet
+(`"Precision, more broadly: still open beyond 'Qonun'"`) had become a
+117-line day-by-day rotation diary, appended to on nearly every session
+since 2026-09-10, that existed purely to track which focus area ran last
+— information each day's own current-state bullet already restates for
+all three areas in one sentence.
+
+Audited every one of the ~31 bullets in the old "Active threads" before
+touching anything, to make sure nothing would be lost (see the bullet-by-
+bullet classification done live this session — not reproduced here, but
+every decision below followed directly from it): (1) 3 bullets are
+genuinely current state (Extractor's 12th-batch result, Data currency's
+snapshot-age test, Cleanup's 8th-check close) — kept, compressed to one
+paragraph each with a "full detail: Log, YYYY-MM-DD" pointer. (2) ~25
+bullets are fully superseded by one of those 3, or closed with zero
+residual (amendment chains, repeal resolution's 45-item residual, the
+"Qonun" fix, the LLC currency-default decision, etc.) — every one of
+their residuals was cross-checked against "Backlog" by name and confirmed
+already present there (most of Backlog's own entries use in-place
+strikethrough edits rather than appending, which is exactly the
+discipline Active threads was missing) — dropped, with the Log's own
+dated entry remaining the permanent record, same role git history already
+plays. (3) Exactly 2 residuals were genuinely still open and NOT yet in
+Backlog: the qism/band 60-char tail-window truncation (7/640, 1.1%,
+root-caused but unfixed since 2026-09-04) and a stale, pre-10-18 duplicate
+of the dash-range qism item that Backlog's own "Qism-level grain" entry
+had already superseded with the precise 2026-10-18 count — moved the
+former into Backlog as a new bullet with its full measurement, replaced
+the latter with a one-line "merged, see above" pointer rather than letting
+it drift from the entry that actually tracks the live state. Also added
+one small addendum to Backlog's snapshot-age item (the "should the copy
+drop the number entirely?" open question Data currency's 2026-10-17 entry
+raised but never filed) so it isn't silently lost along with the diary
+bullet that used to carry it.
+
+Result: "Active threads" is now a ~60-line convention note plus one
+current-state paragraph per focus area (each stating its own last-touched
+date, which is all the rotation rule needs — the standalone diary bullet
+is gone). Whole file: 534,487 -> ~399,000 bytes (-25%), 8014 -> ~6095
+lines (-24%); "Active threads" alone: 140,601 -> ~4,300 bytes (-97%).
+Verified nothing is lost, not just asserted it: every dropped paragraph's
+full text remains recoverable via `git log -p -- DAILY_REVIEW.md` and
+via the dated Log entry it summarized (Log itself untouched — it's
+designed to grow forever, the same role git commit history already
+plays, and isn't what a fresh session needs to read to get oriented); the
+two genuinely open residuals were relocated, not deleted; nothing in
+Backlog changed except the two additions above. This is purely a
+documentation change — no `.py` file, `corpus.duckdb`, or the raw
+parquet was touched, so there was nothing to rebuild and no behavior to
+regression-test; ran the full existing verification suite anyway as due
+diligence rather than assuming a text-only change is automatically safe:
+`python3 citation_extractor.py` 61/61; `python -m unittest
+test_transfer_e2e.py` 14/14; `verify_transfer.py` green, same INFO/PASS
+counts as 2026-10-18 (9620 edges, 372/386 General Part articles cited,
+248 superseded acts, etc. — nothing moved); both apps started live via
+`streamlit run --server.headless true` (HTTP 200, clean logs, no
+exceptions) and torn down after.
+
+**Decision, per the hard constraint** ("if you think a documented
+decision is wrong, say so and propose the change rather than quietly
+reverting it"): this project's own instructions (top of this file) never
+said to let Active threads grow forever — they say it exists so a fresh
+session can "read Active threads, continue one if mid-flight," which only
+ever needed current state. The append-forever pattern was an emergent
+habit, not a documented decision, so this isn't overriding anything the
+owner deliberately chose — but flagging the going-forward convention
+explicitly anyway, in the note now at the top of Active threads, so it's
+a visible norm rather than something a future session has to re-infer
+from this one entry: when a thread closes, fold any residual into
+Backlog and let the Log entry be the permanent record; don't also keep
+extending a paragraph in Active threads. If this pattern recurs (Log
+itself will keep growing by design — ~7KB/entry, so roughly 2.5MB/year at
+the current one-entry-per-day cadence), the next load-bearing fix is
+likely splitting Log by month/quarter into separate files once a fresh
+session's *targeted* reads (not a whole-file read, which nothing in the
+brief actually asks for) start getting expensive too — not yet justified
+by anything measured today, just the obvious next pressure point if this
+cadence continues for another few hundred sessions.
+
+Thread: no new backlog work started today (this was Cleanup's own
+process-hygiene pass, not a code change) — next Cleanup rotation should
+resume at "re-run all eight checks, decide on a ninth" since that step
+is still unaddressed (today's checks came back clean, same as 2026-10-16,
+with no new gap-class found); next Extractor rotation should draw gold
+batch 13; next Data currency rotation should pick from Backlog > Data
+currency (no thread currently mid-flight there).
 
 ### 2026-10-18 — Extractor rotation: twelfth gold batch (460 -> 500), found and fixed a real 63-citation qism/band grain bug, corrected 9 pre-existing gold records it exposed, rebuilt link_edge
 
