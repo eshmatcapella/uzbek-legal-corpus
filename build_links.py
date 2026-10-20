@@ -426,8 +426,40 @@ def main() -> int:
     # it's never mistaken for the real qualifier). Every item without this
     # trailing qualifier genuinely repeals the whole act (verified against the
     # two real LLC-law whole-act repeals inside doc -8151376's own list).
+    #
+    # Measured 2026-10-20: that qualifier isn't always a modda/qism/band/bob/
+    # paragraf either — 113/487 (23%) of the items this missed and fell back
+    # to "whole act" actually name a unit in Roman numerals, e.g.
+    # "...230-modda) XIV boʻlimi" (Part 14) or "...90-modda) XX moddasi"
+    # (article 20, no hyphen) — only that one unit of the cited act loses
+    # force, same grain-loss shape as the digit-unit case above, just a
+    # different numeral system (112 are "boʻlim", the structural tier above
+    # chapter; 1 is "modda" itself, confirmed by re-measuring after the
+    # boʻlim-only fix below left exactly one dst_doc_id, -205727, still
+    # showing superseded on a single remaining whole-act row that turned out
+    # to be this same Roman-numeral gap, just on "modda"). citation_extractor.py
+    # already built the boʻlim half of this (RE_ROMAN_PART, 2026-10-02) for
+    # its own, independent CC-citation grammar; it was never ported to this
+    # module's separate repeal-locator regex, and that module itself has no
+    # Roman-numeral-modda pattern at all — so this generalizes one step
+    # further than either precedent, which is why both units are folded into
+    # one shared Roman-numeral branch here rather than two narrow ones. Real
+    # downstream effect, not just a classification nicety: 14 acts
+    # corpus-wide currently show `v_act_currency.derived_status =
+    # 'superseded'` (fully dead) with NO remaining whole-act evidence once
+    # this fix is applied — every one of their "whole-act" repeal_clause rows
+    # was actually one of these misparsed Roman-numeral qualifiers. 3 of the
+    # 14 are realizing acts in `link_edge`, and one (-42953) is an
+    # `llc_implementing_act` row literally showing the LLC dossier's 🔴
+    # whole-act badge today on genuinely-live evidence (an amendment to
+    # article 53 of a still-partly-live 1998 omnibus act). Fixed by adding a
+    # Roman-numeral-plus-any-unit alternative (same bare-space-instead-of-
+    # hyphen and apostrophe-letter variants as the digit branch already
+    # tolerates) alongside the existing digit-unit branch.
     re_target_locator = re.compile(
-        r"^[\s\w\-]{0,80}?(?:\([^()]{0,300}\)\s*)?(\d+[\d\-]*\s*-\s*(?:modda|qism|band|bob|paragraf)\w*)",
+        r"^[\s\w\-]{0,80}?(?:\([^()]{0,300}\)\s*)?"
+        r"(\d+[\d\-]*\s*-\s*(?:modda|qism|band|bob|paragraf)\w*"
+        r"|[IVXL]{1,6}(?:\s*-\s*|\s+)(?:modda|qism|band|bob|paragraf|bo[ʻʼ']?lim)\w*)",
         re.IGNORECASE,
     )
 

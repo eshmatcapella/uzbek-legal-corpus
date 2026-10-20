@@ -55,17 +55,20 @@ paragraph here.
   (`--seed`/`--n` fresh each time), hand-annotate, merge into
   `gold_citations.json`. Full detail: Log, 2026-10-18.
 
-- **Data currency rotation — current state: snapshot-age signal (3-year
-  threshold) shipped in both apps as honest provenance, not a staleness
-  verdict. Last touched 2026-10-17** (tested the threshold against
-  `repeal_clause`'s 357 confirmed-repealed acts as real ground truth for
-  the first time — found no predictive signal, in fact a small *negative*
-  correlation — so softened the UI copy from "verify at lex.uz" to "since
-  last scrape" rather than inventing a tuned number with no data behind
-  it). Live `lex.uz` comparison stays blocked on this environment's
-  egress policy (re-check occasionally, not every rotation — see Backlog).
-  No thread currently mid-flight; next Data currency rotation should pull
-  from Backlog > Data currency. Full detail: Log, 2026-10-17.
+- **Data currency rotation — current state: fixed a real Roman-numeral
+  target_locator gap in `build_links.py`'s repeal-clause parser (113/885
+  repeal items corpus-wide, 14 acts' false 'superseded' badge corrected,
+  one live in the LLC dossier). Last touched 2026-10-20** (found via a new
+  angle — cross-checking internal consistency of the repeal/currency
+  signals against each other, rather than re-measuring the already-dry
+  snapshot-age thread). `lex.uz` egress re-checked, still 403-blocked, no
+  change since 2026-10-17. No thread currently mid-flight; next Data
+  currency rotation should pull from Backlog > Data currency — the
+  internal-consistency angle used today (checking whether independent
+  derived signals agree with each other) worked well and is worth
+  applying to other parts of the pipeline (e.g. `article_amendment` vs.
+  `repeal_clause` for the same doc_id) if nothing more specific is
+  waiting. Full detail: Log, 2026-10-20.
 
 - **Cleanup rotation — current state: eight repeatable checks now exist
   (`pyflakes`, `vulture --min-confidence 60`, `bandit`, `check_sql_bindings.py`,
@@ -493,6 +496,32 @@ paragraph here.
   real part-level citation for an article under Part II. See Log.
 
 ### Data currency
+- **New angle worth repeating: cross-check independent currency/evidence
+  signals against each other, not just against external ground truth.**
+  Found 2026-10-20 (see Log): every prior Data currency rotation either
+  measured a signal's precision/recall against a known cause, or tried to
+  compare against an external source (`lex.uz`, blocked). Today's fix
+  (Roman-numeral `target_locator` gap, below) was found instead by asking
+  whether `repeal_clause` was internally self-consistent — do multiple
+  whole-act repeal candidates for the same `dst_doc_id` make sense
+  together? That question surfaced a real, 113-occurrence, 14-act-impact
+  bug the other two framings hadn't touched. Worth trying again on other
+  pairs of independent signals this project computes — e.g. does
+  `article_amendment` (mined from `amendment_note`) ever disagree with
+  `repeal_clause` (mined from free-text "kuchini yoʻqotgan" lists) about
+  the same act/date/target? Not measured yet — just the methodology note.
+- ~~**Repeal-clause `target_locator` misses Roman-numeral qualifiers
+  ("XIV boʻlimi", "XX moddasi").**~~ **Fixed 2026-10-20** (see Log for the
+  full trace): `build_links.py`'s `re_target_locator` only recognized
+  Arabic-digit-plus-hyphen locators; 113/885 repeal-list items use a
+  Roman numeral instead (112 "boʻlim"/Part, 1 bare "modda"), silently
+  defaulting to "whole act repealed". 14 acts flipped from
+  `v_act_currency.derived_status = 'superseded'` to `'no repeal found'`
+  once fixed, including one (doc -42953) that was showing a false 🔴
+  whole-act badge on a live amendment in the LLC dossier today. Re-ran
+  `build_links.py` + `build_llc.py`; `verify_transfer.py` green
+  throughout (248 -> 234 provably-superseded acts). No known residual in
+  this regex — re-measured with the broadened fix before shipping.
 - ~~**175/885 repeal items still unresolved.**~~ **Fixed 2026-09-06, residual
   fully characterized and closed 2026-09-09**: tiered `date+substring`/
   `date+fuzzy` fallback resolved 130 of them (840/885, 94.9%); the last 45
@@ -847,6 +876,111 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-10-20 — Data currency rotation: found and fixed a real Roman-numeral target_locator gap in `build_links.py`'s repeal-clause parser — 14 acts' false 'superseded' badge corrected, including one live in the LLC dossier today
+
+Rotated to Data currency per the rotation rule — oldest of the three
+(last touched 2026-10-17; Extractor 10-18, Cleanup 10-19). Environment:
+`git lfs install && git lfs pull` (parquet was a 134-byte LFS pointer
+stub), `python3 -m pip install duckdb pytest pyflakes vulture bandit`
+(`python3` is 3.11, bare `pip`/`pip3` target a separate 3.13 dist —
+same recurring mismatch earlier sessions documented). Baseline
+`verify_transfer.py` green before touching anything.
+
+Quick re-check first (per Backlog's "re-check occasionally" note):
+`lex.uz` is still blocked by this environment's egress policy (403 on
+the CONNECT tunnel, confirmed via the agent-proxy status endpoint) —
+no change since 2026-10-17, not worth another look for a while.
+
+New angle for this rotation: rather than re-running the snapshot-age
+thread (already measured dry on 2026-10-17 — no tunable signal), cross-
+checked the *internal* consistency of the repeal/currency machinery
+itself — do the independent signals (`repeal_clause` whole-act vs.
+partial, `v_act_currency`, `v_act_partial_repeal`) agree with each
+other, something no prior rotation had tested. Found it by querying
+which acts have *multiple* distinct whole-act repeal candidates
+(`target_locator IS NULL`) in `repeal_clause`: 108 acts do, all sharing
+one surface shape — many different later acts, all citing the exact
+same historical date+title, with `cited_date` identical across every
+row for a given `dst_doc_id`. Read the raw text for one (`dst_doc_id`
+-44853, itself the 1999-08-20 "832-I" omnibus amending law): 9 later
+acts (2007-2022) each void one numbered item in 832-I's own list, not
+832-I as a whole — but `repeal_clause.target_locator` recorded `NULL`
+(whole-act) for every one of them.
+
+Root cause: `build_links.py`'s `re_target_locator` only recognizes a
+locator written as Arabic digits + hyphen + `modda|qism|band|bob|
+paragraf` (e.g. "9-moddasi"). The actual text uses Roman numerals with
+no hyphen: "XIV boʻlimi" (Part 14) and, in one case, "XX moddasi"
+(article 20). Neither the unit word ("boʻlim", Part — the structural
+tier above chapter) nor the numeral system was recognized, so every
+such item silently fell through to the "no qualifier found = whole act
+repealed" default. `citation_extractor.py` already solved the boʻlim
+half of this for its own, independent CC-citation grammar
+(`RE_ROMAN_PART`, 2026-10-02) — it was never ported to this module's
+separate repeal-locator regex, and this module never had a
+Roman-numeral-modda case at all.
+
+Measured the true corpus-wide scope by re-implementing the exact
+match-and-window logic standalone (so it could be tested against
+variant regexes before touching the real pipeline): of 885 total
+repeal-list items, 487 fell back to "whole act" under the old regex.
+113 of those (23%) are this gap — 112 boʻlim, 1 modda (found by
+noticing one act, -205727, still showed a single remaining whole-act
+row after the first boʻlim-only version of the fix — its raw text
+turned out to be the "XX moddasi" case, which is what prompted folding
+Roman-numeral-modda into the same branch rather than shipping a
+narrower boʻlim-only fix and leaving modda as a known_gap). Traced
+real downstream effect, not just a classification nicety: resolving
+each rescued item's `dst_doc_id` and checking whether it had any OTHER
+genuine whole-act evidence left, **14 acts corpus-wide currently show
+`v_act_currency.derived_status = 'superseded'` with zero remaining
+whole-act evidence once the gap is fixed** — every one of their
+"whole-act" `repeal_clause` rows was this same misparsed qualifier.
+3 of the 14 are realizing acts in `link_edge` (visible in the General
+Part explorer), and one, doc -42953 (a 1998 omnibus amending act), is
+an `llc_implementing_act` row **literally showing the LLC dossier's 🔴
+whole-act badge today** on a still-genuinely-live amendment to Civil
+Code article 53 — a real, user-visible false positive, not a
+theoretical one.
+
+Fixed in `build_links.py`: added a Roman-numeral branch to
+`re_target_locator` covering all five existing units plus boʻlim
+(`[IVXL]{1,6}(?:\s*-\s*|\s+)(?:modda|qism|band|bob|paragraf|
+bo[ʻʼ']?lim)\w*`), same bare-space-instead-of-hyphen and
+apostrophe-letter tolerance the digit branch and
+`citation_extractor.py`'s own `RE_ROMAN_PART` already use. Re-ran
+`build_links.py` (repeal_clause: whole-act count 487 -> 374, i.e. 113
+items correctly reclassified as partial) then `build_llc.py` (its
+`llc_implementing_act.derived_status` is a materialized join against
+`v_act_currency`, so it goes stale otherwise) — did not re-run
+`build_okoz.py` (no dependency on repeal/currency data) or
+`build_corpus_db.py` (raw-text extraction untouched). Verified all 14
+predicted doc_ids flipped from `superseded` to `no repeal found`
+exactly as measured, confirmed -42953's dossier badge specifically.
+
+`verify_transfer.py`: **all checks green** (248 -> 234 "provably
+superseded" acts, 495 -> 492 realization edges from them — the AC7
+checks that depend on repeal direction/evidence all still pass).
+`citation_extractor.py` self-tests 61/61 unaffected (different
+module). `test_transfer_e2e.py`: 14/14 pass. `pyflakes`,
+`check_sql_bindings.py` (106 queries, 7 files), `check_fstring_interp.py`
+(55 calls, 18 files) all clean on the touched file. Both apps' affected
+queries (`app_llc.py`'s `v_act_currency`/`derived_status` joins,
+`app_hierarchy.py`'s `v_realization`/`v_act_currency` join) smoke-tested
+directly against the rebuilt db — same schema, corrected values, no
+query errors. No schema change anywhere, so no second sanity pass
+needed beyond that.
+
+Decision: this is a plain correctness fix to an already-documented
+regex (same file, same design decision, no new column or table), not a
+case needing the "single-occurrence, not worth the risk" deferral this
+project applies elsewhere — 113 corpus-wide occurrences with measured,
+concrete, user-visible impact clears that bar easily. Closed, not
+reopened: no known residual in this specific regex today (re-measured
+with a broadened regex before shipping, found exactly the 1 "XX
+moddasi" case and folded it in rather than leaving a second known_gap
+next to a freshly-fixed first one).
 
 ### 2026-10-19 — Cleanup rotation: paid down `DAILY_REVIEW.md`'s own unbounded growth — Active threads 1998 lines/140KB -> 61 lines/~4.3KB, whole file 534KB -> 399KB, zero code/data touched
 
