@@ -13433,11 +13433,27 @@
           "struct_number": null,
           "section_number": null,
           "listing": "single",
+          "qism": "ikkinchi qism"
+        },
+        {
+          "target_kind": "article",
+          "article": "382",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": "uchinchi qism"
+        },
+        {
+          "target_kind": "article",
+          "article": "382",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
           "qism": "toʻrtinchi qism"
         }
       ],
       "verdict": "correct",
-      "notes": "",
+      "notes": "[2026-10-21] expected corrected: this modda carries a dash-RANGE of qism ordinals (\"...ikkinchi — toʻrtinchi qismlari\", parts two through four) that RE_QISM/RE_QISM_MULTI only ever captured the one ordinal immediately before \"qism\" (toʻrtinchi) -- the dash-RANGE sub-form of the 2026-10-18 list-form gap, fixed today in citation_extractor.py (RE_QISM_RANGE/_qism_range). The original annotation only recorded the last ordinal, not the full range, so this record understated the true expected output. See DAILY_REVIEW.md 2026-10-21.",
       "gold_id": 289
     },
     {

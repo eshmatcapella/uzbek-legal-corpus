@@ -265,6 +265,67 @@ def _qism_list(tail: str) -> list[str] | None:
     if len(tokens) < 2:
         return None
     return [f"{t} {unit}" for t in tokens]
+
+
+# Canonical spellings of ORDINALS, one entry per distinct ordinal (ORDINALS
+# itself carries two spellings each for "toʻrtinchi"/"toʻqqizinchi"/
+# "oʻninchi"/"oʻn birinchi"/"oʻn ikkinchi" -- the apostrophe-letter ʻ vs the
+# plain ASCII "'" -- so it can't be indexed directly for a range).
+_ORDINAL_CANON = ("birinchi", "ikkinchi", "uchinchi", "toʻrtinchi", "beshinchi",
+                   "oltinchi", "yettinchi", "sakkizinchi", "toʻqqizinchi",
+                   "oʻninchi", "oʻn birinchi", "oʻn ikkinchi")
+
+
+def _ordinal_index(word: str) -> int | None:
+    """0-based position of an ordinal word in _ORDINAL_CANON, normalizing
+    away the apostrophe-letter spelling variants (ʻ/ʼ/plain ') so either
+    spelling of a dash-range endpoint resolves to the same index."""
+    norm = word.lower().replace("ʼ", "ʻ").replace("'", "ʻ")
+    try:
+        return _ORDINAL_CANON.index(norm)
+    except ValueError:
+        return None
+
+
+# "ikkinchi — toʻrtinchi qismlarida" (parts two through four) -- the dash-
+# RANGE sub-form of the same gap RE_QISM_MULTI's list form above fixed
+# (see its own comment); a genuinely different shape, not reachable by
+# extending that regex's comma/"va" alternation. Anchored the same way, at
+# the start of the post-modda tail through one optional leading comma, so
+# it can never fire on the different-article list shape RE_QISM_BLOCK
+# guards against. Measured 2026-10-21 against real anchor-window output
+# (mirroring extract()'s own scan, not a raw corpus-wide regex grep, which
+# overcounts wildly -- "qism"/"band" are ordinary Uzbek words, e.g. "harbiy
+# qism" (military unit) or a resolution's own numbered "band" list items):
+# exactly 7 in-scope citations corpus-wide (rows 21303, 25801, 26169, 41003,
+# 43296, 46794, 46898 -- precisely the 7 the 2026-10-18 entry scoped and
+# deferred; two of them only resolve once the "FK" alias anchor is in play,
+# not just "Fuqarolik kodeksi"). Only ordinal endpoints are handled -- no
+# digit-range form ("3 — 5-qismlari") appears in-scope anywhere in the
+# corpus, so none is built here.
+RE_QISM_RANGE = re.compile(
+    r"^\s*,?\s*(?P<lo>" + "|".join(ORDINALS) + r")"
+    r"\s*[-–—]\s*"
+    r"(?P<hi>" + "|".join(ORDINALS) + r")"
+    r"\s*-?\s*(?P<unit>qism|band)",
+    re.IGNORECASE,
+)
+
+
+def _qism_range(tail: str) -> list[str] | None:
+    """Ordinal RANGE sub-form (see RE_QISM_RANGE). Expands via each
+    ordinal's position in _ORDINAL_CANON, the same way _expand() expands a
+    numeric article range -- a lookup, not a new numbering scheme. Returns
+    None (defer to the single-match path, unchanged) when the range is
+    reversed or either endpoint doesn't resolve to a known ordinal."""
+    m = RE_QISM_RANGE.match(tail)
+    if not m:
+        return None
+    lo, hi = _ordinal_index(m.group("lo")), _ordinal_index(m.group("hi"))
+    if lo is None or hi is None or lo > hi:
+        return None
+    unit = m.group("unit").lower()
+    return [f"{_ORDINAL_CANON[i]} {unit}" for i in range(lo, hi + 1)]
 # The Code's OWN bibliographic/publication-record parenthetical, when it sits
 # immediately after the anchor -- e.g. "Fuqarolik kodeksi (Oʻzbekiston
 # Respublikasi Oliy Majlisining Axborotnomasi, 1996-yil, 2-songa ilova; ...
@@ -420,7 +481,7 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
                 tail = window[m.end(): m.end() + 60]
                 suffix = m.group("suffix").lower()
                 if suffix.startswith("sining"):
-                    qms = _qism_list(tail)
+                    qms = _qism_list(tail) or _qism_range(tail)
                     if qms is None:
                         qm = RE_QISM.search(tail)
                         qms = [qm.group(0).strip() if qm else None]
@@ -429,7 +490,7 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
                     # "moddasiga muvofiq") — still attach a qism/band if one
                     # immediately follows, but only when nothing between here
                     # and there suggests it belongs to a different citation.
-                    qms = _qism_list(tail)
+                    qms = _qism_list(tail) or _qism_range(tail)
                     if qms is None:
                         cand = RE_QISM.search(tail)
                         qm = cand if cand and not RE_QISM_BLOCK.search(tail[:cand.start()]) else None
@@ -648,6 +709,23 @@ def _selftest() -> int:
         # logic unchanged (regression guard for the new regex).
         ("mazkur Kodeksning 185-moddasi, 186-moddasi toʻqqizinchi qismi",
          {"is_the_code": True}, [None, "toʻqqizinchi qism"]),
+        # The dash-RANGE sub-form of the same gap -- "ikkinchi -- toʻrtinchi
+        # qismlarida" means parts two THROUGH four, not just the two named
+        # endpoints (measured 2026-10-21, see DAILY_REVIEW.md: 7 real
+        # corpus-wide citations, all three dash spellings below). Covers
+        # both the "-sining" genitive path and the bare "-moddasi" path
+        # (len(nums) == 1) that share this logic.
+        ("Fuqarolik kodeksining 476-moddasining uchinchi-beshinchi qismlari", {},
+         ["uchinchi qism", "toʻrtinchi qism", "beshinchi qism"]),
+        ("Fuqarolik kodeksining 216-moddasining birinchi — uchinchi qismlari", {},
+         ["birinchi qism", "ikkinchi qism", "uchinchi qism"]),
+        ("Fuqarolik kodeksi 382-moddasi ikkinchi – toʻrtinchi qismlari", {},
+         ["ikkinchi qism", "uchinchi qism", "toʻrtinchi qism"]),
+        # a reversed range (hi before lo) isn't a valid range -- falls
+        # through to the old single-match behavior unchanged, same as any
+        # other text RE_QISM_RANGE doesn't recognize.
+        ("Fuqarolik kodeksining 1-moddasining beshinchi — uchinchi qismlari", {},
+         ["uchinchi qism"]),
     ]
     for text, kwargs, expected in qism_cases:
         got = [c.qism for c in extract(text, **kwargs) if c.target_kind == "article"]

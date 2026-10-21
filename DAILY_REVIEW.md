@@ -46,14 +46,19 @@ just let the Log entry be the permanent record — don't also keep growing a
 paragraph here.
 
 - **Extractor rotation — current state: gold set at 500 records (twelfth
-  signature-stratified batch), precision 2120/2133 (99.4%), recall
-  2120/2156 (98.3%), 456/3251 window signatures covered. Last touched
-  2026-10-18** (fixed a real 63-citation qism/band list-collapse bug, see
-  Backlog > Extractor recall/precision "Qism-level grain" for the one
-  remaining sub-form it didn't fix). **Thread stays open — next Extractor
-  rotation should draw gold batch 13** via `build_gold_sample_novel.py`
-  (`--seed`/`--n` fresh each time), hand-annotate, merge into
-  `gold_citations.json`. Full detail: Log, 2026-10-18.
+  signature-stratified batch), precision 2122/2135 (99.4%), recall
+  2122/2158 (98.3%), 456/3251 window signatures covered. Last touched
+  2026-10-21** (fixed the qism/band dash-RANGE sub-form — the one
+  remaining piece of the 2026-10-18 list-collapse bug, 7 in-scope
+  citations corpus-wide; see Backlog > Extractor recall/precision
+  "Qism-level grain", now fully closed). **Thread stays open — next
+  Extractor rotation should draw gold batch 13** via
+  `build_gold_sample_novel.py` (`--seed`/`--n` fresh each time),
+  hand-annotate, merge into `gold_citations.json` — deferred two rotations
+  running now in favor of two precisely-scoped fixes found while
+  annotating/measuring, both good value but neither growing the gold set's
+  signature coverage (still 456/3251, unchanged since 2026-10-18). Full
+  detail: Log, 2026-10-21.
 
 - **Data currency rotation — current state: fixed a real Roman-numeral
   target_locator gap in `build_links.py`'s repeal-clause parser (113/885
@@ -285,23 +290,18 @@ paragraph here.
   ordinal nearest the unit word (or to nothing, when a comma triggered
   `RE_QISM_BLOCK`'s unrelated different-article gate). `link_edge` now
   carries 755 `dst_qism` values (was 660) across 9620 edges (was 9535).
-  **Still open — the dash-RANGE sub-form, a DIFFERENT shape from the one
-  just fixed**: "ikkinchi — toʻrtinchi qismlarida" (parts two through
-  four) still collapses to only the range's last ordinal, because
-  expanding it needs the same kind of range-expansion `_expand()` already
-  does for article numbers, not reachable by extending the just-shipped
-  list regex. Measured precisely against the fixed extractor's real
-  output (not a regex-shape estimate) on 2026-10-18: exactly 7 in-scope
-  citations corpus-wide (rows 21303, 25801, 26169, 41003, 43296, 46794,
-  46898). Worth picking up on a future Extractor rotation given it's now
-  the ONLY unfixed sub-form of this gap and precisely scoped, but small
-  enough (7 citations) that it's reasonable to leave for whenever this
-  area comes up again rather than today. If picked up: add a
-  `RE_QISM_RANGE` alongside today's `RE_QISM_MULTI` that recognizes
-  `ORD[-–—]+ORD` immediately before qism/band and expands the ordinal
-  pair the same way `_expand()` expands a numeric article range (the
-  ordinal list `ORDINALS` is already ordered, so expansion is a simple
-  slice, not a new numbering scheme).
+  ~~**Still open — the dash-RANGE sub-form...**~~ **Fixed 2026-10-21**:
+  "ikkinchi — toʻrtinchi qismlarida" (parts two through four) now expands
+  to all three parts instead of collapsing to just the last ordinal —
+  `RE_QISM_RANGE`/`_qism_range` added alongside the list-form's
+  `RE_QISM_MULTI`/`_qism_list`, resolving each ordinal's position via a
+  new canonical-spelling table (`_ORDINAL_CANON`/`_ordinal_index`, since
+  `ORDINALS` itself carries two spellings per ordinal and can't be indexed
+  directly) and expanding the range the same way `_expand()` expands a
+  numeric article range. Confirmed exactly 7 in-scope citations
+  corpus-wide, exactly matching the 2026-10-18 scoping (rows 21303, 25801,
+  26169, 41003, 43296, 46794, 46898); `link_edge` now carries 769
+  `dst_qism` values across 9634 edges. See Log, 2026-10-21.
 - **One remaining chapter+paragraph-list attachment gap (single occurrence).**
   Found 2026-09-10 while fixing the comma-punctuated case (see Log): row
   25634's `cross_references` reads "Fuqarolik kodeksi 4-bobining 1
@@ -876,6 +876,101 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-10-21 — Extractor rotation: closed the qism/band dash-RANGE sub-form left open 2026-10-18 — 7 in-scope citations fixed, `link_edge` 9620 -> 9634 edges, one stale gold record corrected
+
+Picked up the one item the 2026-10-18 entry explicitly scoped and deferred
+rather than drawing gold batch 13 this time (see rationale at the end):
+`citation_extractor.py`'s qism/band attachment still collapsed a dash
+RANGE of ordinals ("216-moddasining birinchi — uchinchi qismlari" = parts
+one through three) down to just the one ordinal immediately before the
+unit word, even though the sibling comma/"va"-separated LIST shape got
+fixed two rotations ago. Measuring this precisely matters because the
+naive approach — grep the whole corpus for `ORD[-–—]ORD\s*qism|band` —
+overcounts by two orders of magnitude: "qism"/"band" are ordinary Uzbek
+words well outside any Civil Code citation ("harbiy qism" = military
+unit, a government resolution's own numbered "band" list items,
+hyphenated compounds like "oʻzini-oʻzi band"), so a first pass of that
+regex found 1657 "ordinal-ish" and 2684 digit matches corpus-wide — almost
+all noise. Rewrote the measurement to mirror `extract()`'s own anchor+
+clause scan exactly (reusing `_anchors`, `RE_CLAUSE`, `RE_LEADING_PUB_PAREN`
+and the real per-row FK-alias table build_links.py itself computes) and
+got exactly 7 in-scope hits, landing on precisely the 7 rows the
+2026-10-18 entry had already named (21303, 25801, 26169, 41003, 43296,
+46794, 46898) — first pass only found 5 of the 7 until the FK-alias table
+was wired in correctly (two of the seven, rows 25801/26169, only resolve
+once "FK" is recognized as an alias for "Fuqarolik kodeksi" in those
+specific acts, same subtlety `build_links.py` itself has to handle).
+
+Fix: added `RE_QISM_RANGE` alongside the existing `RE_QISM_MULTI` (list
+form), anchored the same way at the start of the post-modda tail through
+one optional leading comma so it can never fire on the different-article
+list shape `RE_QISM_BLOCK` guards against. Expanding an ordinal range
+needed a lookup `ORDINALS` itself can't give directly — that tuple
+carries two spellings per ordinal (the apostrophe-letter `ʻ` vs plain
+ASCII `'` for "toʻrtinchi"/"toʻqqizinchi"/"oʻninchi"/"oʻn birinchi"/"oʻn
+ikkinchi"), so indexing into it directly would misorder or double-count.
+Added `_ORDINAL_CANON` (one canonical spelling per ordinal, 12 entries)
+and `_ordinal_index()` (normalizes `ʼ`/`'` to `ʻ` before lookup), then
+`_qism_range()` expands `range(lo_index, hi_index + 1)` into
+`_ORDINAL_CANON` the same way `_expand()` already expands a numeric
+article range — a lookup, not a new numbering scheme, per the 2026-10-18
+entry's own plan. A reversed range (hi before lo, or either endpoint not
+a recognized ordinal) returns `None` and falls through to the pre-existing
+single-match behavior unchanged — regression-tested explicitly (see
+below). Wired into both call sites that already tried `_qism_list(tail)`
+first (the `-sining` genitive path and the bare-`moddasi` single-article
+path): `_qism_list(tail) or _qism_range(tail)`, list form still tried
+first since it is more specific. No digit-range form ("3 — 5-qismlari")
+exists in-scope anywhere in the corpus (confirmed by the same scoped
+measurement), so none was built — would be pure speculation otherwise.
+
+Added 4 self-tests to `citation_extractor.py`'s own suite (61 -> 65,
+all passing): the three real dash spellings observed in the corpus
+(plain hyphen, en dash, em dash) each expanding to the right 3-part run,
+plus a reversed-range regression guard confirming the old single-match
+fallback still fires unchanged when the range isn't a valid range.
+Re-ran `build_links.py` against the existing `corpus.duckdb` (not a full
+`build_corpus_db.py` rebuild — only the extractor changed): `link_edge`
+9620 -> 9634 edges (+14, exactly the expected 7 citations × 2 extra parts
+each — every one of the 7 ranges is 3 ordinals wide), `dst_qism`
+non-null count 755 -> 769 (+14, matching exactly). Spot-checked all 7
+target rows' real `extract()` output directly: every one now lists all
+ordinals in its range (e.g. row 46794's article 476: uchinchi/toʻrtinchi/
+beshinchi qism; row 26169's article 154: birinchi through toʻrtinchi
+qism).
+
+Running `score_gold.py` after the fix surfaced a real, expected
+consequence rather than a regression: precision dropped from 2120/2133
+(99.4%) to 2120/2135 (99.3%, +2 FP) because `gold_citations.json`'s own
+`gold_id` 289 (row 46898) had been hand-annotated against the *old,
+buggy* collapsed output — its `expected` list recorded only `{"article":
+"382", "qism": "toʻrtinchi qism"}` for the window's "382-moddasi ikkinchi
+— toʻrtinchi qismlari", not the full three-part range. Same precedent as
+the 2026-10-18 fix's own stale-annotation cleanup (gold_id 224 et al.):
+corrected the record to the true expected output (ikkinchi/uchinchi/
+toʻrtinchi qism, all three) with a dated note explaining why, rather than
+leaving a now-incorrect record silently degrading the score. Final:
+precision 2122/2135 (99.4%, back to the pre-fix rate — the 2 extra
+correct predictions and the 2 corrected expected entries cancel out
+exactly), recall 2122/2158 (98.3%, unchanged ratio, denominator grew by
+the same 2 newly-correct entries). `citation_extractor.py`'s own 65
+self-tests, `test_transfer_e2e.py`'s 14 tests, and `verify_transfer.py`
+all pass clean.
+
+Why this over gold batch 13 (the thread's stated "next step" two
+rotations running now): with this fix, the "Qism-level grain" backlog
+item (open since 2026-09-04, partially fixed 2026-10-18) is now fully
+closed rather than carrying one small, precisely-scoped, already-
+documented residual — finishing a scoped, already-measured fix over
+starting new annotation work seemed like the higher-value use of today's
+rotation, especially since the fix itself doubled as a second real-world
+test of the gold set's own annotation-staleness failure mode (same
+mechanism as 2026-10-18, confirms it's a repeatable thing to watch for,
+not a one-off). Gold batch 13 remains the clear next step whenever
+Extractor rotation comes up again — signature coverage is unchanged
+today (456/3251) since nothing here touched the sampler or the gold set's
+breadth, only one existing record's correctness.
 
 ### 2026-10-20 — Data currency rotation: found and fixed a real Roman-numeral target_locator gap in `build_links.py`'s repeal-clause parser — 14 acts' false 'superseded' badge corrected, including one live in the LLC dossier today
 
