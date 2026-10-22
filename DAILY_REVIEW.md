@@ -75,18 +75,25 @@ paragraph here.
   `repeal_clause` for the same doc_id) if nothing more specific is
   waiting. Full detail: Log, 2026-10-20.
 
-- **Cleanup rotation — current state: eight repeatable checks now exist
+- **Cleanup rotation — current state: nine repeatable checks now exist
   (`pyflakes`, `vulture --min-confidence 60`, `bandit`, `check_sql_bindings.py`,
-  `check_code_clones.py`, `check_fstring_interp.py`, plus the folded-in
-  f-string grep and its own eighth-check widening). Last touched
-  2026-10-16** (closed a structural blind spot in `check_fstring_interp.py`
-  itself — found 0 live bugs, but a real class of indirected-f-string call
-  sites the tool had never been able to see). One deliberately-deferred,
-  single-call-site residual remains in `check_sql_bindings.py` (doesn't
-  trace plain-literal indirection; zero injection risk, left alone — see
-  Backlog > Cleanup). Next Cleanup rotation should re-run all eight checks
-  as a baseline before deciding whether a ninth is worth adding. Full
-  detail: Log, 2026-10-16.
+  `check_code_clones.py`, `check_fstring_interp.py`, `check_dead_columns.py`,
+  plus the folded-in f-string grep and eighth-check widening). Last touched
+  2026-10-22** (re-ran all eight existing checks clean as a baseline, then
+  built a ninth, `check_dead_columns.py` — a new class of check, column-level
+  read/write asymmetry, that none of the first eight look for at all: a
+  column the pipeline faithfully populates but nothing downstream ever reads
+  back). Found 15 such columns across 6 tables, all real and populated
+  (612/612 to 9634/9634 non-null depending on table), all hand-verified
+  against corpus.duckdb directly, zero live bugs today — see Backlog >
+  Cleanup for the full list and the two with real future potential
+  (`link_edge.ev_start`/`ev_end`). Proved the checker with a mutation test
+  (removing the sole read-site of `src_article_number` was caught
+  immediately, then reverted). Next Cleanup rotation should re-run all nine
+  checks as a baseline before deciding whether a tenth is worth adding — the
+  one deliberately-deferred `check_sql_bindings.py` residual (doesn't trace
+  plain-literal indirection; zero injection risk) is unchanged. Full detail:
+  Log, 2026-10-22.
 
 ---
 
@@ -872,10 +879,71 @@ paragraph here.
   (the `measure_extractor_recall.py` site above) — zero injection risk
   since it has no interpolation, so left alone for a single call site, same
   single-occurrence-scope precedent as several Extractor items above.
+- **A ninth check: a column the pipeline writes but nothing ever reads back.**
+  Added 2026-10-22: `check_dead_columns.py` — pulls every DDL-declared
+  base-table column from the live schema, greps it as a whole word across
+  every `*.py` file, and classifies each hit as a schema `def`, an `UPDATE
+  ... SET col = ?` write, an `INSERT INTO tbl (col, ...)` column-list write,
+  or a genuine read; flags any column with zero read hits. Found and
+  hand-verified 15 such columns across 6 tables, all real and fully (or
+  near-fully) populated by the pipeline, zero live bugs:
+  `article_amendment.event_id` (612/612, an unused row id), `llc_stage.n_foundation`
+  (8/8, a precomputed "articles this stage rests on" count that nothing displays —
+  `app_llc.py` doesn't show it, and if it ever did, it would need checking against
+  a live `count(*)` from `llc_norm` first, since a stored count silently drifting
+  from reality would be worse than not showing one at all), `okoz_assignment.proposed_at`
+  (39/39, a classification-proposal timestamp with no UI surface),
+  `repeal_clause.clause_id`/`item_no` (885/885 each, a row id and the item's
+  position in its act's repeal list — ordering is done by `cited_date`
+  elsewhere, not `item_no`), `repeal_clause.cited_number` (248/885, the
+  repealed act's own doc-number string as written — never shown alongside
+  the resolved act title), and seven `norm_unit` English-transfer diagnostic
+  columns (`n_tokens_uz`, `okoz_codes_doc`, `en_heading_type`, `en_titleless`,
+  `en_repealed`, `en_align_method`, `en_run_id`, 385-386/386 each) — their
+  siblings `en_align_status`/`en_align_note` *are* surfaced (`app_hierarchy.py`'s
+  review page, `verify_transfer.py`), so this looks like a deliberate partial
+  surfacing rather than an oversight, just never finished. The two with real
+  future potential are `link_edge.ev_start`/`ev_end` (9634/9634, genuine
+  character offsets into the citation's position within its row) — not
+  usable as stored (they're relative to the raw, pre-cleanup row text; the
+  apps display `evidence_clean`, which has gone through two lossy
+  transforms since — pad-crop+whitespace-collapse, then LexUZ-apparatus
+  stripping — so highlighting the exact cited span in the UI would need
+  re-deriving the offsets through both transforms, a real but nontrivial
+  fix, not attempted today). Proved the checker catches a real newly-dead
+  column with a mutation test (removed the sole read-site of
+  `link_edge.src_article_number`, confirmed it was flagged immediately,
+  reverted). See Log for the full trace. Now a ninth repeatable Cleanup
+  check; next rotation should re-run all nine.
 
 ---
 
 ## Log
+
+### 2026-10-22 — Cleanup rotation: re-ran all eight checks clean, built a ninth (`check_dead_columns.py`) — a new check class, 15 written-but-never-read columns found and hand-verified, zero live bugs
+
+**Environment setup first** (this is a fresh container with no memory): `git lfs pull` to materialize `articles/train-00000-of-00001.parquet` (was a 134-byte pointer stub), `pip install duckdb pyflakes vulture bandit pytz`. `python verify_transfer.py` baseline confirmed green before touching anything — same numbers as the 2026-10-21 close-out (9634 edges, 234 superseded acts, 372/386 General Part articles cited).
+
+**Rotation choice**: Extractor was last touched 2026-10-21, Data currency 2026-10-20, Cleanup 2026-10-16 — Cleanup is the most overdue, and its own Backlog note explicitly said "next rotation should re-run all eight checks as a baseline before deciding whether a ninth is worth adding." Did exactly that: `pyflakes`/`vulture --min-confidence 60` clean, `bandit` at the documented baseline (57 B608, 3 B311, 1 B110, all pre-reviewed), `check_sql_bindings.py` 106/106, `check_code_clones.py` 5 pairs (4 previously verified + 1 new since 2026-10-14's `snapshot_age_note()` landed in both apps — same byte-identical, deliberately-duplicated-across-independent-files shape as the already-accepted `excerpt()` pair, hand-verified, not a bug), `check_fstring_interp.py` 55/55 clean.
+
+**The ninth check.** All eight existing checks look for a defect *within* a piece of code or a query's referential correctness. None of them ask whether a column the pipeline *writes* is ever *read* by anything — a blind spot distinct in kind from all eight (Python-symbol-unused, SQL-injection-shape, schema-referential-drift, code-clone-drift are all checked; column-level write/read asymmetry never was). Built `check_dead_columns.py`: pulls every DDL-declared base-table column from the live schema (166 columns, 15 tables, via `information_schema.columns`), greps each as a whole word across every `*.py` file, and classifies each hit as the column's own `CREATE TABLE` declaration, an `UPDATE ... SET col = ?` write, an `INSERT INTO tbl (col, ...)` column-list write (paren-balance-tracked across the multi-line style this codebase always uses for it), or a genuine read (SELECT list, WHERE/JOIN/ORDER BY/QUALIFY, Python-side reference). A column with zero read hits is flagged.
+
+First run flagged 13, not the expected 15 — the script's own module docstring, written to *explain* the two most interesting findings (`ev_start`/`ev_end`) by name, accidentally counted as a "read" hit for them and masked them from its own output. Fixed by excluding the checker's own file from the scan (documented in the script as the reason, so it doesn't get silently re-broken by a future docstring edit). Re-ran: 15/15, matching a fully independent hand-verification done first (querying `corpus.duckdb` directly for each candidate's non-null rate and sample values) before the script was even written.
+
+**All 15, hand-verified, zero live bugs but a real finding:**
+- `article_amendment.event_id` (612/612 non-null) — an unused row id.
+- `llc_stage.n_foundation` (8/8) — "Civil Code articles this stage rests on," precomputed but never displayed by `app_llc.py`. If ever surfaced, needs checking against a live `count(*)` from `llc_norm` first — a stale stored count would be worse than showing nothing.
+- `okoz_assignment.proposed_at` (39/39) — classification-proposal timestamp, no UI surface.
+- `repeal_clause.clause_id`/`item_no` (885/885 each) — a row id and the item's position in its act's own repeal list; display ordering is done via `cited_date` elsewhere, not `item_no`.
+- `repeal_clause.cited_number` (248/885) — the repealed act's own doc-number string as written in the source ("310-II"); never shown alongside the resolved act title in either app.
+- Seven `norm_unit` English-transfer diagnostic columns — `n_tokens_uz`, `okoz_codes_doc`, `en_heading_type`, `en_titleless`, `en_repealed`, `en_align_method`, `en_run_id` (385-386/386 each). Their siblings `en_align_status`/`en_align_note` ARE surfaced (`app_hierarchy.py`'s review page, `verify_transfer.py`'s AC5 checks) — this looks like a deliberate partial feature, not an oversight, just never finished past the two fields that mattered most for the "needs review" workflow.
+- `link_edge.ev_start`/`ev_end` (9634/9634) — the most interesting pair. These are real character offsets (`citation_extractor.Citation.start`/`.end`) marking exactly where the citation sits within its row, written on every edge since the extractor's first version. Traced why nothing uses them: they're offsets into the *raw* row text, but both apps display `evidence_clean` — which has been through two lossy transforms since those offsets were computed (`_evidence()`'s pad-crop + whitespace-collapse, then `clean_evidence()`'s LexUZ-apparatus stripping + a second whitespace-collapse). Neither transform preserves character positions, so `ev_start`/`ev_end` cannot drive a "highlight the exact cited span" UI feature as stored today — would need re-deriving the offsets through both transforms (a contained, well-defined fix: track an old-position-to-new-position map through each whitespace-collapse, same idea as a diff/patch offset map) to ever be usable. Scoped but not attempted today — this is feature-adjacent work with real blast radius on the evidence-rendering path both apps share, outside what a Cleanup rotation should risk; left as a Backlog item for whichever rotation picks up UI/evidence-display work next.
+
+**Proved the checker works, not just that it ran clean**: mutation-tested it the same way `check_sql_bindings.py` and `check_fstring_interp.py` were proved — temporarily removed the sole read-site of `link_edge.src_article_number` (`build_links.py:355`, part of a `SELECT` list) and reran; the checker flagged it immediately as newly dead. Reverted via a straight file restore, confirmed `git diff --stat build_links.py` showed zero changes before moving on.
+
+**Verification**: `pyflakes`/`vulture` clean on the new file; `bandit check_dead_columns.py` zero issues at any severity; `check_sql_bindings.py`/`check_fstring_interp.py`/`check_code_clones.py` all still green with the new file in the tree. `python verify_transfer.py` green (unchanged numbers — this only added a new read-only analysis script, touched no pipeline code or data). `python -m unittest test_transfer_e2e.py` 14/14.
+
+**Decision**: ship `check_dead_columns.py` as the ninth repeatable Cleanup check; don't fix any of the 15 columns today (none is a live bug — nothing downstream is silently wrong because of them, they're unused surface, not broken surface) but keep `ev_start`/`ev_end`'s fix-and-wire-up potential visible in Backlog rather than letting today's investigation evaporate, since it's the one candidate here that would be a real, if modest, user-facing improvement (seeing the exact cited phrase highlighted within the evidence snippet) rather than just removing dead weight.
 
 ### 2026-10-21 — Extractor rotation: closed the qism/band dash-RANGE sub-form left open 2026-10-18 — 7 in-scope citations fixed, `link_edge` 9620 -> 9634 edges, one stale gold record corrected
 
