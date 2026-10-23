@@ -60,20 +60,21 @@ paragraph here.
   signature coverage (still 456/3251, unchanged since 2026-10-18). Full
   detail: Log, 2026-10-21.
 
-- **Data currency rotation — current state: fixed a real Roman-numeral
-  target_locator gap in `build_links.py`'s repeal-clause parser (113/885
-  repeal items corpus-wide, 14 acts' false 'superseded' badge corrected,
-  one live in the LLC dossier). Last touched 2026-10-20** (found via a new
-  angle — cross-checking internal consistency of the repeal/currency
-  signals against each other, rather than re-measuring the already-dry
-  snapshot-age thread). `lex.uz` egress re-checked, still 403-blocked, no
-  change since 2026-10-17. No thread currently mid-flight; next Data
-  currency rotation should pull from Backlog > Data currency — the
-  internal-consistency angle used today (checking whether independent
-  derived signals agree with each other) worked well and is worth
-  applying to other parts of the pipeline (e.g. `article_amendment` vs.
-  `repeal_clause` for the same doc_id) if nothing more specific is
-  waiting. Full detail: Log, 2026-10-20.
+- **Data currency rotation — current state: cross-checked `article_amendment`'s
+  Uzbek-mined voided-article set (9 articles, doc -111189) against
+  `norm_unit.en_repealed`'s English-markdown-mined repealed set (7) — found
+  and root-caused a real 2-article gap (Articles 65/66, voided 2014-05-14
+  but never incorporated into the English translation source document) to
+  decade-old upstream translation staleness, confirmed zero live-app impact,
+  and formally decided `en_repealed` must never be wired up as a currency
+  signal. Last touched 2026-10-23** (see Log for the full trace, including
+  the two literal `article_amendment`-vs-`repeal_clause` pairings tried
+  first, both clean/not-applicable, and a bonus well-evidenced Cleanup find
+  handed off rather than fixed — see Backlog > Cleanup). `lex.uz` egress not
+  re-checked this rotation (checked 2026-10-20, still 403-blocked as of
+  then). No thread currently mid-flight; next Data currency rotation should
+  pull from Backlog > Data currency, or keep applying the
+  internal-consistency angle to a pair not yet tried.
 
 - **Cleanup rotation — current state: nine repeatable checks now exist
   (`pyflakes`, `vulture --min-confidence 60`, `bandit`, `check_sql_bindings.py`,
@@ -507,16 +508,67 @@ paragraph here.
   signals against each other, not just against external ground truth.**
   Found 2026-10-20 (see Log): every prior Data currency rotation either
   measured a signal's precision/recall against a known cause, or tried to
-  compare against an external source (`lex.uz`, blocked). Today's fix
+  compare against an external source (`lex.uz`, blocked). The 2026-10-20 fix
   (Roman-numeral `target_locator` gap, below) was found instead by asking
   whether `repeal_clause` was internally self-consistent — do multiple
   whole-act repeal candidates for the same `dst_doc_id` make sense
   together? That question surfaced a real, 113-occurrence, 14-act-impact
-  bug the other two framings hadn't touched. Worth trying again on other
-  pairs of independent signals this project computes — e.g. does
-  `article_amendment` (mined from `amendment_note`) ever disagree with
-  `repeal_clause` (mined from free-text "kuchini yoʻqotgan" lists) about
-  the same act/date/target? Not measured yet — just the methodology note.
+  bug the other two framings hadn't touched. **Tried again 2026-10-23 on
+  the literally-proposed pairing** — `article_amendment` vs. `repeal_clause`
+  for the same target: zero overlap (`repeal_clause` never targets the
+  Civil Code's own `doc_id`, so there's nothing to disagree on), and a
+  temporal-consistency variant (amending acts' own `amend_date`/
+  `effective_date` vs. their later `repealed_on`) came back 0/345
+  inconsistent — clean, not a bug. **The angle paid off anyway** on a third
+  signal found along the way — `norm_unit.en_repealed` (English-markdown-
+  mined) vs. `article_amendment`'s own voided set (Uzbek-mined): 7 vs. 9,
+  a real 2-article gap, root-caused to decade-old translation staleness
+  (Articles 65/66, voided 2014, never incorporated into the English
+  source). See Log, 2026-10-23, for the full trace and the "`en_repealed`
+  must never be wired up" decision this produced. Keep applying this
+  technique to pairs not yet tried — it has now found a real issue twice
+  running, both times on a pairing nobody had explicitly named in advance
+  (the Roman-numeral fix was found via `repeal_clause` self-consistency,
+  not the `article_amendment` pairing originally proposed for it; the
+  2026-10-23 find was via a *third* signal neither prior framing
+  mentioned).
+- ~~**Is `norm_unit.en_repealed` (flagged dead-by-construction in the
+  2026-10-22 Cleanup rotation) safe to eventually wire up as a currency
+  signal, given more engineering?**~~ **Closed, decided no, 2026-10-23**:
+  cross-checked its source (the English markdown's hardcoded
+  `REPEALED_ARTICLES` set + "lost force" text match) against
+  `article_amendment`'s independently-mined voided set for the same doc
+  (-111189): the English side has 7 flagged repealed articles, the Uzbek
+  side has 9 — `en_repealed` is missing Articles 65 and 66, voided
+  2014-05-14 by Qonun OʻRQ-372 (confirmed in `article_amendment`'s own
+  evidence text) but never incorporated into
+  `Civil_Code_Part1_Updated_2025.md`, which still carries their full
+  pre-2014 substantive English text ("Open Joint Stock Company" / closed
+  JSC) with no repeal notice at all — a decade-old translation-source
+  staleness gap, not a parser or pipeline bug (confirmed by reading the
+  raw markdown directly: the 7 correctly-flagged articles each carry an
+  explicit `_Article N has lost force in accordance with the Law ...
+  dated 07.02.2025 No. ZRU-1025 ..._` notice; 65/66 carry nothing of the
+  kind). `verify_transfer.py`'s own independent `structure_missing_articles`
+  check corroborates the full 9-article set from a third angle (its own
+  AC4/AC6 structural-range accounting, unrelated to either mined signal).
+  Zero live impact either way — neither app reads the markdown/
+  `parsed_articles.json` directly, and `article_text_en` is NULL for all 9
+  voided articles regardless, since none have a surviving Uzbek-side row
+  to attach English text to (the same reason `en_repealed` was already
+  dead by construction). **Decision: `en_repealed` stays dead permanently,
+  not just unfinished** — it isn't only unpopulated, it's demonstrated
+  unreliable (misses 2/9 known cases, with no way to bound how many more
+  its source document is stale for). `v_article_currency.has_removed_or_
+  voided_part` (Uzbek-mined, surfaced in both apps since 2026-09-14)
+  remains the sole authoritative in-app currency signal; this closes the
+  "deliberate partial surfacing... just never finished" open question the
+  2026-10-22 Cleanup entry left about `en_repealed` specifically (its six
+  `norm_unit` siblings in that list are unaffected — only `en_repealed`
+  was tested here). See Log, 2026-10-23, for the full trace and for a
+  bonus well-evidenced Cleanup find (`REPEALED_ARTICLES` is provably 100%
+  redundant with the "lost force" text match) handed off rather than fixed
+  — see Backlog > Cleanup.
 - ~~**Repeal-clause `target_locator` misses Roman-numeral qualifiers
   ("XIV boʻlimi", "XX moddasi").**~~ **Fixed 2026-10-20** (see Log for the
   full trace): `build_links.py`'s `re_target_locator` only recognized
@@ -718,6 +770,26 @@ paragraph here.
   just worth a second look if a future session wants to push further.
 
 ### Cleanup
+- **`parser.py`'s `REPEALED_ARTICLES` hardcoded set (line 30) is provably
+  100% redundant.** Found 2026-10-23 while investigating a Data currency
+  cross-check (see Active threads/Log). `is_repealed` is computed as
+  `(base_num in REPEALED_ARTICLES and superscript is None) or ("lost force"
+  in clean_text.lower())` — checked every one of the 7 current members'
+  own `clean_text` directly: all 7 independently match the "lost force"
+  branch (each carries an explicit `_Article N has lost force in
+  accordance with the Law ... dated 07.02.2025 No. ZRU-1025 ..._` notice
+  in the raw markdown), so the hardcoded set never actually changes the
+  outcome for anything in the current markdown. Not fixed today
+  (different rotation) — if picked up: delete `REPEALED_ARTICLES` and the
+  `and superscript_val is None` clause's now-dead sibling condition,
+  update `parser.py`'s own `--verify` CLI (`expected_repealed`, line 366)
+  and `test_transfer_e2e.py::test_edge_repealed_articles`
+  (`EXPECTED_REPEALED_ARTICLES`, line 117) to compute/assert the same way
+  rather than duplicating the literal list a third time, then confirm
+  `parsed_articles.json` is byte-identical before/after (expected, since
+  this is proven redundant, not a behavior change) and re-run
+  `test_transfer_e2e.py`. Zero risk, zero data impact — purely a smaller,
+  single-source-of-truth version of the same check.
 - ~~**Retire superseded prototypes.**~~ **Done 2026-09-07**: deleted
   `hierarchy_engine.py`, `app_deep.py`, `app.py` — confirmed zero references
   anywhere else in the repo (only `app_deep.py` importing `hierarchy_engine`,
@@ -919,6 +991,29 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-10-23 — Data currency rotation: cross-checked `article_amendment`'s voided-article set against the English markdown's repealed markers, found and root-caused a real 2-article gap to decade-old translation staleness, zero live impact; closed `en_repealed`'s open question permanently; surfaced a proven-redundant constant for Cleanup
+
+**Environment setup**: `pip install duckdb` (fresh container), `git lfs pull` to materialize `articles/train-00000-of-00001.parquet` (134-byte pointer stub again, as every cold start). `verify_transfer.py` confirmed green before and after today's investigation — identical summary both times (9634 edges, 234 superseded acts, 372/386 General Part articles cited, 17 citations/8 repealed articles flagged dangling). No code or data was changed today; this was a measurement-and-decision day.
+
+**Continuing the 2026-10-20 methodology note**: cross-check independent currency/evidence signals against each other rather than against external ground truth (`lex.uz` stays 403-blocked, not re-checked this rotation). Tried the pairing the note literally proposed first: does `article_amendment` (mined from the Uzbek `amendment_note` field) ever disagree with `repeal_clause` (mined from free-text whole-act repeal lists) about the same target? `select count(*) from repeal_clause where dst_doc_id in (-180552,-111189)` → 0. The Civil Code is never itself the target of a repeal clause, so this pairing has nothing to disagree on — not a bug, just no overlap. Tried a second variant of the same two signals: for the 63 distinct acts in `article_amendment.amending_doc_id` that `v_act_currency` (repeal_clause-derived) independently marks `superseded`, does any amendment event's `amend_date` or `effective_date` postdate that act's own `repealed_on` (i.e. did an act amend the Civil Code *after* it had already been struck down)? 345 events checked against 15 later-repealed amending acts, 0 found — clean, fully consistent.
+
+**Found a third, more fruitful signal while investigating the first two**: `norm_unit.en_repealed`, written by `build_corpus_db.py`'s English-transfer step (lines 405-422) from `parser.py`'s own `load_markdown_articles()` output — specifically `is_repealed = (base_num in REPEALED_ARTICLES and superscript_val is None) or ("lost force" in clean_text.lower())`, mined from `Civil_Code_Part1_Updated_2025.md`. This is a genuinely independent provenance from `article_amendment` — same Civil Code, completely different source document (an English markdown translation vs. LexUZ's own Uzbek-side amendment metadata) and different pipeline. Queried both:
+
+- `article_amendment` voided set for doc -111189: `select distinct target_article_number from article_amendment where change_type='voided' and doc_id=-111189` → **9 articles**: 63, 65, 66, 70, 71, 72, 176, 177, 179.
+- English markdown's repealed set (`parser.py`'s `REPEALED_ARTICLES` ∪ "lost force" matches, confirmed via `parsed_articles.json`): **7 articles**: 63, 70, 71, 72, 176, 177, 179.
+
+2-article gap: 65 and 66 missing from the English side. Root-caused directly rather than guessing: `article_amendment`'s own evidence text for both says `"65 va 66-moddalar Oʻzbekiston Respublikasining 2014-yil 14-maydagi OʻRQ-372-sonli Qonuniga asosan oʻz kuchini yoʻqotgan"` — voided 2014-05-14 by Qonun OʻRQ-372, over a decade before the other 7 (voided 2025-02-07/effective 2025-05-08 by OʻRQ-1025, per their own evidence text). Read the raw markdown directly to confirm (`Civil code of Uzbekistan_general part/Civil_Code_Part1_Updated_2025.md`): lines 772-774 (Article 63) and the three around line 850-862 (Articles 70-72) each read `## **Article N**` followed immediately by `_Article N has lost force in accordance with the Law of the Republic of Uzbekistan dated 07.02.2025 No. ZRU-1025 (effective 08.05.2025)._` — an explicit, unambiguous repeal notice. Articles 65 (line 786, "Open Joint Stock Company") and 66 (line 792) instead carry their full, substantive, pre-2014 English text (open/closed joint-stock company rules) with no repeal notice anywhere in either article's body. So this is not a parser bug and not a pipeline bug — `REPEALED_ARTICLES`/the "lost force" match correctly reflects what the markdown *says*; the markdown itself was simply never updated for the 2014 repeal, despite its own filename's "Updated 2025" claim and despite having been updated for the far more recent 2025 batch.
+
+Three-way corroboration, not just two: `verify_transfer.py`'s own `structure_missing_articles` check (AC4, independent of both mined signals — it's pure structural-range accounting against `struct_node.art_from/art_to`) reports node `C4.S2` ("Commercial Organizations", arts 58-72) missing exactly `63, 65, 66, 70, 71, 72` and node `C14` ("Right of Economic/Operational Management", arts 176-181) missing exactly `176, 177, 179` — the same 9-article set, from a third, independently-computed angle. All three signals (Uzbek amendment metadata, English markdown markers, corpus structural-range accounting) agree on *which* 9 articles are gone from the 2026 Uzbek corpus; only the English markdown's own *explanatory note* is incomplete for 2 of them.
+
+**Checked live impact before deciding anything**: `grep -n "PARSED\|parsed_articles\|Civil_Code_Part1" app_hierarchy.py app_llc.py` → zero hits, neither app reads the markdown or `parsed_articles.json` directly. `article_text_en` is `NULL` in `norm_unit` for all 9 voided articles regardless of which list they're on, because none of the 9 has a surviving Uzbek-side row to attach English text to (the exact reason `en_repealed` was already flagged dead-by-construction in yesterday's `check_dead_columns.py` run, which measured *read* asymmetry but didn't test *value* reliability). So nothing a user can see changes either way.
+
+**Decision on `en_repealed`**: considered adding 65/66 to `REPEALED_ARTICLES` — rejected. That would fabricate a textual marker the source document doesn't contain; the hardcoded set's own design (per the `or` combinator) is to flag what the markdown explicitly says, not to encode externally-sourced ground truth it has no textual basis for. The real fix lives in the translation source document itself, outside this project's authority to rewrite. Instead, **formally closed the open question the 2026-10-22 Cleanup entry left about `en_repealed`'s "deliberate partial surfacing... just never finished"**: it must never be wired up as a currency signal, full stop. It isn't just unpopulated — it's demonstrated unreliable, missing 2 of 9 known cases with no way to bound how many more its source document is stale for. `v_article_currency.has_removed_or_voided_part` (Uzbek-mined, surfaced in both apps since 2026-09-14) remains the sole authoritative in-app currency signal; this finding reinforces that design rather than changing it.
+
+**Bonus Cleanup find, handed off rather than fixed (different rotation today)**: while reading `parser.py`'s repeal-detection logic closely enough to root-cause the gap above, checked whether `REPEALED_ARTICLES` actually does any work. Tested all 7 of its members' own `clean_text` against the "lost force" phrase match directly (in Python, reading `parsed_articles.json`): all 7 independently satisfy it. So `REPEALED_ARTICLES` is provably 100% redundant with the text-match branch of the same `or` expression — deleting it would classify the identical 7 articles, zero behavior change. `parser.py`'s own `--verify` CLI and `test_transfer_e2e.py::test_edge_repealed_articles` both separately hardcode the same 7-item list a second and third time. See Backlog > Cleanup for the exact fix, left for the next Cleanup rotation.
+
+**What changed getting here vs. what didn't**: no `corpus.duckdb` tables, no pipeline code, and no tracked data file were touched today — this was purely investigation, cross-validation, and a documented decision (the `en_repealed`/"never wire up" verdict) plus a handed-off finding. `verify_transfer.py` was run twice (before and after the investigation) specifically to confirm the hypothesis against its own independent `structure_missing_articles` output and to satisfy the hard constraint that it must stay green around any session's work, even an investigation-only one; both runs produced the identical summary.
 
 ### 2026-10-22 — Cleanup rotation: re-ran all eight checks clean, built a ninth (`check_dead_columns.py`) — a new check class, 15 written-but-never-read columns found and hand-verified, zero live bugs
 
