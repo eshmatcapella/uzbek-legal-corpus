@@ -131,7 +131,18 @@ def build_candidates(con) -> list[dict]:
             for i, (a_start, a_end, kind) in enumerate(anchors):
                 limit = min(a_end + cx.WINDOW, anchors[i + 1][0] if i + 1 < len(anchors) else len(text))
                 window_text = text[max(0, a_start - 20):limit]
-                raw_after_anchor = text[a_end:limit]
+                # Signature text must use the SAME span gold_signatures() recomputes
+                # against (always a_end .. a_end+WINDOW, never bounded by the next
+                # anchor) -- otherwise "novel" (measured here, next-anchor-bounded)
+                # and "covered" (measured there, flat +WINDOW) are computed over two
+                # different spans and silently disagree. Found 2026-10-24 while
+                # merging gold batch 13 (see DAILY_REVIEW.md): the 40 merged windows,
+                # which this function's own (buggy) next-anchor-bounded signature had
+                # called 12 distinct novel signatures, collapsed to just 5 once
+                # recomputed the way "covered" is actually measured -- so this
+                # function had been both under- and over-counting novelty since the
+                # sampler was introduced on 2026-09-25.
+                sig_text = text[a_end:a_end + cx.WINDOW]
                 cites_here = [c for c in all_cites if a_start <= c.start < limit]
                 candidates.append({
                     "row_id": row_id,
@@ -144,7 +155,7 @@ def build_candidates(con) -> list[dict]:
                     "anchor_end": a_end,
                     "is_the_code": is_code,
                     "window": window_text,
-                    "signature": signature(raw_after_anchor, kind, field),
+                    "signature": signature(sig_text, kind, field),
                     "extracted": [
                         {
                             "target_kind": c.target_kind, "article": c.article,
