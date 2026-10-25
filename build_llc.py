@@ -86,8 +86,10 @@ FOUNDATION: dict[int, dict[str, str]] = {
     },
 }
 
-# Articles the Code once carried for company forms and no longer does.  They are
-# a live issue for the LLC: acts still in force cite them.
+# Articles the Code once carried for company forms and no longer does. Checked
+# 2026-10-25: every corpus-wide "dangling" match against this list is LexUZ's own
+# editorial apparatus (evidence_kind='editorial'), not an act's normative text
+# actually citing them -- see DAILY_REVIEW.md, Data currency, 2026-10-25.
 REPEALED_COMPANY_ARTICLES = ["63", "65", "66", "70", "71", "72"]
 
 # An act referring to the LLC Law by its title, rather than to the Code.
@@ -312,14 +314,26 @@ def main() -> int:
     """).fetchone()[0]
     log(f"  -> {sup} of them are provably superseded by a later act")
 
-    log("\nrepealed company-form articles still cited by acts in the corpus:")
-    for art, n, acts in con.execute(f"""
+    log("\nrepealed company-form articles still cited by an act's own normative text "
+        "(editorial/LexUZ-apparatus matches excluded -- see REPEALED_COMPANY_ARTICLES):")
+    hits = con.execute(f"""
         SELECT dst_article_number, count(*), count(DISTINCT src_doc_id)
         FROM link_edge
-        WHERE dst_dangling AND dst_article_number IN ({','.join('?' * len(REPEALED_COMPANY_ARTICLES))})
+        WHERE dst_dangling AND evidence_kind = 'normative'
+          AND dst_article_number IN ({','.join('?' * len(REPEALED_COMPANY_ARTICLES))})
         GROUP BY 1 ORDER BY CAST(dst_article_number AS INT)
-    """, REPEALED_COMPANY_ARTICLES).fetchall():
-        log(f"  art {art}: {n} citations from {acts} acts")
+    """, REPEALED_COMPANY_ARTICLES).fetchall()
+    if hits:
+        for art, n, acts in hits:
+            log(f"  art {art}: {n} citations from {acts} acts")
+    else:
+        n_editorial = con.execute(f"""
+            SELECT count(*) FROM link_edge
+            WHERE dst_dangling AND evidence_kind <> 'normative'
+              AND dst_article_number IN ({','.join('?' * len(REPEALED_COMPANY_ARTICLES))})
+        """, REPEALED_COMPANY_ARTICLES).fetchone()[0]
+        log(f"  none -- {n_editorial} raw dangling match(es) are LexUZ editorial "
+            "apparatus, not real citations")
     con.close()
     return 0
 

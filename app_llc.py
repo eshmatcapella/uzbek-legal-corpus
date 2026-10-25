@@ -342,14 +342,28 @@ def page_currency() -> None:
 
     st.subheader("Company-form articles the Code no longer has")
     st.caption("Articles 63, 65, 66, 70, 71 and 72 governed company forms and were "
-               "repealed as the special laws took over — but acts still cite them.")
-    st.dataframe(qdf("""
+               "repealed as the special laws took over. Shown here only where an "
+               "act's own normative text still cites them (not LexUZ's editorial "
+               "apparatus — see Evidence quality).")
+    company_dangling = qdf("""
         SELECT e.dst_article_number AS cc_article, count(*) AS citations,
                count(DISTINCT e.src_doc_id) AS acts, min(a.doc_title) AS example_act
         FROM link_edge e JOIN act a ON a.doc_id = e.src_doc_id
-        WHERE e.dst_dangling AND e.dst_article_number IN ('63','65','66','70','71','72')
+        WHERE e.dst_dangling AND e.evidence_kind = 'normative'
+          AND e.dst_article_number IN ('63','65','66','70','71','72')
         GROUP BY 1 ORDER BY CAST(cc_article AS INT)
-    """), hide_index=True, width="stretch")
+    """)
+    if company_dangling.empty:
+        n_editorial = q("""
+            SELECT count(*) FROM link_edge
+            WHERE dst_dangling AND evidence_kind <> 'normative'
+              AND dst_article_number IN ('63','65','66','70','71','72')
+        """)[0][0]
+        st.success(f"None today — the {n_editorial} raw match(es) found are all "
+                   "LexUZ editorial apparatus, not an act's text actually citing "
+                   "these repealed articles.")
+    else:
+        st.dataframe(company_dangling, hide_index=True, width="stretch")
 
 
 # ---------------------------------------------------------------------------

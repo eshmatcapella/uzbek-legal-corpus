@@ -62,21 +62,34 @@ paragraph here.
   finer-grained signature features; or spend the rotation on existing
   known_gap items instead of sampling at all).
 
-- **Data currency rotation — current state: cross-checked `article_amendment`'s
-  Uzbek-mined voided-article set (9 articles, doc -111189) against
-  `norm_unit.en_repealed`'s English-markdown-mined repealed set (7) — found
-  and root-caused a real 2-article gap (Articles 65/66, voided 2014-05-14
-  but never incorporated into the English translation source document) to
-  decade-old upstream translation staleness, confirmed zero live-app impact,
-  and formally decided `en_repealed` must never be wired up as a currency
-  signal. Last touched 2026-10-23** (see Log for the full trace, including
-  the two literal `article_amendment`-vs-`repeal_clause` pairings tried
-  first, both clean/not-applicable, and a bonus well-evidenced Cleanup find
-  handed off rather than fixed — see Backlog > Cleanup). `lex.uz` egress not
-  re-checked this rotation (checked 2026-10-20, still 403-blocked as of
-  then). No thread currently mid-flight; next Data currency rotation should
-  pull from Backlog > Data currency, or keep applying the
-  internal-consistency angle to a pair not yet tried.
+- **Data currency rotation — current state: found and shipped a real UI/signal
+  fix — the "dangling reference" currency signal (acts citing a General Part
+  article the corpus no longer has) was 100% LexUZ editorial-apparatus noise,
+  0% real legal citation, in both apps. Last touched 2026-10-25** (see Log for
+  the full trace): cross-checked `link_edge.evidence_kind` against
+  `dst_dangling` — all 17 corpus-wide dangling matches (8 repealed/removed
+  articles: 63,65,66,70,71,72,176,177) are `evidence_kind='editorial'`
+  (LexUZ's own "sharhi...Qarang:" commentary), **zero are `normative`** (an
+  act's own legal text). `app_hierarchy.py`'s "Findings that need a lawyer's
+  eye" panel and `app_llc.py`'s "Company-form articles the Code no longer
+  has" panel were both presenting this 100%-noise set as if it were real
+  legal findings. Fixed both panels to filter `evidence_kind='normative'`
+  (today: both render an explicit "none — N raw matches are editorial
+  apparatus" message instead of a misleading table), and fixed
+  `build_llc.py`'s matching log line and `REPEALED_COMPANY_ARTICLES` comment
+  the same way. Separately tried the by-now-standard internal-consistency
+  angle on a new pairing — temporal consistency between each dangling
+  citation's citing-act `doc_date` and its target's `article_amendment`
+  void/effective date — and found zero anomalies (all 17 predate their
+  target's voiding by 12-30 years; expected and correct, not a bug — see
+  Log for the full table). `lex.uz` egress not re-checked this rotation
+  (checked 2026-10-20, still 403-blocked as of then). No thread currently
+  mid-flight; next Data currency rotation should pull from Backlog > Data
+  currency, or keep applying the internal-consistency/evidence-kind angle to
+  a pair not yet tried. (Checked and ruled out as a candidate today:
+  `llc_implementing_act.derived_status` is directly copied from
+  `v_act_currency.derived_status` at build time, not independently
+  computed — comparing them would be comparing a view to itself.)
 
 - **Cleanup rotation — current state: nine repeatable checks now exist
   (`pyflakes`, `vulture --min-confidence 60`, `bandit`, `check_sql_bindings.py`,
@@ -573,12 +586,29 @@ paragraph here.
   (Articles 65/66, voided 2014, never incorporated into the English
   source). See Log, 2026-10-23, for the full trace and the "`en_repealed`
   must never be wired up" decision this produced. Keep applying this
-  technique to pairs not yet tried — it has now found a real issue twice
-  running, both times on a pairing nobody had explicitly named in advance
+  technique to pairs not yet tried — it has now found a real issue three
+  times running, each on a pairing nobody had explicitly named in advance
   (the Roman-numeral fix was found via `repeal_clause` self-consistency,
   not the `article_amendment` pairing originally proposed for it; the
   2026-10-23 find was via a *third* signal neither prior framing
-  mentioned).
+  mentioned). **2026-10-25: fourth hit, a different shape of finding** —
+  not a data bug but a *display* bug built on a signal this project
+  already had: cross-checked `link_edge.dst_dangling` (whole-act/article
+  "no longer exists" matches) against `link_edge.evidence_kind`
+  (normative vs. editorial, built 2026-09-18+) for the same edges. All
+  17 corpus-wide dangling matches turned out `evidence_kind='editorial'`
+  (LexUZ's own apparatus) — zero `normative` — yet two UI panels
+  (`app_hierarchy.py`'s "Findings that need a lawyer's eye",
+  `app_llc.py`'s "Company-form articles") presented the unfiltered
+  editorial-only set as real legal citations. Fixed both to filter
+  `evidence_kind='normative'`; see Active threads/Log, 2026-10-25, for
+  the full trace. A *second* new pairing tried the same day — citing-act
+  `doc_date` vs. the target's `article_amendment` void/effective date,
+  for temporal consistency — came back clean (0/17 anomalous). Two
+  pairings tried, one real finding: keep pulling from the growing set of
+  independently-populated columns (`evidence_kind`, `dst_dangling`,
+  `derived_status`, `en_align_status`, `has_removed_or_voided_part`,
+  version dates) two at a time.
 - ~~**Is `norm_unit.en_repealed` (flagged dead-by-construction in the
   2026-10-22 Cleanup rotation) safe to eventually wire up as a currency
   signal, given more engineering?**~~ **Closed, decided no, 2026-10-23**:
@@ -1039,7 +1069,23 @@ paragraph here.
 
 ## Log
 
-### 2026-10-24 — Extractor rotation: gold batches 13+14 (500 → 565 records), found and fixed a real measurement bug in the sampler itself, exhausted novel-signature coverage (483/483), one new known_gap
+### 2026-10-25 — Data currency rotation: the "dangling reference" currency signal was 100% LexUZ editorial noise in two live UI panels, found via evidence_kind × dst_dangling cross-check, fixed both apps + build_llc.py
+
+**Environment setup**: fresh clone, `git lfs pull` for the parquet stub (as every cold start). `duckdb` wasn't importable under the system `python3` (`/usr/local/bin/python3` → `/usr/bin/python3.11`) even though `pip install duckdb` reported "already satisfied" — that install had landed in a *different* interpreter's site-packages (`/usr/local/lib/python3.13/dist-packages`, reached via `/usr/bin/pip`). Fixed by using `python3 -m pip install duckdb` so pip resolves against the same interpreter `python3` actually runs. Worth remembering for tomorrow's cold start if `ModuleNotFoundError: duckdb` recurs despite `pip` claiming it's installed. `verify_transfer.py` baseline green before touching anything (9634 edges, 234 superseded acts, same reconciliation-detail set as 2026-10-24's close-out).
+
+**Rotation choice**: Cleanup last touched 2026-10-22, Data currency 2026-10-23, Extractor 2026-10-24 (which also reached a natural stopping point — signature coverage fully exhausted, flagged as needing a strategy decision rather than a mechanical next batch, not a mid-flight thread) — Data currency is next in the three-way rotation. Active threads pointed at "keep applying the internal-consistency angle to a pair not yet tried."
+
+**New pairing #1 (the one that paid off): `link_edge.dst_dangling` × `link_edge.evidence_kind`.** `verify_transfer.py`'s own AC5 check has logged an `[INFO] 17 citation(s) point at 8 repealed article(s)` line for a long time, and both apps surface this same `dst_dangling` set in dedicated panels — but nobody had ever cross-checked it against `evidence_kind` (normative vs. editorial, built 2026-09-18 for a different purpose: ranking which realization edges are real law vs. LexUZ's own website apparatus). Measured directly: all 17 dangling matches, across all 8 affected articles (63, 65, 66, 70, 71, 72, 176, 177), are `evidence_kind='editorial'`. **Zero are `normative`.** Read the raw evidence text to confirm this isn't a mislabeling: every one reads `"...UZ sharhiQarang: mazkur Kodeksning NN-moddasi..."` — LexUZ's own "commentary, see: Code's article NN" apparatus, not an act's substantive legal text. This includes edges whose `src_doc_id` is the Civil Code itself (`-111189`, `method='explicit_citation_uz/self_reference'`, `hierarchy_rel='self'/'internal'`) — i.e. even the "Civil Code citing its own now-repealed article" cases are the website's commentary, not the Code's operative text going stale internally.
+
+**Where this mattered**: two UI panels presented this 100%-editorial set as if it were real legal findings. `app_hierarchy.py`'s "Findings that need a lawyer's eye" → "Dangling references — acts citing General Part articles the 2026 corpus no longer contains (repealed)" ran `WHERE e.dst_dangling` with no `evidence_kind` filter, so its `example_act` column could show e.g. the Civil Code itself, or the 2001 LLC Law, as if they were the normative source of a stale citation to article 63 — they weren't; the citation is LexUZ's commentary embedded in that act's corpus row, not the act's own text. `app_llc.py`'s "Company-form articles the Code no longer has" ran the identical unfiltered query restricted to the 6 LLC-relevant articles (63,65,66,70,71,72 — confirmed this hardcoded list is itself correct and complete against the measured 9-article dangling-target set, since the other 3 (176,177,179) belong to an unrelated struct_node, C14 "Right of Economic/Operational Management") and captioned it "but acts still cite them" — also false for every one of the 15 matches in that subset.
+
+**Fixed**: both panels now filter `evidence_kind = 'normative'` and, since that is 0 rows today, render an explicit `st.success("None today — ... are LexUZ editorial apparatus, not ...")` message instead of a misleading table, with the editorial count kept visible as a footnote rather than silently dropped. `build_llc.py`'s matching log line ("repealed company-form articles still cited by acts in the corpus") and the `REPEALED_COMPANY_ARTICLES` constant's comment (which claimed "a live issue for the LLC: acts still in force cite them" — also false) were rewritten to match. Re-ran `build_llc.py` only (not a full rebuild — confirmed its own printed report: "none -- 15 raw dangling match(es) are LexUZ editorial apparatus, not real citations", matching the direct SQL count exactly); `corpus.duckdb` diff is same-size (llc_norm/llc_implementing_act regenerated identically, no net row-count change). Verified both apps' edited queries resolve directly against `corpus.duckdb` via `fetchall()` (streamlit/pandas aren't installed in this environment, so `qdf()`'s `.df()` path couldn't be exercised end-to-end — confirmed the SQL itself is well-formed and returns the expected empty/15/17 row counts, which is the part that changed). `python3 -m py_compile` clean on all three edited files. `verify_transfer.py` green after the change, identical reconciliation-detail output to the pre-change baseline (expected — no table schema or row content changed, only two Streamlit queries and one build-script log line).
+
+**New pairing #2 (negative result, recorded for completeness): citing-act `doc_date` × target's `article_amendment` void/effective date, for the same 17 dangling edges.** Looked up each of the 8 articles' voiding event: 6 (63,70,71,72,176,177 — actually 176/177/179/63/70/71/72, 7 of the 9 voided articles that have any citing edge) were voided 2025-02-07 (effective 2025-05-08) by OʻRQ-1025; 65/66 were voided 2014-05-14 by OʻRQ-372 (the same pair already characterized 2026-10-23). Every one of the 17 citing acts (and the Civil Code's own self-references) dates from 1995-2002 — decades before either voiding date. 0/17 temporally anomalous: these are LexUZ's commentary pointing backward in time at provisions that were current when the commentary/text was written, not forward-looking stale citations. Clean, not a bug — same shape of outcome as several prior internal-consistency attempts (2026-10-23's `article_amendment`-vs-`repeal_clause` and temporal-consistency tries). Recorded so a future rotation doesn't re-spend effort re-deriving this.
+
+**Ruled out as a future candidate**: `llc_implementing_act.derived_status` vs. `v_act_currency.derived_status` — checked `build_llc.py` directly, the former is a straight `JOIN ... c.derived_status` copy of the latter at build time, not an independently computed signal. Comparing them would be comparing a view to itself; not worth a rotation.
+
+**Decision**: ship the panel fixes (real, if modest, user-facing improvement — the LLC dossier's own domain-specific panel was asserting something false about a provision count that matters to its audience); record the two new pairings tried either way. `verify_transfer.py` PASSED before committing.
 
 **Environment setup**: `git lfs pull` to materialize `articles/train-00000-of-00001.parquet` (134-byte pointer stub, as every cold start), `pip install duckdb pandas streamlit pyflakes vulture bandit pytz`. `score_gold.py` baseline confirmed first: 500/500 scored, 0 drift, precision 2122/2135 (99.4%), recall 2122/2158 (98.3%) — matches the 2026-10-21 close-out exactly. `verify_transfer.py` baseline also green (9634 edges, 234 superseded acts, 372/386 General Part articles cited) before touching anything.
 

@@ -544,15 +544,30 @@ def page_health() -> None:
     """), hide_index=True)
 
     st.subheader("Findings that need a lawyer's eye")
-    st.write("**Dangling references** — acts citing General Part articles the "
-             "2026 corpus no longer contains (repealed):")
-    st.dataframe(qdf("""
+    st.write("**Dangling references** — an act's own normative text citing a "
+             "General Part article the 2026 corpus no longer contains (repealed):")
+    dangling_normative = qdf("""
         SELECT e.dst_article_number AS cited_article,
                count(*) AS citations, count(DISTINCT e.src_doc_id) AS acts,
                min(a.doc_title) AS example_act
         FROM link_edge e JOIN act a ON a.doc_id = e.src_doc_id
-        WHERE e.dst_dangling GROUP BY 1 ORDER BY 2 DESC
-    """), hide_index=True)
+        WHERE e.dst_dangling AND e.evidence_kind = 'normative'
+        GROUP BY 1 ORDER BY 2 DESC
+    """)
+    n_editorial_dangling = q("""
+        SELECT count(*) FROM link_edge WHERE dst_dangling AND evidence_kind <> 'normative'
+    """)[0][0]
+    if dangling_normative.empty:
+        st.success("None today — every dangling match the extractor finds "
+                    f"({n_editorial_dangling} of them) is LexUZ's own editorial "
+                    "apparatus (🟦, see Evidence quality), not an act's text "
+                    "actually citing a repealed provision.")
+    else:
+        st.dataframe(dangling_normative, hide_index=True)
+        if n_editorial_dangling:
+            st.caption(f"{n_editorial_dangling} further dangling match(es) are "
+                       "LexUZ editorial apparatus, not shown here — see Evidence "
+                       "quality.")
     st.write("**Version drift** — English (2025) vs Uzbek (2026):")
     st.dataframe(qdf("""
         SELECT en_display_number AS article, article_title_uz, article_title_en,
