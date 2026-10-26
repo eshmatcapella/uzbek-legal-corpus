@@ -27,7 +27,6 @@ from typing import Dict, List, Optional, Tuple, Any
 
 MISLABELED_SECTIONS = {'144', '255', '273', '302', '304', '305', '320', '349'}
 MISLABELED_SYMBOLS = {'268', '309'}
-REPEALED_ARTICLES = {'63', '70', '71', '72', '176', '177', '179'}
 
 SUPERSCRIPT_MAP = {
     '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', '⁰': '0'
@@ -276,7 +275,7 @@ def parse_markdown(input_path: Path) -> Dict[str, Any]:
         clean_text = "".join(art['body_lines']).strip()
 
         # Check repealed status
-        is_repealed = (str(base_num) in REPEALED_ARTICLES and superscript_val is None) or ("lost force" in clean_text.lower())
+        is_repealed = "lost force" in clean_text.lower()
 
         article_obj = {
             "article_id": article_id,

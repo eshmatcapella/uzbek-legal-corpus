@@ -91,25 +91,37 @@ paragraph here.
   `v_act_currency.derived_status` at build time, not independently
   computed — comparing them would be comparing a view to itself.)
 
-- **Cleanup rotation — current state: nine repeatable checks now exist
+- **Cleanup rotation — current state: nine repeatable checks
   (`pyflakes`, `vulture --min-confidence 60`, `bandit`, `check_sql_bindings.py`,
   `check_code_clones.py`, `check_fstring_interp.py`, `check_dead_columns.py`,
-  plus the folded-in f-string grep and eighth-check widening). Last touched
-  2026-10-22** (re-ran all eight existing checks clean as a baseline, then
-  built a ninth, `check_dead_columns.py` — a new class of check, column-level
-  read/write asymmetry, that none of the first eight look for at all: a
-  column the pipeline faithfully populates but nothing downstream ever reads
-  back). Found 15 such columns across 6 tables, all real and populated
-  (612/612 to 9634/9634 non-null depending on table), all hand-verified
-  against corpus.duckdb directly, zero live bugs today — see Backlog >
-  Cleanup for the full list and the two with real future potential
-  (`link_edge.ev_start`/`ev_end`). Proved the checker with a mutation test
-  (removing the sole read-site of `src_article_number` was caught
-  immediately, then reverted). Next Cleanup rotation should re-run all nine
-  checks as a baseline before deciding whether a tenth is worth adding — the
-  one deliberately-deferred `check_sql_bindings.py` residual (doesn't trace
-  plain-literal indirection; zero injection risk) is unchanged. Full detail:
-  Log, 2026-10-22.
+  plus the folded-in f-string grep and eighth-check widening) all re-ran clean
+  as a baseline, and the one concrete Backlog residual (`parser.py`'s
+  redundant `REPEALED_ARTICLES` set) is now fixed. Last touched 2026-10-26**
+  (re-ran all nine: `pyflakes`/`vulture` clean; `check_sql_bindings.py`
+  108/108 bind clean (up from 106/119 at 2026-10-03 — more call sites exist
+  now after the 10-24/10-25 rotations' code growth, not drift); `bandit` 58
+  `B608`/3 `B311`/1 `B110` (58 vs the 2026-10-01 baseline's 57 `B608`, same
+  reason, re-read and still all already-audited f-string SQL, no new class);
+  `check_code_clones.py` 5 pairs, byte-identical to the 2026-10-22 baseline
+  (same 5, none new); `check_dead_columns.py` 15/15, byte-identical list to
+  2026-10-22. Then fixed the Backlog item found 2026-10-23: deleted
+  `parser.py`'s `REPEALED_ARTICLES` hardcoded set and the dead `and
+  superscript_val is None` guard — both fully redundant with the `"lost
+  force" in clean_text.lower()` branch of the same `or` (confirmed first
+  that no superscript article's text contains "lost force" either, so the
+  guard was never live). `parsed_articles.json` SHA-256 is byte-identical
+  before/after (`808ce522...`), `parser.py --verify` 10/10, `test_transfer_e2e.py`
+  14/14 including `test_edge_repealed_articles` unchanged, `verify_transfer.py`
+  green with an identical summary — proving the deletion is a pure
+  single-source-of-truth cleanup, zero behavior change. Considered and
+  rejected a tenth check today: `CC_GENERAL_PART = -111189` is duplicated in
+  exactly 2 files (`build_corpus_db.py`, `verify_transfer.py`) but it's a
+  static corpus fact (the Civil Code's own doc_id), not a derived value that
+  can silently drift the way the existing nine checks' targets can — doesn't
+  meet the bar. Next Cleanup rotation should re-run all nine as a baseline
+  again; the one deliberately-deferred `check_sql_bindings.py` residual
+  (doesn't trace plain-literal indirection; zero injection risk) is unchanged.
+  Full detail: Log, 2026-10-26.
 
 ---
 
@@ -847,26 +859,20 @@ paragraph here.
   just worth a second look if a future session wants to push further.
 
 ### Cleanup
-- **`parser.py`'s `REPEALED_ARTICLES` hardcoded set (line 30) is provably
-  100% redundant.** Found 2026-10-23 while investigating a Data currency
-  cross-check (see Active threads/Log). `is_repealed` is computed as
-  `(base_num in REPEALED_ARTICLES and superscript is None) or ("lost force"
-  in clean_text.lower())` — checked every one of the 7 current members'
-  own `clean_text` directly: all 7 independently match the "lost force"
-  branch (each carries an explicit `_Article N has lost force in
-  accordance with the Law ... dated 07.02.2025 No. ZRU-1025 ..._` notice
-  in the raw markdown), so the hardcoded set never actually changes the
-  outcome for anything in the current markdown. Not fixed today
-  (different rotation) — if picked up: delete `REPEALED_ARTICLES` and the
-  `and superscript_val is None` clause's now-dead sibling condition,
-  update `parser.py`'s own `--verify` CLI (`expected_repealed`, line 366)
-  and `test_transfer_e2e.py::test_edge_repealed_articles`
-  (`EXPECTED_REPEALED_ARTICLES`, line 117) to compute/assert the same way
-  rather than duplicating the literal list a third time, then confirm
-  `parsed_articles.json` is byte-identical before/after (expected, since
-  this is proven redundant, not a behavior change) and re-run
-  `test_transfer_e2e.py`. Zero risk, zero data impact — purely a smaller,
-  single-source-of-truth version of the same check.
+- ~~**`parser.py`'s `REPEALED_ARTICLES` hardcoded set (line 30) is provably
+  100% redundant.**~~ **Fixed 2026-10-26**: deleted `REPEALED_ARTICLES` and
+  the dead `and superscript_val is None` guard; `is_repealed` is now just
+  `"lost force" in clean_text.lower()`. `parser.py`'s own `--verify` CLI
+  (`expected_repealed`, line 366) and `test_transfer_e2e.py`'s
+  `EXPECTED_REPEALED_ARTICLES` were left as-is deliberately — unlike
+  `REPEALED_ARTICLES`, which fed the *computation*, these two are
+  independent ground-truth regression assertions (expected output of
+  parsing the real markdown), the same role `expected_super`/
+  `titleless_count` already play beside them; collapsing them into the
+  computation would make the test circular. `parsed_articles.json` SHA-256
+  confirmed byte-identical before/after; `parser.py --verify` 10/10,
+  `test_transfer_e2e.py` 14/14, `verify_transfer.py` green, all identical
+  to the pre-fix baseline. See Log, 2026-10-26.
 - ~~**Retire superseded prototypes.**~~ **Done 2026-09-07**: deleted
   `hierarchy_engine.py`, `app_deep.py`, `app.py` — confirmed zero references
   anywhere else in the repo (only `app_deep.py` importing `hierarchy_engine`,
@@ -1068,6 +1074,35 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-10-26 — Cleanup rotation: re-ran all nine checks clean (baseline confirmed), fixed the `REPEALED_ARTICLES` redundancy, resolved a stale-local-clone false alarm on the way in
+
+**Environment setup**: fresh clone, `git lfs pull` (134-byte pointer stub, as every cold start). `duckdb` wasn't importable under `/usr/local/bin/python3` even though `pip install duckdb` claimed "already satisfied" — the known cold-start interpreter mismatch (`pip`/`pip3` resolve against `/usr/bin/python3.11`'s site-packages, not `python3`'s); fixed with `python3 -m pip install duckdb pandas streamlit pyflakes vulture bandit pytz`, same as every prior day's log entry notes.
+
+**False alarm resolved first, before any rotation work**: this clone's local HEAD was detached and 2 commits ahead of its own `main` ref (`c77f1a6` 2026-10-24 Extractor batches 13+14, `6d9bc0a` 2026-10-25 Data currency dangling-reference fix) — looked like two full days of work stranded, unpushed, at risk of being lost if the container were discarded. Verified both commits were sound (`verify_transfer.py` green on that HEAD) before touching anything, fast-forwarded local `main` to it, then `git push` reported "Everything up-to-date" — a `git fetch origin main` afterward confirmed `origin/main` already had both commits. The repo's local remote-tracking ref was just stale from this clone's own checkout sequence, not a real gap; no data was actually at risk, and nothing needed pushing to fix it. Recording this so a future day doesn't re-alarm on the same non-issue, and because it's a useful sanity check to run first regardless (`git fetch origin main` before assuming local state matches the remote).
+
+**Rotation choice**: Extractor last touched 2026-10-24, Data currency 2026-10-25, Cleanup 2026-10-22 — Cleanup is the most overdue. Active threads' own note said the next rotation should re-run all nine checks as a baseline before deciding whether a tenth is worth adding.
+
+**Baseline re-run, all nine, measured against the 2026-10-22 numbers rather than assumed clean:**
+- `pyflakes *.py`: 0 issues (clean).
+- `vulture *.py --min-confidence 60`: 0 issues (clean).
+- `check_sql_bindings.py`: 108/108 literal SQL queries bind clean against the live schema (up from 106/119 call sites in scope at the 2026-10-03 debut — more call sites exist now after two days of real code growth, specifically `build_gold_sample_novel.py`'s edits on 2026-10-24; not drift, since 108/108 still bind, zero failures).
+- `bandit -r . -x ./articles,./documents,./okoz,./structure`: 58 `B608` / 3 `B311` / 1 `B110` (58 vs the 2026-10-01 baseline's 57 `B608` — one more hit purely from code volume growth across the same two days; spot-checked the full location list against the known-offender files (`build_corpus_db.py`, `build_gold_sample*.py`, `build_links.py`, `build_llc.py`, `measure_extractor_recall.py`, `score_gold.py`, `test_transfer_e2e.py`, `verify_transfer.py`) — no new file, no new class, all still already-audited f-string SQL with hardcoded hardcoded-constant interpolation only).
+- `check_code_clones.py`: 5 cross-file pairs, byte-identical to the 2026-10-22 baseline list (`snapshot_age_note` identical, `sha256_file` identical, `excerpt` near-dup 0.930, `citation_dict`/`citation_to_dict` 0.795, `build_gold_sample.py:main()`/`build_gold_sample_novel.py:build_candidates()` 0.579) — zero new pairs despite two days of edits to `build_gold_sample_novel.py`.
+- `check_fstring_interp.py`: 56 f-string `execute()` calls across 19 files, every interpolated expression still resolves to a hardcoded constant or a verified IRREDUCIBLE entry.
+- `check_dead_columns.py`: 15/15, byte-identical column list to 2026-10-22 (no new dead columns from the intervening days' changes to `build_llc.py`/`app_hierarchy.py`/`app_llc.py`).
+
+All nine clean, no regressions, no new findings — a genuine baseline confirmation rather than an assumption.
+
+**The fix**: `parser.py`'s `REPEALED_ARTICLES = {'63', '70', '71', '72', '176', '177', '179'}` (line 30), flagged redundant 2026-10-23, picked up today. `is_repealed` was `(str(base_num) in REPEALED_ARTICLES and superscript_val is None) or ("lost force" in clean_text.lower())`. Re-confirmed the 2026-10-23 finding directly before touching code: queried `parsed_articles.json`'s 10 superscript articles for "lost force" in `clean_text` — zero matches, so the `and superscript_val is None` guard was dead weight twice over (none of the 7 `REPEALED_ARTICLES` members have a superscript variant to begin with, and no superscript article independently matches "lost force" either). Deleted the constant and simplified `is_repealed` to `"lost force" in clean_text.lower()`.
+
+**Verification, not assumption**: `sha256sum parsed_articles.json` before (`808ce522...`) and after (`808ce522...`) — byte-identical. `python3 parser.py --verify`: 10/10 checks pass, including `Check 7: Repealed Articles Count (7/7)`. `python3 -m unittest test_transfer_e2e.py`: 14/14, including `test_edge_repealed_articles` (its `EXPECTED_REPEALED_ARTICLES` list left untouched deliberately — see decision below). `python3 verify_transfer.py`: PASSED, identical summary and reconciliation-detail table to the pre-fix baseline (9634 edges, 234 superseded acts, same 9-article voided/repealed set, same `suspect_version_drift` note).
+
+**Decision on the two remaining literal copies**: the Backlog item's own phrasing suggested updating `parser.py`'s `--verify` CLI (`expected_repealed`) and `test_transfer_e2e.py`'s `EXPECTED_REPEALED_ARTICLES` too, "rather than duplicating the literal list a third time." Looked at both closely before changing anything: they are not a second/third copy of the *source of truth* `REPEALED_ARTICLES` was — they're independent ground-truth regression assertions checking the *parser's output* against a known-correct expected value, the same role every other hardcoded expected-value assertion in both files already plays (`expected_super`, `titleless_count`, `EXPECTED_SECTION_SYMBOLS`, etc.). Making them "compute the same way" as the thing they're meant to verify would make each test circular — a regression in the "lost force" detection logic would then always match its own ground truth by construction. Left both untouched; this is a correction to the Backlog item's framing, not a partial implementation of it.
+
+**Considered and rejected a tenth check class**: `CC_GENERAL_PART = -111189` is duplicated verbatim in exactly 2 files (`build_corpus_db.py`, `verify_transfer.py`) — a magic-constant-duplication check was the first idea for "what's a defect class none of the nine existing checks catch." Rejected: it's a static fact about this specific corpus snapshot (the Civil Code's own doc_id), not a derived/computed value with any realistic drift path the way every other check's target has one (dead code, SQL-injection shape, schema drift, duplicate logic, write-without-read). Two occurrences of a fact that would only ever change alongside a full corpus re-ingest (which would require re-running every pipeline script and re-verifying everything anyway) isn't a defect class worth a standing checker. No tenth check added today.
+
+**What changed**: `parser.py` only (2 deletions, 1 simplification). `corpus.duckdb` untouched — this fix lives entirely in the English-markdown-transfer parser, upstream of and independent from the DuckDB build; `parsed_articles.json` is tracked but confirmed byte-identical (`git status` shows no diff for it), so nothing to stage there either. `DAILY_REVIEW.md` (this entry, Active threads, Backlog).
 
 ### 2026-10-25 — Data currency rotation: the "dangling reference" currency signal was 100% LexUZ editorial noise in two live UI panels, found via evidence_kind × dst_dangling cross-check, fixed both apps + build_llc.py
 
