@@ -93,8 +93,27 @@ RE_ANCHOR_SELF = re.compile(r"(?:ushbu|shu|mazkur)\s+Kodeks\w*", re.IGNORECASE)
 # (matched as an unrelated single citation, the range's low end dropped
 # entirely with no edge, dangling or otherwise). Measured 2026-09-17 (see
 # DAILY_REVIEW.md): 16 clauses corpus-wide.
+# Each item of the list may carry its own short parenthetical title right
+# after its number, before the next separator ("43 (“Bank omonati”) va 44
+# (“Bank hisobvaragʻi”) boblari") -- LexUZ names chapters/articles this way
+# often enough in multi-item lists that the parenthetical otherwise breaks
+# "nums" entirely (the old pattern required a contiguous digit/separator
+# run with nothing else interposed, so the whole clause fell through to a
+# bare act/chapter citation, dropping every listed item but the last).
+# Bounded to 100 chars and excludes further parens so it can't accidentally
+# swallow past its own closing ")" into unrelated text. Measured 2026-10-27
+# (see DAILY_REVIEW.md): re-measuring the ALREADY-recorded known_gap
+# (gold_id 548, 2026-10-24) with a regex that also allows the paren after
+# the SECOND item -- the original measurement required the paren only on
+# the first -- found the true corpus-wide in-scope footprint is 5 occurrences,
+# not 1 as originally measured, crossing this project's own single-occurrence
+# deferral threshold. _expand() below strips the parenthetical text itself
+# before splitting on comma/va, since a title can contain the literal word
+# "va" ("Majburiyat tushunchasi va taraflari") which would otherwise be
+# misread as a second list separator.
 RE_CLAUSE = re.compile(
-    r"(?P<nums>\d+(?:\s*(?:,|va|[-–—]+)\s*\d+)*)(?:\s*[-–—]\s*|\s+)(?P<unit>modda|bob|paragraf)(?P<suffix>\w*)",
+    r"(?P<nums>\d+(?:\s*\([^()]{0,100}\))?(?:\s*(?:,|va|[-–—]+)\s*\d+(?:\s*\([^()]{0,100}\))?)*)"
+    r"(?:\s*[-–—]\s*|\s+)(?P<unit>modda|bob|paragraf)(?P<suffix>\w*)",
     re.IGNORECASE,
 )
 # Another act starting: stop scanning, its numbers are not the Code's.
@@ -400,7 +419,8 @@ def _expand(nums: str) -> tuple[list[str], str]:
     (or, when the sub-range came first, losing the rest of the list too — the
     fixed unit separator couldn't even be reached).
     """
-    top_items = [p for p in re.split(r"\s*(?:,|va)\s*", nums) if p.strip()]
+    nums_bare = re.sub(r"\s*\([^()]{0,100}\)", "", nums)
+    top_items = [p for p in re.split(r"\s*(?:,|va)\s*", nums_bare) if p.strip()]
     values: list[str] = []
     single_range = False
     for item in top_items:

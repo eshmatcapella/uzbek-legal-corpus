@@ -74,6 +74,62 @@ ROMAN_CHAPTER = cx.RE_ROMAN_CHAPTER
 QUOTE_TITLE = re.compile(r"[“”‘’\"]")
 DIGIT4 = re.compile(r"\b\d{4}\b")  # possible concatenated superscript form
 
+# 2026-10-27 widening (Extractor rotation "post-exhaustion strategy" option 2,
+# see DAILY_REVIEW.md Backlog): the 22-feature signature above exhausted its
+# own novel-signature pool (483/483 covered, measured today before this
+# change) -- every corpus-wide *coarse* shape has been read once, but
+# "covered" only means that, not that every finer variation within a shape
+# has been. These four additions target exactly the finer axes the Backlog
+# named (distinct-separator-count, anchor-to-clause distance) plus two
+# surface forms the coarse signature couldn't see at all: the "§ N"
+# section-mark notation (already a recorded known_gap, gold_id 324, but the
+# OLD signature had no feature for "§" at all, so a window using it was only
+# ever distinguished by coincidence of its OTHER features) and ";"/"yoki"
+# list separators (neither tracked before, despite "va"/"hamda"/"," all
+# being tracked).
+SECTION_MARK = re.compile(r"§")
+SEP_SEMICOLON = re.compile(r"\d\s*;\s*\d")
+SEP_YOKI = re.compile(r"\d\s+yoki\s+\d", re.IGNORECASE)
+_DIGIT_GROUP = re.compile(r"\d+")
+_FIRST_DIGIT = re.compile(r"\d")
+
+
+def _bucket(n: int, edges: tuple[int, ...]) -> int:
+    """Smallest index i such that n <= edges[i], or len(edges) if n exceeds all."""
+    for i, edge in enumerate(edges):
+        if n <= edge:
+            return i
+    return len(edges)
+
+
+def _separator_count(window_text: str) -> int:
+    """How many distinct separator KINDS appear in this window -- a single
+    boolean per kind (the old signature) can't distinguish a window using
+    one separator from one mixing three, even though a mixed-separator list
+    is a structurally different (and likely harder) shape."""
+    return sum(bool(p.search(window_text)) for p in (
+        SEP_COMMA, SEP_VA, SEP_HAMDA, SEP_DASH_ASCII, SEP_DASH_EN_EM,
+        SEP_DASH_DOUBLED, SEP_SEMICOLON, SEP_YOKI,
+    ))
+
+
+def _anchor_distance_bucket(window_text: str) -> int:
+    """Distance (chars) from the anchor's end to the first digit in the
+    window, bucketed. A citation clause sitting right at the anchor ("...FK
+    15-moddasi") is a different shape from one separated by several words of
+    prose ("...FK, yuqorida koʻrsatilgan tartibda, 15-moddasi") even when
+    every other boolean feature agrees -- the old signature had no notion of
+    *distance* at all."""
+    m = _FIRST_DIGIT.search(window_text)
+    return _bucket(len(window_text) if m is None else m.start(), (3, 15, 40))
+
+
+def _digit_group_bucket(window_text: str) -> int:
+    """How many distinct digit runs appear in the first 80 chars, bucketed --
+    a proxy for how many numbers (articles/chapters/parts) the clause is
+    juggling at once, independent of which separator joins them."""
+    return _bucket(len(_DIGIT_GROUP.findall(window_text[:80])), (1, 2, 4))
+
 
 def signature(window_text: str, anchor_kind: str, field: str) -> tuple:
     return (
@@ -99,6 +155,12 @@ def signature(window_text: str, anchor_kind: str, field: str) -> tuple:
         bool(ROMAN_CHAPTER.search(window_text)),
         bool(QUOTE_TITLE.search(window_text)),
         bool(DIGIT4.search(window_text)),
+        bool(SECTION_MARK.search(window_text)),
+        bool(SEP_SEMICOLON.search(window_text)),
+        bool(SEP_YOKI.search(window_text)),
+        _separator_count(window_text),
+        _anchor_distance_bucket(window_text),
+        _digit_group_bucket(window_text),
     )
 
 

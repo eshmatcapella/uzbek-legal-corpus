@@ -45,22 +45,39 @@ thread closes, fold its outcome into Backlog (if a residual remains) or
 just let the Log entry be the permanent record — don't also keep growing a
 paragraph here.
 
-- **Extractor rotation — current state: gold set at 565 records (batches
-  13+14), precision 2543/2557 (99.5%), recall 2543/2581 (98.5%),
-  signature coverage 483/483 — FULLY EXHAUSTED. Last touched 2026-10-24**
-  (merged batches 13-14, 40/40 then 24/25 verdict `correct`, one new
-  known_gap at gold_id 548; also fixed a real measurement bug in
-  `build_gold_sample_novel.py` itself — its "novel" and "already covered"
-  signature computations had used two different text spans since the
-  sampler was introduced 2026-09-25, see Log for the full trace). **Thread
-  now needs a strategy decision, not a mechanical next batch**: with
-  `build_gold_sample_novel.py` reporting 0 never-covered signatures, a
-  `--seed`/`--n` redraw would just resample already-covered territory, not
-  find anything new. See Backlog > Extractor recall/precision "Post-
-  exhaustion strategy" for the three concrete options the next rotation
-  should choose between (uniform resampling for undetected regressions;
-  finer-grained signature features; or spend the rotation on existing
-  known_gap items instead of sampling at all).
+- **Extractor rotation — current state: gold set at 605 records (batch 15),
+  precision 2608/2623 (99.4%), recall 2608/2645 (98.6%), signature coverage
+  533/728 on a WIDENED signature (631 windows / 195 distinct signatures
+  still novel) — the post-exhaustion strategy decision is made and paying
+  off. Last touched 2026-10-27** (chose Backlog > Extractor recall/precision
+  "Post-exhaustion strategy" option 2 — widen `signature()`'s own feature
+  set — over options 1/3: added 6 features to `build_gold_sample_novel.py`
+  (a `§`/semicolon/`yoki` separator each, plus bucketed separator-count,
+  anchor-to-clause distance, and digit-group-count), which raised
+  corpus-wide distinct signatures 483 → 728 and reopened 671 windows across
+  235 signatures that the old 22-feature signature had collapsed into
+  already-"covered" buckets — the exhaustion was an artifact of the
+  signature's own coarseness, not of the corpus running out of real
+  variation. Drew and hand-verified a 40-window batch 15 (gold_id 565-604)
+  from the newly-reopened pool: 38/40 `correct`, 2/40 new `known_gap`
+  (gold_id 587: a `Kodeksning`-collateral-loss gap in the `RE_STOP` design,
+  real but single-occurrence; gold_id 597: a NEW false-positive class where
+  an amending law's own next sequential article heading gets misattributed
+  to the Civil Code, also single-occurrence) — plus one real, live bug
+  found and FIXED at the source (gold_id 568, row 3635): a comma/va list
+  where each item carries its own parenthetical title broke `RE_CLAUSE`'s
+  contiguous-nums requirement, the same root cause as the pre-existing
+  known_gap at gold_id 548 (2026-10-24, chapters not articles) — and
+  re-measuring 548's own corpus-wide footprint with a less-restrictive
+  regex (allowing the parenthetical on either list item, not just the
+  first) found the TRUE count is 5 occurrences, not 1, crossing this
+  project's own single-occurrence deferral line. Fixed in
+  `citation_extractor.py`, re-ran `build_links.py`/`build_llc.py` (link_edge
+  9634 → 9640 edges), gold_id 548 itself corrected from `known_gap` to
+  `correct` in place. See Log for the full trace. **Next Extractor
+  rotation**: keep drawing batches from the widened signature's 631-window
+  novel pool (`python build_gold_sample_novel.py --n 40 --seed <next>`) —
+  no new strategy decision needed until THAT pool exhausts too.
 
 - **Data currency rotation — current state: found and shipped a real UI/signal
   fix — the "dangling reference" currency signal (acts citing a General Part
@@ -128,42 +145,36 @@ paragraph here.
 ## Backlog
 
 ### Extractor recall/precision
-- **Post-exhaustion strategy (new, 2026-10-24).** `build_gold_sample_novel.py`
-  now reports 483/483 corpus-wide signatures covered — 0 windows remain in
-  never-covered territory (see Active threads and Log, 2026-10-24, for the
-  measurement-bug fix that made this number trustworthy for the first time).
-  A `--seed`/`--n` redraw from here on would just resample already-annotated
-  shapes, not find anything new — the next Extractor rotation needs to pick
-  one of three concrete directions rather than mechanically drawing "batch
-  15": (1) a uniform-random batch via `build_gold_sample.py` instead of the
-  novel sampler, to catch a regression a future `citation_extractor.py`
-  change might introduce in already-covered territory (signature coverage
-  says every *shape* has been seen once, not that every shape is
-  bug-free everywhere it occurs); (2) widen `signature()`'s own feature set
-  in `build_gold_sample_novel.py` (currently 22 boolean surface features) —
-  it's deliberately coarse, so "covered" only means "a window with this
-  coarse shape was read once," and a finer signature (e.g. distinguishing
-  position-in-text, number of distinct separators, or anchor-to-clause
-  distance) would likely surface a fresh novel pool without changing any
-  underlying data; (3) spend the rotation budget on an existing known_gap
-  item instead of sampling at all — several (the paragrif/moddsi typos, the
-  §-notation and Roman-chapter-lookahead gaps) are cheap, well-scoped fixes
-  deliberately deferred only because of their 1-occurrence footprint, and
-  fixing a batch of them at once would raise recall without any new
-  sampling.
+- ~~**Post-exhaustion strategy (new, 2026-10-24).**~~ **Resolved 2026-10-27:
+  chose option 2 (widen `signature()`), see Active threads for the full
+  measurement.** `build_gold_sample_novel.py`'s 22-boolean signature had
+  exhausted its own novel pool (483/483 covered); widening it to 28
+  features (added a `§`/semicolon/`yoki` separator feature each, plus
+  bucketed separator-count, anchor-to-clause distance, and digit-group-count)
+  raised corpus-wide distinct signatures 483 → 728 and reopened 631 windows
+  across 195 still-novel signatures after batch 15 consumed the first 40 —
+  confirms the exhaustion was the signature's own coarseness, not the corpus
+  running out of real variation. Options 1 (uniform regression resampling)
+  and 3 (spend the rotation on existing known_gap items) remain available
+  for a FUTURE rotation once this newly-widened pool exhausts too, but
+  aren't needed yet. One of the deferred known_gap items option 3 would have
+  picked — the chapter-list-with-parenthetical gap, gold_id 548 — got fixed
+  anyway today as a side effect of batch 15's own hand-reading (see Active
+  threads and Log, 2026-10-27).
 - ~~**Build the gold set.**~~ **Scoring layer built 2026-09-20, grown to 100
   records 2026-09-22, to 140 via signature-stratified sampling 2026-09-25,
   to 220 via two more signature-stratified batches 2026-09-28, to 260 via
   a third 2026-09-29, to 300 via a fourth 2026-10-02, to 340 via a fifth
   2026-10-04, to 380 via a sixth 2026-10-10, to 420 via a seventh
   2026-10-13, to 460 via an eighth 2026-10-15, to 500 via a ninth
-  2026-10-18, to 565 via batches 13-14 2026-10-24** — see Active threads and
-  Log for the full detail.
-  `gold_citations.json` (565 hand-verified anchor occurrences, fourteen
-  batches — two uniform-random, twelve signature-stratified) + `score_gold.py`
+  2026-10-18, to 565 via batches 13-14 2026-10-24, to 605 via batch 15
+  (widened signature) 2026-10-27** — see Active threads and Log for the
+  full detail.
+  `gold_citations.json` (605 hand-verified anchor occurrences, fifteen
+  batches — two uniform-random, thirteen signature-stratified) + `score_gold.py`
   (the scorer) + `build_gold_sample.py`/`build_gold_sample_novel.py` (the
-  two samplers) now exist; current score **precision 2543/2557 (99.5%),
-  recall 2543/2581 (98.5%)** — the mismatches are the documented "paragrif"
+  two samplers) now exist; current score **precision 2608/2623 (99.4%),
+  recall 2608/2645 (98.6%)** — the mismatches are the documented "paragrif"
   spelling gap, the 2026-09-25 Roman-chapter+paragraf gap, the 2026-09-28
   "hamda" list-separator gap, the 2026-09-28 chapter+paragraph-list-with-
   parenthetical gap, the 2026-09-28/2026-10-10 "bare article number before
@@ -211,6 +222,64 @@ paragraph here.
   batch found 1 real bug (see below) + 1 known_gap, a higher yield than the
   two most recent uniform batches — see Active threads and Log for the full
   measurement and the decision to keep using this sampler going forward.
+- **Bare "Kodeksning" (no ushbu/mazkur/shu) directly after the Civil Code's
+  own name can be a redundant self-reference, not a different-code
+  announcement.** Found 2026-10-27 via batch 15 (gold_id 587, row 19636):
+  "Oʻzbekiston Respublikasining Fuqarolik kodeksi Kodeksning 53-moddasi"
+  drops article 53 entirely, because `RE_STOP`'s "kodeksning" alternative
+  (added 2026-09-15, measured then at 32 correct stops / 0 collateral loss)
+  assumes bare "Kodeksning" always names a DIFFERENT code. Here it doesn't:
+  the citing document's `doc_type` is `law` (not `code`), so it has no "own
+  code" for "Kodeksning" to self-refer to — it's LexUZ redundantly restating
+  the Civil Code just named one word earlier. Checked the one other
+  near-identical corpus-wide surface form ("mazkur Kodeksning <N>-moddasi"
+  directly after a Civil Code mention, row 21291/gold_id 24 in the same
+  batch): there `doc_type` genuinely IS `code`, matching this project's
+  existing, deliberately-tested design (see `citation_extractor.py`'s own
+  self-test for "mazkur Kodeksning" with `is_the_code=False`) — so that one
+  is correct, not a second instance. Measured corpus-wide (regex:
+  `Kodeksning\s+\d+\s*-?\s*modda` within 20 chars of a `fuqarolik_kodeksi`
+  anchor): exactly 2 raw matches total, one of each kind — so this gap's
+  true footprint is exactly 1 occurrence. Not fixed given the
+  single-occurrence scope AND because `extract()` has no access to
+  `doc_type` at all (the one signal that would distinguish the two cases) —
+  would need a new parameter threaded through every caller for a single
+  occurrence. The existing "kodeksning" stop-word itself is NOT touched by
+  this finding — its own 32-correct-stops justification still holds; this is
+  a narrower residual gap in that design's generality, recorded rather than
+  acted on (see DAILY_REVIEW.md's own instruction not to silently override a
+  documented design decision). Recorded as a permanent known_gap.
+- **An amending/omnibus law's own next sequential article heading can be
+  misattributed to the Civil Code — a NEW false-positive class, not a grain
+  loss.** Found 2026-10-27 via batch 15 (gold_id 597, row 24979): the anchor
+  "Fuqarolik kodeksida" appears only inside a textual word-substitution
+  instruction ("...“Fuqarolik kodeksida” degan soʻzlar “qonun
+  hujjatlarida” degan soʻzlar bilan almashtirilsin" — "the words 'in the
+  Civil Code' shall be replaced with the words 'in legislative acts'"), with
+  no real Civil Code article number anywhere in its own window — but the
+  scan reaches past that instruction into the SAME amending law's own next
+  top-level numbered item, "14-modda." (that law's own Article 14,
+  introducing an unrelated amendment to the Anti-Terrorism Law), and
+  misattributes it to the Civil Code. The distinguishing surface signal: a
+  genuine citation almost always carries a genitive suffix on
+  modda/bob/paragraf ("-si"/"-ning"/"-lari", since Uzbek grammar requires
+  "the Code's article"); a document's own bare structural heading carries
+  none. Measured corpus-wide: of 3628 `RE_CLAUSE` matches reached (not
+  already blocked by `RE_STOP`) across every Civil-Code-anchor window in the
+  corpus, only 23 have an empty suffix at all, and hand-checking all 23
+  found exactly 1 genuine false positive this way — every other empty-suffix
+  match is a real citation LexUZ simply wrote without the suffix (a bare
+  "N-bob" immediately followed by its own paragraf/qualifying clause, or a
+  parenthetical article-number gloss like "(1157-modda)" restating a Civil
+  Code article's own text in an amending decree — see gold_id 4/5 in the
+  same batch). Not fixed given the single-occurrence scope; if ever picked
+  up, the empty-suffix signal alone is too noisy to stop on unconditionally
+  (it also fires on legitimate citations), but combining it with "the
+  preceding ~150 chars contain a word-substitution phrase (degan soʻzlar ...
+  almashtirilsin/chiqarib tashlansin) with no intervening Civil Code article
+  number" would likely isolate this shape without new false negatives —
+  worth re-testing against a larger sample if more instances turn up.
+  Recorded as a permanent known_gap.
 - **LexUZ misspells "paragrafi" as "paragrifi" in one row — chapter+section
   grain silently lost.** Found 2026-09-22 while annotating the second
   gold-set batch (see Active threads): row 46605 (the Civil Code's own
@@ -269,27 +338,39 @@ paragraph here.
   as a permanent `gold_citations.json` known_gap record (`gold_id` 324)
   instead. If ever picked up, accept `§\s*(\d+)` as an alternate spelling
   alongside `\d+\s*-\s*paragraf` in the chapter+section lookahead.
-- **Chapter list with a parenthetical quoted title after EACH chapter
-  number drops the whole list.** Found 2026-10-24 via gold batch 14 (see
-  Log): row 29093 reads "Fuqarolik kodeksining 43 ("Bank omonati") va 44
-  ("Bank hisobvaragʻi") boblari" — two chapters (Bank Deposit, Bank
+- ~~**Chapter list with a parenthetical quoted title after EACH chapter
+  number drops the whole list.**~~ **FIXED 2026-10-27.** Found 2026-10-24 via
+  gold batch 14: row 29093 reads "Fuqarolik kodeksining 43 ("Bank omonati")
+  va 44 ("Bank hisobvaragʻi") boblari" — two chapters (Bank Deposit, Bank
   Account), each immediately followed by its own quoted title in
   parentheses before the "va"/unit word. `RE_CLAUSE`'s `nums` group only
-  extends across a contiguous run of digits/comma/va/dash; the parenthetical
-  between "43" and "va 44" breaks that run entirely, so the clause never
-  matches at all and both chapters fall through to a bare act citation —
-  not a grain loss, a full drop of 2 provisions. Measured corpus-wide
-  (regex: `NUM paren-title va NUM paren-title bob/modda/paragraf`, within 80
-  chars of a Civil Code anchor): exactly 1 occurrence. Not fixed given the
-  single-occurrence scope, same precedent as the "§ N" and "moddsi" items
-  above and the chapter+paragraph-list-with-parenthetical gap further below;
-  recorded as a permanent `gold_citations.json` known_gap record (`gold_id`
-  548) with the true two-chapter expected output instead. If ever picked
-  up: this is the SAME underlying gap as the chapter+paragraph-list-with-
-  parenthetical item below (a parenthetical interrupting a list before its
-  unit word) — a single fix that teaches `RE_CLAUSE`'s `nums` group to skip
-  over a balanced `(...)` between list items would likely resolve both at
-  once rather than needing two separate patches.
+  extended across a contiguous run of digits/comma/va/dash; the
+  parenthetical between "43" and "va 44" broke that run entirely, so the
+  clause never matched at all and both chapters fell through to a bare act
+  citation — not a grain loss, a full drop of 2 provisions. The original
+  2026-10-24 measurement (regex: `NUM paren-title va NUM paren-title
+  bob/modda/paragraf`, within 80 chars of a Civil Code anchor, requiring the
+  parenthetical only on the FIRST number) found exactly 1 occurrence and
+  deferred it on that basis. Re-measured 2026-10-27 while hand-reading
+  Extractor batch 15 (which independently hit the same root cause for
+  ARTICLES, not chapters, at gold_id 568/row 3635) with a regex that also
+  allows the parenthetical on the SECOND item: the TRUE corpus-wide
+  in-scope count is 5 (29093, 3635, and 3 more — 40940, 41009, 43296),
+  crossing this project's own single-occurrence deferral threshold. Fixed
+  in `citation_extractor.py`: `RE_CLAUSE`'s `nums` group now accepts an
+  optional short parenthetical (≤100 chars, no nested parens) after each
+  listed number, and `_expand()` strips parenthetical text before splitting
+  on comma/va (a title can contain the literal word "va", e.g. "Majburiyat
+  tushunchasi va taraflari", which would otherwise be misread as a second
+  list separator). This does NOT also fix the separate chapter+paragraph-
+  list-lookahead gap below (gold_id 148, row 25634) — that one lives in the
+  `bob` branch's own single-paragraf lookahead regex, a different code path
+  the 2026-10-24 note's "a single fix... would likely resolve both at once"
+  speculation turned out not to cover; still open, see below. 65/65
+  extractor self-tests pass; `gold_id` 548's own record corrected from
+  `known_gap` to `correct` in place; `link_edge` 9634 → 9640 (+6 edges;
+  `build_links.py`/`build_llc.py` re-run, no `corpus.duckdb` rebuild). See
+  Log, 2026-10-27.
 - **LexUZ typo drops an article entirely: "moddsi" instead of "moddasi".**
   Found 2026-10-10 via the ninth signature-stratified gold batch (see Log):
   row 38339 reads "Fuqarolik kodeksining 43-moddsi." — a source-data typo
@@ -1074,6 +1155,36 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-10-27 — Extractor rotation: widened the novel-signature sampler past its own exhaustion, batch 15 (565→605), fixed a real parenthetical-list bug that also resolved the pre-existing gold_id 548, found 2 new known_gaps
+
+**Environment setup**: fresh clone, `git lfs pull` for the parquet stub. `duckdb`/`pandas`/`pyarrow` not importable under `/usr/local/bin/python` (`pip install` landed in a different interpreter's site-packages); fixed with `python -m pip install duckdb pandas pyarrow pyflakes`. `verify_transfer.py` baseline green before touching anything (9634 edges, same reconciliation-detail set as 2026-10-26's close-out).
+
+**Rotation choice**: Extractor last touched 2026-10-24, Data currency 2026-10-25, Cleanup 2026-10-26 — Extractor is next. Active threads' own note said the thread needed a strategy decision (Backlog > Extractor recall/precision "Post-exhaustion strategy") before drawing another batch, since the 22-feature signature had hit 483/483 covered — re-confirmed that exhaustion first (`python build_gold_sample_novel.py --n 1`: "windows in never-covered signatures: 0").
+
+**The decision**: picked option 2 (widen `signature()`'s own feature set) over option 1 (uniform regression resampling) and option 3 (spend the budget on existing known_gap items without sampling). Reasoning: option 1 doesn't generate new information about untested shapes, it only re-checks old ones; option 3 is valuable but doesn't grow the sampling methodology itself, and several of the cheap known_gap items are only cheap because they're genuinely 1-occurrence (fixing them wouldn't move recall meaningfully). Option 2 was explicitly flagged in the Backlog as likely to "surface a fresh novel pool without changing any underlying data" — worth testing that claim directly rather than assuming it.
+
+**Widening `build_gold_sample_novel.py`'s signature (22 → 28 features)**: added `SECTION_MARK` (`§`), `SEP_SEMICOLON`, `SEP_YOKI` (three surface forms the old signature had literally zero feature for, despite `SEP_COMMA`/`SEP_VA`/`SEP_HAMDA` all being tracked), plus three Backlog-named bucketed features: `_separator_count` (how many distinct separator *kinds* appear — a window mixing comma+va+dash is structurally different from one using only comma, even though the old per-kind booleans couldn't tell them apart), `_anchor_distance_bucket` (chars from anchor-end to the first digit, bucketed at 3/15/40 — a clause sitting right at the anchor is a different shape from one buried in prose), `_digit_group_bucket` (count of distinct digit runs in the first 80 chars, bucketed at 1/2/4 — a proxy for how many numbers the clause juggles at once). Measured the effect directly (not assumed): corpus-wide distinct signatures rose 483 → 728, and signatures-covered-by-the-existing-565-record-gold-set fell from "all of them" to 493/728 — 671 windows across 235 distinct signatures reopened into never-covered territory. This confirms the Backlog's hypothesis: the exhaustion was the signature's own coarseness, not the corpus running out of real variation.
+
+**Drew and hand-verified batch 15** (`--n 40 --seed 20261027`, gold_id 565-604), reading every window against the raw text, same method every prior batch used:
+
+- **38/40 verdict `correct`** on first read, including several shapes worth separately confirming rather than assuming: (a) an amending decree's own sequential "registration-number. N-modda. [article title]" enumeration genuinely restating Civil Code article text (rows 4761, gold_id 4/5) — correct, not a false positive, confirmed by reading the full passage; (b) `mazkur Kodeksning <N>-moddasi` directly after a Civil Code mention correctly stopping (gold_id 24, row 21291) because the citing document's own `doc_type` is `code` — matches the existing, deliberately-tested design (`citation_extractor.py`'s own self-test for this exact phrase with `is_the_code=False`); (c) a bare `kichik boʻlimi` (sub-part) citation correctly falling through to a bare act, matching the already-established "schema has no field to express this sub-grain" precedent (same treatment as `qism`, confirmed against the existing self-test for `"III-boʻlimining 2-kichik boʻlimi"`).
+
+- **1 real, live bug found and fixed at the source** (gold_id 568, row 3635): "Fuqarolik kodeksining 738 (qarz oluvchining majburiyatlarini taʼminlash) va 739-moddalari (kreditdan maqsadli foydalanish)" — each listed article carries its own parenthetical title before the next separator/unit word. `RE_CLAUSE`'s `nums` group required a contiguous digit/separator run with nothing interposed, so the parenthetical broke it entirely and article 738 was silently dropped (739 survived as a bare `single`, not even grouped as a `list`). This is the SAME root cause as the pre-existing known_gap at `gold_id` 548 (2026-10-24, "Fuqarolik kodeksining 43 (“Bank omonati”) va 44 (“Bank hisobvaragʻi”) boblari", chapters not articles), which had been deliberately left unfixed on a measured "exactly 1 occurrence" basis.
+
+  **Re-measured 548's own footprint before deciding whether to fix anything**: the original 2026-10-24 regex required the parenthetical only on the FIRST list item (`NUM (title) va NUM-bob`); extending it to also allow the parenthetical on the SECOND item (`NUM (title) va NUM (title)-bob`, which is what row 29093 actually has — both chapters carry a title, not just the first) found the TRUE corpus-wide in-scope count is **5 occurrences, not 1**: row 29093 (548 itself), row 3635 (this batch), and three more found by the corrected scan — row 40940 (`"60 (“Mualliflik huquqi”) va 61 (“Turdosh huquqlar”) - boblariga"`, both chapters dropped to a bare act), row 43296 (`"20 (...), 21 (...), 24-boblari (...)"`, a 3-item comma list where only the last chapter, 24, survived), row 41009 (a more deeply nested case — `"29-bobining 1 (...), 7-paragraflari (...), 30 (...) va 31-boblari"` — where chapter 31 survived but chapter 30 was dropped; the `29-bobining 1/7-paragraflari` portion is a separate, still-open section-grain limitation this fix doesn't touch). Two candidate matches from the broader scan were checked and ruled OUT of scope: row 41019's `"6 (...), 13-boblari"` belongs to the Oila kodeksi (Family Code), not the Civil Code, inside the same window; row 43424 fell outside the anchor's window entirely. 5 real occurrences crosses this project's own single-occurrence deferral threshold (explicitly used to defer the "paragrif" misspelling, Roman-chapter-lookahead, "§ N", and "moddsi" known_gaps) — so this time it gets fixed rather than deferred.
+
+  **The fix**: `RE_CLAUSE`'s `nums` group now accepts an optional short parenthetical (≤100 chars, excludes further parens so it can't swallow past its own close) after each listed number: `\d+(?:\s*\([^()]{0,100}\))?(?:\s*(?:,|va|[-–—]+)\s*\d+(?:\s*\([^()]{0,100}\))?)*`. `_expand()` now strips parenthetical text (`re.sub(r"\s*\([^()]{0,100}\)", "", nums)`) BEFORE splitting on comma/va — necessary because a title can itself contain the literal word "va" (`"Majburiyat tushunchasi va taraflari"`, row 43296), which would otherwise be misread as a second list separator and silently corrupt the split. Verified against all 5 measured occurrences directly (`cx.extract()` on each raw sentence) before running anything corpus-wide: all 5 now resolve completely (738+739; 43+44; 60+61; 20+21+24; 30+31, with chapter 29 still bare — the separate section-grain gap, unaffected and not claimed fixed). **Does NOT also fix** the separate chapter+paragraph-list-lookahead gap (`gold_id` 148, row 25634, `"4-bobining 1 (...) va 2-paragraflari"`) — that lives in the `bob` branch's own single-paragraf-lookahead regex, a different code path; the 2026-10-24 note's speculation that one fix would cover both didn't pan out, corrected in the Backlog.
+
+- **2 new `known_gap` records** (kept as documented limitations, not fixed, both exactly-1-occurrence):
+  - `gold_id` 587 (row 19636): bare `Kodeksning` (no ushbu/mazkur/shu) directly after the Civil Code's own name, `RE_STOP`'s "kodeksning" stop-word fires assuming it names a different code, but here the citing document's `doc_type` is `law` (not `code`) — it's a redundant LexUZ restatement of the Civil Code just named, not a different-code announcement, so article 53 is wrongly dropped. Checked the one other near-identical surface form corpus-wide (`mazkur Kodeksning`, row 21291/gold_id 24 in this same batch) and confirmed THAT one is correctly handled (`doc_type='code'` there, matching the existing design). `extract()` has no access to `doc_type` at all, the one signal that would distinguish the two cases — not fixed given a single occurrence would need a new parameter threaded through every caller. Per this project's own rule against silently overriding a documented decision: the "kodeksning" stop-word's own 2026-09-15 justification (32 correct stops, 0 collateral loss measured then) is NOT touched — this is a narrower residual gap in that design's generality, flagged for the record.
+  - `gold_id` 597 (row 24979): a NEW false-positive class, not a grain loss. The anchor `"Fuqarolik kodeksida"` appears only inside a word-substitution instruction (`"...“Fuqarolik kodeksida” degan soʻzlar “qonun hujjatlarida” degan soʻzlar bilan almashtirilsin"` — "the words 'in the Civil Code' shall be replaced with 'in legislative acts'"), with no real Civil Code article number in its own window — but the scan reaches past it into the SAME omnibus amending law's own next top-level numbered item, `"14-modda."` (that law's own Article 14, amending the Anti-Terrorism Law), and misattributes it to the Civil Code. Measured the TRUE scope before recording anything: of 3628 `RE_CLAUSE` matches reached corpus-wide (not already blocked by `RE_STOP`), only 23 have an empty suffix on modda/bob/paragraf at all (a genuine citation almost always carries a genitive suffix — `-si`/`-ning`/`-lari` — since Uzbek grammar requires "the Code's article"; a bare structural heading carries none); hand-checked all 23 and found exactly 1 genuine false positive this way — every other empty-suffix match is a real citation LexUZ simply wrote without the suffix (confirmed legitimate, e.g. the row-4761 decree-enumeration cases from the "correct" list above). Not fixed given the single-occurrence scope; proposed fix direction recorded in Backlog if more instances ever turn up (combine the empty-suffix signal with "no Civil Code article number intervenes between a word-substitution phrase and the match").
+
+**Verification before committing anything**: `python citation_extractor.py` → 65/65 self-tests pass (unchanged test count — no existing test's expected output needed changing). `python score_gold.py` → 605 records scored, 0 drift (no bookkeeping errors in the gold-set edit), precision 2608/2623 (99.4%, was 2543/2557/99.5% — the 1-point drop is the new `gold_id` 597 false-positive known_gap, an honest number, not a mistake), recall 2608/2645 (98.6%, was 2543/2581/98.5%). `python build_links.py` (not a full `corpus.duckdb` rebuild — only `citation_extractor.py` changed): `link_edge` 9634 → 9640 (+6 edges, matching the 5 recovered occurrences' net new citations after accounting for ones already partially captured). `python build_llc.py`: output unchanged (none of the 5 recovered occurrences touch an LLC-relevant article). `python verify_transfer.py`: PASSED, all checks green, 9640 edges, identical reconciliation-detail table. `python -m unittest test_transfer_e2e.py`: 14/14. `python -m pyflakes citation_extractor.py build_gold_sample_novel.py`: clean. Corrected `gold_id` 548's own record from `known_gap` to `correct` in place (same precedent as the 2026-10-18 qism-grain correction) — its `notes` field rewritten to document the fix and the corrected footprint measurement.
+
+**Post-merge novel-signature state** (for tomorrow's Extractor rotation): re-ran `build_gold_sample_novel.py --n 1` after merging batch 15 — covered rose 493 → 533 (+40, confirming every one of the 40 sampled windows had a genuinely distinct signature, none repeated), leaving **631 windows across 195 distinct signatures still novel**. No new strategy decision needed; the next rotation can just draw another `--n 40` batch from this pool.
+
+**What changed**: `citation_extractor.py` (`RE_CLAUSE`'s `nums` group, `_expand()`, both with inline comments documenting the decision and the corrected measurement), `build_gold_sample_novel.py` (6 new signature features), `gold_citations.json` (+40 records, `gold_id` 548 corrected in place, `_meta` updated), `corpus.duckdb` (`link_edge` regenerated via `build_links.py`/`build_llc.py`, +6 edges, no other table affected), `DAILY_REVIEW.md` (this entry, Active threads, Backlog).
 
 ### 2026-10-26 — Cleanup rotation: re-ran all nine checks clean (baseline confirmed), fixed the `REPEALED_ARTICLES` redundancy, resolved a stale-local-clone false alarm on the way in
 
