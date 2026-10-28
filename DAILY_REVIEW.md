@@ -79,34 +79,37 @@ paragraph here.
   novel pool (`python build_gold_sample_novel.py --n 40 --seed <next>`) —
   no new strategy decision needed until THAT pool exhausts too.
 
-- **Data currency rotation — current state: found and shipped a real UI/signal
-  fix — the "dangling reference" currency signal (acts citing a General Part
-  article the corpus no longer has) was 100% LexUZ editorial-apparatus noise,
-  0% real legal citation, in both apps. Last touched 2026-10-25** (see Log for
-  the full trace): cross-checked `link_edge.evidence_kind` against
-  `dst_dangling` — all 17 corpus-wide dangling matches (8 repealed/removed
-  articles: 63,65,66,70,71,72,176,177) are `evidence_kind='editorial'`
-  (LexUZ's own "sharhi...Qarang:" commentary), **zero are `normative`** (an
-  act's own legal text). `app_hierarchy.py`'s "Findings that need a lawyer's
-  eye" panel and `app_llc.py`'s "Company-form articles the Code no longer
-  has" panel were both presenting this 100%-noise set as if it were real
-  legal findings. Fixed both panels to filter `evidence_kind='normative'`
-  (today: both render an explicit "none — N raw matches are editorial
-  apparatus" message instead of a misleading table), and fixed
-  `build_llc.py`'s matching log line and `REPEALED_COMPANY_ARTICLES` comment
-  the same way. Separately tried the by-now-standard internal-consistency
-  angle on a new pairing — temporal consistency between each dangling
-  citation's citing-act `doc_date` and its target's `article_amendment`
-  void/effective date — and found zero anomalies (all 17 predate their
-  target's voiding by 12-30 years; expected and correct, not a bug — see
-  Log for the full table). `lex.uz` egress not re-checked this rotation
-  (checked 2026-10-20, still 403-blocked as of then). No thread currently
-  mid-flight; next Data currency rotation should pull from Backlog > Data
-  currency, or keep applying the internal-consistency/evidence-kind angle to
-  a pair not yet tried. (Checked and ruled out as a candidate today:
-  `llc_implementing_act.derived_status` is directly copied from
-  `v_act_currency.derived_status` at build time, not independently
-  computed — comparing them would be comparing a view to itself.)
+- **Data currency rotation — current state: built a new qism-level (specific
+  article-part) currency signal, sharper than the existing article-level
+  `has_removed_or_voided_part` boolean — found and shipped 8 real normative
+  citations into an exactly-removed part of Article 212. Last touched
+  2026-10-28** (see Log for the full trace): `article_amendment.locator` and
+  `link_edge.dst_qism` are both ordinal-typed and both already reuse
+  `citation_extractor`'s canonical ordinal grammar, but nobody had compared
+  them directly. Of 31 `removed`/`voided` article_amendment rows, 9 name a
+  single qism precisely enough to cross-check — found 8 `link_edge` citations
+  (4 distinct citing acts, all `evidence_kind='normative'`) targeting that
+  exact now-gone part of Article 212. 2 of the 4 citing acts predate the 2019
+  removal and are genuinely stale (no correcting act found for either in the
+  corpus); the other 2 are themselves Plenum "fix an old reference" acts, not
+  stale citations — the UI shows all 8 and lets a reader judge, same as every
+  other currency panel here. Shipped as a new `build_links.py` table+view
+  (`qism_void_citation`/`v_qism_void_citation`, purely additive, zero schema
+  change to any existing table) and a new warning block in
+  `app_hierarchy.py::page_article()`, nested under the existing coarser flag.
+  Verified both apps render correctly (installed `streamlit`, drove
+  `app_hierarchy.py` with Playwright — Article 212 shows the 8 citations,
+  Article 173's unrelated `has_removed_or_voided_part=True` case correctly
+  shows nothing new). No thread currently mid-flight; next Data currency
+  rotation should either extend this qism-level angle (the other
+  `removed`/`voided` locator shapes — whole-article and multi-article-list —
+  are already covered by the existing article-level boolean, so this is
+  likely exhausted for `article_amendment`'s current shape; a genuinely new
+  extension would need `repeal_clause.target_locator` to start naming
+  sub-article grain too, which it doesn't today) or pull a fresh pairing from
+  the untried set (`en_align_status`/`derived_status`/`dst_dangling` × version
+  dates — not yet tried; `act.status` is a constant `'in-force'` across all
+  24,267 acts, confirmed 2026-10-28, not worth pursuing as a signal).
 
 - **Cleanup rotation — current state: nine repeatable checks
   (`pyflakes`, `vulture --min-confidence 60`, `bandit`, `check_sql_bindings.py`,
@@ -701,7 +704,17 @@ paragraph here.
   pairings tried, one real finding: keep pulling from the growing set of
   independently-populated columns (`evidence_kind`, `dst_dangling`,
   `derived_status`, `en_align_status`, `has_removed_or_voided_part`,
-  version dates) two at a time.
+  version dates) two at a time. **2026-10-28: fifth hit, a new grain
+  entirely** — not two existing columns cross-checked, but a finer-grained
+  signal built by comparing `article_amendment.locator`'s ordinal text
+  against `link_edge.dst_qism`'s, both normalized through
+  `citation_extractor`'s own ordinal grammar: 8 normative citations (4 acts)
+  into the exact qism of Article 212 that was later removed, not just
+  "somewhere in an article that had something removed" (the existing
+  `has_removed_or_voided_part` boolean's grain). See Active threads/Log for
+  the full trace and the shipped `v_qism_void_citation` signal. `act.status`
+  checked and ruled out as a pairing candidate the same day — constant
+  `'in-force'` across all 24,267 acts, zero information.
 - ~~**Is `norm_unit.en_repealed` (flagged dead-by-construction in the
   2026-10-22 Cleanup rotation) safe to eventually wire up as a currency
   signal, given more engineering?**~~ **Closed, decided no, 2026-10-23**:
@@ -1155,6 +1168,26 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-10-28 — Data currency rotation: built a qism-level (sub-article) currency signal sharper than the existing article-level flag, found 8 real normative citations into an exactly-removed part of Article 212, wired into app_hierarchy.py
+
+**Environment setup**: fresh clone. `duckdb` not importable under the active `python3` (pip landed in a different interpreter's site-packages, same split seen 2026-10-27); fixed with `python3 -m pip install duckdb streamlit pyflakes`. `articles/train-00000-of-00001.parquet` was still an un-smudged git-lfs pointer (134 bytes) — `git lfs pull` fetched it (163MB). Backed up `corpus.duckdb` before the first `build_links.py` run as a precaution (a run against the un-pulled parquet crashed immediately at the alias-doc query, before touching `link_edge`, but a `CREATE OR REPLACE TABLE` earlier in the script commits independently of the crash, so the backup was the safe move); restored from it, re-ran clean after the LFS pull. `verify_transfer.py` baseline green before touching anything (9640 edges, same reconciliation-detail set as 2026-10-27's close-out).
+
+**Rotation choice**: Extractor last touched 2026-10-27, Cleanup 2026-10-26, Data currency 2026-10-25 — Data currency is next (oldest-touched), consistent with the last three days' own rotation order (Data currency → Cleanup → Extractor).
+
+**The angle**: Active threads/Backlog's standing instruction is to keep cross-checking pairs from the growing set of independently-populated currency columns (`evidence_kind`, `dst_dangling`, `derived_status`, `en_align_status`, `has_removed_or_voided_part`, version dates), two at a time. Checked the schema for anything not yet tried: `act.status` turned out to be a constant `'in-force'` across all 24,267 acts (zero information — noted but not pursued, it's not a currency *signal* at all, just an unpopulated scrape field). `norm_unit.en_align_status` has exactly one non-`'aligned'` row (`'suspect_version_drift'`, Article 26¹) — already surfaced in `app_hierarchy.py` (line 574) and `verify_transfer.py`'s own reconciliation table since before this log began; not a new finding, confirmed and moved on.
+
+**The actual find**: `v_article_currency.has_removed_or_voided_part` is a whole-article boolean — it tells a reader "something in this article was removed/voided" but not *which* qism (part), so it can't be cross-checked against a specific incoming citation's own target. `article_amendment.locator` and `link_edge.dst_qism` are both ordinal-typed ("toʻrtinchi qism"/"4-qism"), though, and both already reuse `citation_extractor`'s canonical ordinal grammar (`ORDINALS`, `_ordinal_index`) elsewhere in the pipeline — nobody had compared them to each other. Of `article_amendment`'s 31 `removed`/`voided` rows, 10 have an empty locator (whole-article grain, already covered by the existing boolean) and 12 name a multi-article list/range (also whole-article grain for each member) — but **9 name a single qism by ordinal** ("`212-moddaning toʻrtinchi qismi`"), precise enough to compare directly against `link_edge.dst_qism` for the same article.
+
+Cross-checked those 9 against every `link_edge` row citing the same (doc_id, article_number) with a non-null `dst_qism`, normalizing both sides' ordinal text (digit form "`5-qism`"/"`5 band`" and word form "`beshinchi qism`") through the same `cx._ordinal_index` helper `article_amendment`'s own build already depends on — zero spelling variants failed to normalize (full coverage, verified separately before trusting the join). Result: **8 `link_edge` rows, from 4 distinct citing acts, target the exact qism `article_amendment` records as removed/voided — all 8 are `evidence_kind='normative'`** (the citing act's own text, not LexUZ editorial apparatus), 0 `editorial`/`amendment`. All 8 are Article 212 ("unauthorized construction and its consequences"), part 4, removed 2019-03-04 by OʻRQ-526.
+
+**Read all 4 citing acts before deciding this was worth shipping, not just counting the match**: 2 (`-1455965`, 2004-09-24; `-1947974`, 2010-11-19) predate the 2019 removal and cite the fourth part substantively, as then-current law — genuinely stale today, with no correcting act found for either in the corpus (`repeal_clause` has no row targeting either doc_id). The other 2 (`-5437823`, 2021-04-20; `-6402531`, 2023-02-20) are themselves Oliy sud Plenum "amend an earlier resolution" acts whose own body text is a find/replace instruction naming "Article 212's fourth part" as the string being edited — meta-corrections of exactly this kind of staleness in *other* documents, not themselves stale. The signal doesn't distinguish the two cases (both are `evidence_kind='normative'`, correctly — the extractor isn't wrong, "citing a voided qism" and "editing a reference to a voided qism" are both genuine normative hits), so the UI presents all 8 and lets a reader judge each citing act's own nature, same as every other currency panel in this project.
+
+**Shipped, not just measured** (this project's own bar for "a day that happened"): added `build_links.py::qism_void_citation`/`v_qism_void_citation` — a small derived table (Python-parsed `article_amendment.locator` → `(doc_id, article_number, qism_ordinal)`, reusing `citation_extractor.ORDINALS`/`_ordinal_index` rather than re-deriving the Uzbek ordinal list a second time) plus a view joining it back to `link_edge`/`article_amendment` for display. Zero schema changes to any existing table — purely additive, so no risk to either app's existing queries. Wired into `app_hierarchy.py`'s article page: when `has_removed_or_voided_part` is true AND at least one normative citation targets the exact voided qism, a new warning block lists each citing act and the specific part/date, nested under the existing coarser ⚠️ flag rather than replacing it (an article can have `has_removed_or_voided_part=True` with zero qism-specific hits, e.g. Article 173 here — confirmed the new block correctly stays silent there, see below). `app_llc.py` untouched — none of the 9 qism-specific voided locators fall on an LLC foundation article (grepped both apps for the new table/view names first; only `app_hierarchy.py` needed wiring).
+
+**Verification before committing**: `python build_links.py` — `v_qism_void_citation: 9 qism-specific removed/voided locators parsed; 8 link_edge citation(s) target that exact qism (8 of them normative)`, `link_edge` unchanged at 9640 edges (confirms zero existing rows touched). `python verify_transfer.py`: PASSED, all checks green, identical reconciliation-detail table to 2026-10-27's. `python -m pyflakes build_links.py app_hierarchy.py`: clean. Installed `streamlit` and actually ran both apps (`streamlit run app_hierarchy.py`/`app_llc.py --server.headless true`), drove `app_hierarchy.py` with Playwright: Article 212's page renders the new 8-citation warning correctly (screenshotted), Article 173's page (has_removed_or_voided_part=True, zero qism-specific hits) renders the existing ⚠️ line with no new block, confirming no false positives; `app_llc.py`'s LLC skeleton page renders unaffected. Killed both servers after.
+
+**What changed**: `build_links.py` (new `qism_void_citation` table + `v_qism_void_citation` view, ~70 lines, additive only), `app_hierarchy.py` (new warning block in `page_article()`, gated on `has_voided` and a non-empty query result), `corpus.duckdb` (two new objects only; `link_edge`/`article_amendment`/all other tables byte-for-byte unchanged in row count and content), `DAILY_REVIEW.md` (this entry, Active threads, Backlog).
 
 ### 2026-10-27 — Extractor rotation: widened the novel-signature sampler past its own exhaustion, batch 15 (565→605), fixed a real parenthetical-list bug that also resolved the pre-existing gold_id 548, found 2 new known_gaps
 

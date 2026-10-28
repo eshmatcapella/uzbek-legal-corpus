@@ -949,6 +949,84 @@ def main() -> int:
     log(f"\nv_act_partial_repeal: {n_partial_acts} acts have at least one "
         "individually-voided article/band (still current law overall)")
 
+    # A sharper currency signal than v_article_currency.has_removed_or_voided_part
+    # (a whole-article boolean): does another act's citation point at the EXACT
+    # qism that article_amendment records as removed/voided, not just at the
+    # article generally? Found 2026-10-28 (Data currency rotation, see
+    # DAILY_REVIEW.md): of article_amendment's removed/voided rows, 9 name a
+    # single qism by ordinal ("212-moddaning toʻrtinchi qismi") rather than a
+    # whole article or a multi-article list — those 9 are the only ones precise
+    # enough to compare against link_edge.dst_qism, which is also ordinal-typed.
+    # Reuses citation_extractor's own ordinal grammar/canon (cx.ORDINALS,
+    # cx._ordinal_index) on both sides so "oltinchi qism" and "6-qism" compare
+    # equal, instead of re-deriving the Uzbek ordinal list a second time.
+    re_qism_locator = re.compile(
+        r"^(?P<art>\d+)-moddaning\s+(?P<ord>" + "|".join(cx.ORDINALS) + r")\s+qismi$",
+        re.IGNORECASE)
+    re_qism_unit = re.compile(r"^(\d+)\s*-?\s*(?:qism|band)$|^(.+?)\s+(?:qism|band)$",
+                               re.IGNORECASE)
+
+    def qism_ordinal(raw: str | None) -> int | None:
+        """1-based part number from either a digit form ("5-qism") or an
+        ordinal-word form ("beshinchi qism"/"5 band"), or None if neither."""
+        if not raw:
+            return None
+        m = re_qism_unit.match(raw.strip().rstrip("."))
+        if not m:
+            return None
+        if m.group(1):
+            return int(m.group(1))
+        idx = cx._ordinal_index(m.group(2))
+        return idx + 1 if idx is not None else None
+
+    void_qism = {}  # (doc_id, article_number, qism_ordinal) -> amend event_id
+    for event_id, doc_id, locator in con.execute("""
+        SELECT event_id, doc_id, locator FROM article_amendment
+        WHERE change_type IN ('removed', 'voided') AND locator <> ''
+    """).fetchall():
+        m = re_qism_locator.match(locator.strip())
+        if m:
+            void_qism[(doc_id, m.group("art"), cx._ordinal_index(m.group("ord")) + 1)] = event_id
+
+    con.execute("""
+        CREATE OR REPLACE TABLE qism_void_citation (
+            edge_id         BIGINT,
+            amend_event_id  INTEGER
+        );
+    """)
+    void_doc_ids = sorted({k[0] for k in void_qism})
+    hits = []
+    for edge_id, doc_id, art, qism in con.execute("""
+        SELECT edge_id, dst_doc_id, dst_article_number, dst_qism FROM link_edge
+        WHERE dst_doc_id = ANY(?) AND dst_qism IS NOT NULL AND dst_article_number IS NOT NULL
+    """, [void_doc_ids]).fetchall():
+        event_id = void_qism.get((doc_id, art, qism_ordinal(qism)))
+        if event_id is not None:
+            hits.append((edge_id, event_id))
+    con.executemany("INSERT INTO qism_void_citation VALUES (?, ?)", hits)
+    con.commit()
+
+    con.execute("""
+        CREATE OR REPLACE VIEW v_qism_void_citation AS
+        SELECT e.edge_id, e.src_doc_id, e.dst_doc_id, e.dst_article_number,
+               e.dst_qism, e.evidence_kind, e.confidence, e.evidence_clean,
+               am.locator AS voided_locator, am.change_type AS voided_change_type,
+               am.amend_date AS voided_on, am.amending_doc_id,
+               va.doc_title AS voided_by_title
+        FROM qism_void_citation q
+        JOIN link_edge e ON e.edge_id = q.edge_id
+        JOIN article_amendment am ON am.event_id = q.amend_event_id
+        LEFT JOIN act va ON va.doc_id = am.amending_doc_id
+    """)
+    con.commit()
+    n_normative = con.execute(
+        "SELECT count(*) FROM v_qism_void_citation WHERE evidence_kind = 'normative'"
+    ).fetchone()[0]
+    log(f"\nv_qism_void_citation: {len(void_qism)} qism-specific removed/voided "
+        f"locators parsed; {len(hits)} link_edge citation(s) target that exact "
+        f"qism ({n_normative} of them normative, i.e. the citing act's own text, "
+        "not editorial apparatus) — see DAILY_REVIEW.md 2026-10-28 for the full trace.")
+
     log("\nGeneral Part coverage:")
     cov = con.execute(f"""
         SELECT count(DISTINCT dst_norm_id) FROM link_edge

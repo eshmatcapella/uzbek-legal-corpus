@@ -190,6 +190,25 @@ def page_article() -> None:
         if has_voided:
             line += "  · ⚠️ **part of this article has been removed/voided**"
         st.caption(line)
+        if has_voided:
+            qism_hits = q("""
+                SELECT src_doc_id, dst_qism, voided_on, voided_by_title
+                FROM v_qism_void_citation
+                WHERE dst_doc_id = ? AND dst_article_number = ? AND evidence_kind = 'normative'
+                ORDER BY src_doc_id
+            """, [DOC_GENERAL, article_number])
+            if qism_hits:
+                st.warning(
+                    f"**{len(qism_hits)} citation(s) below point at the exact "
+                    "qism that was later removed/voided** (not just somewhere "
+                    "in this article) — sharper than the article-level flag above:")
+                for src_doc_id, dst_qism, voided_on, voided_by in qism_hits:
+                    src_title, src_date = q(
+                        "SELECT doc_title, doc_date FROM act WHERE doc_id = ?",
+                        [src_doc_id])[0]
+                    st.caption(f"*{src_title[:100]}* ({src_date}) cites the "
+                               f"**{dst_qism}**, voided {voided_on}"
+                               + (f" by {voided_by[:70]}" if voided_by else "") + ".")
         with st.expander("Full amendment history (mined from LexUZ's amendment_note)"):
             for date, ctype, locator, act_no, eff_date, evidence, amend_title in q("""
                 SELECT am.amend_date, am.change_type, am.locator, am.amend_act_number,
