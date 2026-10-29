@@ -265,13 +265,6 @@ def main() -> int:
     con.commit()
 
     # ------------------------------------------------------------------ views
-    con.execute("""
-        CREATE OR REPLACE VIEW v_llc_skeleton AS
-        SELECT s.stage_no, s.stage_label, s.art_from, s.art_to, s.n_articles,
-               n.layer, n.article_number, n.article_title, n.article_title_en,
-               n.rationale, n.cc_norm_id, n.norm_key, n.article_text
-        FROM llc_stage s LEFT JOIN llc_norm n ON n.stage_no = s.stage_no
-    """)
     # Realization restricted to the LLC's own foundation articles, carrying the
     # citing provision's text and whether that act is still law.
     con.execute(f"""

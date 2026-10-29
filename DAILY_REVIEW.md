@@ -111,37 +111,38 @@ paragraph here.
   dates — not yet tried; `act.status` is a constant `'in-force'` across all
   24,267 acts, confirmed 2026-10-28, not worth pursuing as a signal).
 
-- **Cleanup rotation — current state: nine repeatable checks
-  (`pyflakes`, `vulture --min-confidence 60`, `bandit`, `check_sql_bindings.py`,
-  `check_code_clones.py`, `check_fstring_interp.py`, `check_dead_columns.py`,
-  plus the folded-in f-string grep and eighth-check widening) all re-ran clean
-  as a baseline, and the one concrete Backlog residual (`parser.py`'s
-  redundant `REPEALED_ARTICLES` set) is now fixed. Last touched 2026-10-26**
-  (re-ran all nine: `pyflakes`/`vulture` clean; `check_sql_bindings.py`
-  108/108 bind clean (up from 106/119 at 2026-10-03 — more call sites exist
-  now after the 10-24/10-25 rotations' code growth, not drift); `bandit` 58
-  `B608`/3 `B311`/1 `B110` (58 vs the 2026-10-01 baseline's 57 `B608`, same
-  reason, re-read and still all already-audited f-string SQL, no new class);
-  `check_code_clones.py` 5 pairs, byte-identical to the 2026-10-22 baseline
-  (same 5, none new); `check_dead_columns.py` 15/15, byte-identical list to
-  2026-10-22. Then fixed the Backlog item found 2026-10-23: deleted
-  `parser.py`'s `REPEALED_ARTICLES` hardcoded set and the dead `and
-  superscript_val is None` guard — both fully redundant with the `"lost
-  force" in clean_text.lower()` branch of the same `or` (confirmed first
-  that no superscript article's text contains "lost force" either, so the
-  guard was never live). `parsed_articles.json` SHA-256 is byte-identical
-  before/after (`808ce522...`), `parser.py --verify` 10/10, `test_transfer_e2e.py`
-  14/14 including `test_edge_repealed_articles` unchanged, `verify_transfer.py`
-  green with an identical summary — proving the deletion is a pure
-  single-source-of-truth cleanup, zero behavior change. Considered and
-  rejected a tenth check today: `CC_GENERAL_PART = -111189` is duplicated in
-  exactly 2 files (`build_corpus_db.py`, `verify_transfer.py`) but it's a
-  static corpus fact (the Civil Code's own doc_id), not a derived value that
-  can silently drift the way the existing nine checks' targets can — doesn't
-  meet the bar. Next Cleanup rotation should re-run all nine as a baseline
-  again; the one deliberately-deferred `check_sql_bindings.py` residual
-  (doesn't trace plain-literal indirection; zero injection risk) is unchanged.
-  Full detail: Log, 2026-10-26.
+- **Cleanup rotation — current state: ten repeatable checks (the nine as of
+  2026-10-26 plus `check_dead_views.py`), all re-ran clean/current as a
+  baseline, and the one concrete finding (`v_llc_skeleton`, a dead view) is
+  fixed. Last touched 2026-10-29** (re-ran the first nine: `pyflakes`/
+  `vulture` clean; `bandit` 58/3/1, same classes as 2026-10-26; `check_sql_
+  bindings.py` 110/110 (up from 108 — more call sites after 2026-10-28's
+  `qism_void_citation` feature, not drift); `check_code_clones.py` same 5
+  pairs as 2026-10-22; `check_fstring_interp.py` 56/56 clean;
+  `check_dead_columns.py` **14 flagged, not 15** — `article_amendment.
+  event_id` dropped off organically because 2026-10-28's feature now reads
+  it, confirming the checker tracks real drift rather than a stale
+  snapshot). Then built a tenth check, `check_dead_views.py` — the
+  dead-columns idea one grain up: does every `CREATE OR REPLACE VIEW` the
+  pipeline rebuilds every run get queried (`FROM`/`JOIN`) by anything
+  downstream? 1/10 views flagged: `v_llc_skeleton` (`build_llc.py`), never
+  queried since its introduction, not documented anywhere as deliberate
+  future scaffolding, and not even a drop-in match for the one place
+  (`app_llc.py::page_skeleton()`) that does the same `llc_stage`/`llc_norm`
+  join by hand (the view lacks the `ORDER BY`/`layer` filter/currency join
+  every one of that function's call sites needs) — so retired rather than
+  wired in. Proved the checker with a mutation test (removing `v_llc_
+  realization`'s one real query site correctly flags it; reverting restores
+  the clean 9/9 baseline). Deleted the dead view from `build_llc.py` and the
+  live `corpus.duckdb` (10 → 9 views; row counts of `llc_stage`/`llc_norm`/
+  `llc_implementing_act` unchanged: 8/100/135); verified with
+  `verify_transfer.py` green and a Playwright pass on `app_llc.py`'s LLC
+  skeleton page (unaffected, as expected). Next Cleanup rotation should
+  re-run all ten as a baseline; the two deliberately-deferred residuals are
+  unchanged (`check_sql_bindings.py` doesn't trace plain-literal indirection;
+  `check_dead_views.py` doesn't trace transitive view-on-dead-view chains —
+  not the shape of anything found today, but noted for a future check if
+  the view count grows). Full detail: Log, 2026-10-29.
 
 ---
 
@@ -1128,6 +1129,20 @@ paragraph here.
   (the `measure_extractor_recall.py` site above) — zero injection risk
   since it has no interpolation, so left alone for a single call site, same
   single-occurrence-scope precedent as several Extractor items above.
+- ~~**A tenth check: the dead-column idea one grain up — a view the
+  pipeline rebuilds every run that nothing ever queries.**~~ **Added
+  2026-10-29**: `check_dead_views.py` — lists every view in `corpus.duckdb`'s
+  live schema, greps each name across every `*.py` file, flags any with zero
+  `FROM`/`JOIN` consumer anywhere (an app, `verify_transfer.py`, or another
+  view's own definition). 1/10 flagged: `v_llc_skeleton`
+  (`build_llc.py`) — never queried since its introduction, not a drop-in
+  match for the one call site that does the same join by hand
+  (`app_llc.py::page_skeleton()`, which also needs an `ORDER BY`/`layer`
+  filter/currency join the view doesn't carry) — retired rather than wired
+  in. Proved with a mutation test (`v_llc_realization`'s sole query site
+  removed → correctly flagged; reverted → clean). See Active threads/Log for
+  the full trace. Now a tenth repeatable Cleanup check; next rotation should
+  re-run all ten.
 - **A ninth check: a column the pipeline writes but nothing ever reads back.**
   Added 2026-10-22: `check_dead_columns.py` — pulls every DDL-declared
   base-table column from the live schema, greps it as a whole word across
@@ -1168,6 +1183,28 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-10-29 — Cleanup rotation: tenth check (`check_dead_views.py`), found one real dead view (`v_llc_skeleton`, never queried since it was introduced), retired it
+
+**Environment/continuity note first**: at session start, this clone's local `main` branch was one commit behind `origin/main` — HEAD came up detached at `ccfbfd9` (2026-10-28's own commit) while the local `main` ref pointed at `9fdd25d` (2026-10-27's). Checked carefully before doing anything: `ccfbfd9`'s parent is `9fdd25d`, `git fetch origin main` confirmed `origin/main` was *already* at `ccfbfd9` — so 2026-10-28's work was never actually lost, this was just a stale local branch pointer from this container's own bootstrap, not an unpushed commit. Fast-forwarded local `main` to `ccfbfd9` (`git merge --ff-only`); `git push` correctly reported "Everything up-to-date". No data was at risk; recorded here only so a future session doesn't waste time re-diagnosing the same detached-HEAD-at-bootstrap quirk. `duckdb`/`pyflakes`/`vulture`/`bandit`/`streamlit` installed fresh (`python -m pip install ...` — plain `pip install` landed in a different interpreter's site-packages, same split as 2026-10-27/28's notes). `git lfs pull` fetched the real parquet (was a 134-byte pointer stub).
+
+**Rotation choice**: Extractor last touched 2026-10-27, Data currency 2026-10-28, Cleanup 2026-10-26 — Cleanup is next (oldest-touched).
+
+**Baseline re-run, all nine existing checks**: `pyflakes`/`vulture --min-confidence 60` clean. `bandit`: 58 `B608`/3 `B311`/1 `B110`, same classes as the 2026-10-26 baseline (re-read, no new finding). `check_sql_bindings.py`: 110/110 bind clean (up from 108 at 2026-10-26 — more call sites after yesterday's `qism_void_citation` feature, not drift). `check_code_clones.py`: same 5 pairs as 2026-10-22's baseline, byte-identical. `check_fstring_interp.py`: 56 call sites, all resolve clean. `check_dead_columns.py`: **14 flagged, not 15** — `article_amendment.event_id` dropped off the list, because 2026-10-28's `qism_void_citation` feature reads it for real now (`build_links.py:984`/`1018`, joining `article_amendment` back onto the new table by `event_id`). Confirmed this is the checker correctly tracking real drift, not a checker bug — a nice small proof that `check_dead_columns.py` keeps earning its keep as the codebase grows, not just a one-time snapshot.
+
+**The new angle**: `check_dead_columns.py`'s own docstring deliberately scopes to DDL-declared *base-table* columns, "not `CREATE ... AS SELECT` derived tables/views" — on the reasoning that a view's output columns are already covered by `check_sql_bindings.py`'s referential check. True for a view's *columns*, but nothing had ever asked the same read/write-asymmetry question about a *view itself*: is every `CREATE OR REPLACE VIEW` the pipeline (re)builds on every run actually queried by anything downstream? Same blind spot class as the ninth check, one level up. Manually confirmed the shape exists before building anything: `grep -c` each of this project's 10 view names across every `.py` file — 9 have real `FROM`/`JOIN` consumers in an app or `verify_transfer.py`, but `v_llc_skeleton` (`build_llc.py`) has exactly one occurrence anywhere: its own `CREATE OR REPLACE VIEW` line.
+
+**Built `check_dead_views.py`** (tenth repeatable Cleanup check): lists every view from `corpus.duckdb`'s live schema, greps each name across every `*.py` file, classifies each hit as `def` (its own `CREATE [OR REPLACE] VIEW` line), `query` (name directly preceded by `FROM`/`JOIN` on the same line — a real consumer, including composition by another view), or `mention` (docstring/comment/log text naming it without querying it — doesn't count, same reasoning `check_dead_columns.py` applies to its own self-exclusion). Flags any view with zero `query` hits. Run against the live corpus: **1/10 flagged — `v_llc_skeleton`**, exactly matching the manual grep.
+
+**Proved it with a mutation test before trusting it** (this project's own standing bar for a new check, same precedent as `check_sql_bindings.py`/`check_fstring_interp.py`): first tried mutating `app_hierarchy.py`'s `v_general_part` query — didn't get flagged, because `verify_transfer.py:238` has its own independent `FROM v_general_part` query I'd overlooked; the checker was right, my mutation choice was wrong. Retried against `v_llc_realization` (confirmed by grep to have exactly one real `query` hit, `app_llc.py:218`): swapped `FROM v_llc_realization WHERE` → `FROM llc_norm WHERE` in a scratch copy, re-ran — correctly flagged as a second dead view; reverted from backup, re-ran — back to the clean 1-flagged baseline. The checker catches real removal of a view's sole consumer, not just an already-dead one.
+
+**Decided `v_llc_skeleton`'s fate, not just logged it**: `git log -S"v_llc_skeleton" -- app_llc.py` returns nothing — it has never been queried by anything since the view was introduced (commit `7700080`, pre-dating this log). Not a regression (something that broke), not documented anywhere in this file as deliberate future scaffolding (grepped `DAILY_REVIEW.md` — zero mentions before today) — genuinely dead on arrival and dead every day since. Also checked whether it's a drop-in replacement for `app_llc.py::page_skeleton()`'s five hand-written `llc_stage`/`llc_norm` queries (lines 105/110/131/143/149) before deciding to delete rather than wire in: it isn't — the view has no `ORDER BY` and no `layer` filter, while every one of the app's own call sites needs both (plus, for the foundation-article list, an additional `v_article_currency` join the view doesn't carry), so "just point the app at the view" would need the view rewritten to match, not a pure wire-up. Given it's unused, undocumented-as-intentional, and doesn't even match the one place that could plausibly use it, retired it — same precedent as 2026-09-07's "retire superseded prototypes" (delete after confirming zero references) rather than 2026-10-22's dead-columns treatment (record and defer, since those are populated *data* a human might still want).
+
+**Shipped**: deleted the `CREATE OR REPLACE VIEW v_llc_skeleton` block from `build_llc.py` (7 lines). Re-ran just `build_llc.py` against the existing `corpus.duckdb` (not a full rebuild — `llc_stage`/`llc_norm`/`llc_implementing_act` row counts unchanged: 8/100/135, matching this morning's and 2026-10-16's figures), then explicitly `DROP VIEW v_llc_skeleton` (removing the `CREATE` statement alone doesn't retroactively drop an existing view from the live file). `corpus.duckdb` is now byte-size-identical (53,227,520 bytes before and after — the view's own catalog entry is negligible) with one fewer view (10 → 9).
+
+**Verification before committing**: `check_dead_views.py` re-run — "every view is queried somewhere", 9/9. `check_sql_bindings.py` — 110/110, unaffected (nothing queried the dropped view). `python verify_transfer.py` — PASSED, all checks green, identical reconciliation-detail table to 2026-10-28's. Installed `streamlit`, ran both apps headless, hit both with `curl` (200/200), then drove `app_llc.py` with Playwright specifically on its "LLC skeleton" page (the one page that touches `llc_stage`/`llc_norm`) — renders all 8 stages with real article content, confirming the view's removal has zero visible effect, as expected since the app never queried it. `grep -rn v_llc_skeleton *.py` after the fix: only this new check's own docstring names it (explaining the finding), zero live references anywhere.
+
+**What changed**: `build_llc.py` (−7 lines, the dead view), `check_dead_views.py` (new, tenth repeatable Cleanup check), `corpus.duckdb` (one view dropped, no table touched), `DAILY_REVIEW.md` (this entry, Active threads, Backlog).
 
 ### 2026-10-28 — Data currency rotation: built a qism-level (sub-article) currency signal sharper than the existing article-level flag, found 8 real normative citations into an exactly-removed part of Article 212, wired into app_hierarchy.py
 
