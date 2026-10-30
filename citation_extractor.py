@@ -56,12 +56,38 @@ ORDINALS = ("birinchi", "ikkinchi", "uchinchi", "toʻrtinchi", "to'rtinchi", "be
 # including every article listed after it, is invisible). Measured
 # 2026-09-17 (see DAILY_REVIEW.md): 3 rows / 4 occurrences corpus-wide, all
 # genuine, all previously producing zero citations.
-RE_ANCHOR_CC = re.compile(r"Fuqarolik\s+kodeks(?:i\w*|ning)", re.IGNORECASE)
+#
+# The suffix group below is deliberately NOT bare `\w*`: LexUZ occasionally
+# omits the space before the following number entirely ("kodeksining202 va
+# 203-moddalari"), and `\w*` is greedy over *all* word characters, digits
+# included — it would consume "202" as part of the anchor match itself,
+# before RE_CLAUSE ever gets a chance to see it, silently dropping the first
+# item of the list. Found 2026-10-30 via the signature-stratified gold
+# sampler (batch 16, row 34219): `a_end` landed after "202", not before it,
+# so the per-anchor window started at " va 203-moddalari" and only "203"
+# survived. `[^\W0-9]*` matches the same real Uzbek suffixes (letters and
+# the ʻ/ʼ okina marks, all Unicode word characters) while excluding ASCII
+# digits, so a glued genitive suffix still matches in full but a glued
+# number no longer does. Measured corpus-wide: this exact shape (the anchor
+# regex's own match ending on a digit) occurs 2 times (rows 34219, 38589);
+# row 34219 is a genuine, confirmed recall loss (article 202 never appears
+# anywhere in that field's extract() output); row 38589's swallowed "190" is
+# coincidentally recovered by an unrelated, separate mention of article 190
+# elsewhere in the same field, so it wasn't visible in the headline recall
+# number, but was still a latent per-anchor precision bug waiting to recur
+# without the coincidence. See DAILY_REVIEW.md 2026-10-30.
+RE_ANCHOR_CC = re.compile(r"Fuqarolik\s+kodeks(?:i[^\W0-9]*|ning)", re.IGNORECASE)
 RE_OLD_CODE = re.compile(r"19\d\d\s*-\s*yilgi\s*$", re.IGNORECASE)
 # "FK" as a standalone token, immediately followed by a number or a reference word.
 RE_ANCHOR_FK = re.compile(r"(?<![A-Za-zА-Яа-я0-9ʻʼ'-])FK(?:ning|ga|da|ni)?(?=\s+\d|\s+boshqa|\s+[0-9])")
 # "ushbu/shu Kodeks" — only meaningful when the citing act IS the Code.
-RE_ANCHOR_SELF = re.compile(r"(?:ushbu|shu|mazkur)\s+Kodeks\w*", re.IGNORECASE)
+# Same digit-glomming risk as RE_ANCHOR_CC above, same fix (see 2026-10-30
+# note there) — no measured corpus occurrence inside a real self_reference
+# anchor today (the only two matches with a trailing digit, rows 48522 and
+# 53096, are both is_the_code=False documents where this pattern isn't even
+# used as an anchor), but there is no reason this regex should behave
+# differently from RE_ANCHOR_CC on the exact same input shape.
+RE_ANCHOR_SELF = re.compile(r"(?:ushbu|shu|mazkur)\s+Kodeks[^\W0-9]*", re.IGNORECASE)
 
 # A clause of numbers terminated by modda / bob / paragraf. The separator
 # before the unit word is usually a hyphen/dash, but LexUZ sometimes just

@@ -45,39 +45,43 @@ thread closes, fold its outcome into Backlog (if a residual remains) or
 just let the Log entry be the permanent record — don't also keep growing a
 paragraph here.
 
-- **Extractor rotation — current state: gold set at 605 records (batch 15),
-  precision 2608/2623 (99.4%), recall 2608/2645 (98.6%), signature coverage
-  533/728 on a WIDENED signature (631 windows / 195 distinct signatures
-  still novel) — the post-exhaustion strategy decision is made and paying
-  off. Last touched 2026-10-27** (chose Backlog > Extractor recall/precision
-  "Post-exhaustion strategy" option 2 — widen `signature()`'s own feature
-  set — over options 1/3: added 6 features to `build_gold_sample_novel.py`
-  (a `§`/semicolon/`yoki` separator each, plus bucketed separator-count,
-  anchor-to-clause distance, and digit-group-count), which raised
-  corpus-wide distinct signatures 483 → 728 and reopened 671 windows across
-  235 signatures that the old 22-feature signature had collapsed into
-  already-"covered" buckets — the exhaustion was an artifact of the
-  signature's own coarseness, not of the corpus running out of real
-  variation. Drew and hand-verified a 40-window batch 15 (gold_id 565-604)
-  from the newly-reopened pool: 38/40 `correct`, 2/40 new `known_gap`
-  (gold_id 587: a `Kodeksning`-collateral-loss gap in the `RE_STOP` design,
-  real but single-occurrence; gold_id 597: a NEW false-positive class where
-  an amending law's own next sequential article heading gets misattributed
-  to the Civil Code, also single-occurrence) — plus one real, live bug
-  found and FIXED at the source (gold_id 568, row 3635): a comma/va list
-  where each item carries its own parenthetical title broke `RE_CLAUSE`'s
-  contiguous-nums requirement, the same root cause as the pre-existing
-  known_gap at gold_id 548 (2026-10-24, chapters not articles) — and
-  re-measuring 548's own corpus-wide footprint with a less-restrictive
-  regex (allowing the parenthetical on either list item, not just the
-  first) found the TRUE count is 5 occurrences, not 1, crossing this
-  project's own single-occurrence deferral line. Fixed in
-  `citation_extractor.py`, re-ran `build_links.py`/`build_llc.py` (link_edge
-  9634 → 9640 edges), gold_id 548 itself corrected from `known_gap` to
-  `correct` in place. See Log for the full trace. **Next Extractor
-  rotation**: keep drawing batches from the widened signature's 631-window
+- **Extractor rotation — current state: gold set at 645 records (batch 16),
+  precision 2731/2748 (99.4%), recall 2731/2770 (98.6%), 631-window widened-
+  signature novel pool now at 591 windows / ~190 distinct signatures still
+  novel (631 minus batch 16's 40). Last touched 2026-10-30** (drew and
+  hand-verified a 40-window batch 16, gold_id 605-644, from the widened
+  signature's novel pool — see Log for the full trace). 38/40 `correct`,
+  2/40 new `known_gap` (gold_id 618: LexUZ's own text uses the Arabic-digit
+  word "boʻlim" to mean a CHAPTER ("Fuqarolik kodeksining 40-boʻlimi" =
+  chapter 40, "Transport ekspeditsiyasi", confirmed via `struct_node`), a
+  terminology collision distinct from the roman-numeral structural Part
+  `RE_ROMAN_PART` already handles — single occurrence, not fixed; gold_id
+  623: a 4th, previously unmeasured occurrence of the ALREADY-documented
+  "bare number swallowed by an interposed different act's name"
+  known_gap class in row 37948 — that class's own corpus-wide count
+  corrected again, 6/4 rows → 7/4 rows, found this time by an
+  extractor-driven generalized remeasurement rather than another
+  act-name-specific regex). One real, live recall bug found and FIXED at
+  the source (gold_id 621, row 34219): `RE_ANCHOR_CC`'s own `i\w*` suffix
+  alternative is greedy over ALL word characters including digits, so a
+  LexUZ no-space typo ("kodeksining202 va 203-moddalari") let the anchor
+  match itself swallow "202" before `RE_CLAUSE` ever saw it, dropping
+  article 202 from the field's entire output. Fixed by narrowing both
+  `RE_ANCHOR_CC` and `RE_ANCHOR_SELF`'s suffix class to `[^\W0-9]*`
+  (every real genitive suffix is letters/okina marks, never digits) — 2
+  corpus-wide occurrences of the anchor-regex bug itself, 1 a confirmed
+  recall loss (row 34219) and 1 (row 38589) coincidentally masked by an
+  unrelated second mention of the same article elsewhere in the same
+  field. 65/65 self-tests pass; `score_gold.py` unchanged at
+  2608/2623 precision, 2608/2645 recall on the pre-existing 605 records
+  (the fix only changes behavior for the exact glued-digit shape, which no
+  pre-existing record exercised). Re-ran `build_links.py`/`build_llc.py`
+  against the fixed extractor (not a full `corpus.duckdb` rebuild):
+  link_edge 9640 → 9642 edges. See Log for the full trace. **Next
+  Extractor rotation**: keep drawing batches from the widened signature's
   novel pool (`python build_gold_sample_novel.py --n 40 --seed <next>`) —
-  no new strategy decision needed until THAT pool exhausts too.
+  roughly 591 windows / ~190 signatures remain; no new strategy decision
+  needed until that pool exhausts too.
 
 - **Data currency rotation — current state: built a new qism-level (specific
   article-part) currency signal, sharper than the existing article-level
@@ -172,9 +176,9 @@ paragraph here.
   2026-10-04, to 380 via a sixth 2026-10-10, to 420 via a seventh
   2026-10-13, to 460 via an eighth 2026-10-15, to 500 via a ninth
   2026-10-18, to 565 via batches 13-14 2026-10-24, to 605 via batch 15
-  (widened signature) 2026-10-27** — see Active threads and Log for the
-  full detail.
-  `gold_citations.json` (605 hand-verified anchor occurrences, fifteen
+  (widened signature) 2026-10-27, to 645 via batch 16 2026-10-30** — see
+  Active threads and Log for the full detail.
+  `gold_citations.json` (645 hand-verified anchor occurrences, sixteen
   batches — two uniform-random, thirteen signature-stratified) + `score_gold.py`
   (the scorer) + `build_gold_sample.py`/`build_gold_sample_novel.py` (the
   two samplers) now exist; current score **precision 2608/2623 (99.4%),
@@ -226,6 +230,31 @@ paragraph here.
   batch found 1 real bug (see below) + 1 known_gap, a higher yield than the
   two most recent uniform batches — see Active threads and Log for the full
   measurement and the decision to keep using this sampler going forward.
+- ~~**The anchor regex itself can swallow a directly-glued following
+  number, dropping it before `RE_CLAUSE` ever sees it.**~~ **FIXED
+  2026-10-30.** Found via gold batch 16 (`gold_id` 621, row 34219):
+  "Fuqarolik kodeksining202 va 203-moddalari" has no space between the
+  anchor's genitive suffix and the first listed number — `RE_ANCHOR_CC`'s
+  `i\w*` suffix alternative is greedy over every word character, digits
+  included, so it consumed "202" as part of the anchor match itself,
+  dropping article 202 from the field's ENTIRE `extract()` output (not
+  just this anchor's own bucket). Measured corpus-wide (any
+  `RE_ANCHOR_CC`/`RE_ANCHOR_SELF` match whose own matched text ends on a
+  digit): exactly 2 occurrences — row 34219 (confirmed recall loss) and row
+  38589 (same bug, but the swallowed article 190 happens to be recovered
+  by an unrelated second mention of it later in the same field, so it
+  never showed up in any headline recall number). Fixed in
+  `citation_extractor.py`: narrowed both `RE_ANCHOR_CC`'s and (defensively)
+  `RE_ANCHOR_SELF`'s `\w*` suffix class to `[^\W0-9]*` (every Unicode word
+  character except ASCII digits) — every real Uzbek genitive suffix is
+  letters/okina marks, never digits, so this changes nothing about
+  legitimate suffix matching. 65/65 self-tests pass; `score_gold.py`
+  unchanged at 2608/2623 precision, 2608/2645 recall on the pre-existing
+  605 records (no prior gold record exercised this exact glued-digit
+  shape). `gold_id` 621 itself recomputed in place (anchor_end 94 → 91,
+  per-anchor citation set `[203]` → `[202, 203]`, listing `single` →
+  `list`) to match the fixed extractor. Re-ran `build_links.py`/
+  `build_llc.py`: link_edge 9640 → 9642 edges. See Log, 2026-10-30.
 - **Bare "Kodeksning" (no ushbu/mazkur/shu) directly after the Civil Code's
   own name can be a redundant self-reference, not a different-code
   announcement.** Found 2026-10-27 via batch 15 (gold_id 587, row 19636):
@@ -342,6 +371,26 @@ paragraph here.
   as a permanent `gold_citations.json` known_gap record (`gold_id` 324)
   instead. If ever picked up, accept `§\s*(\d+)` as an alternate spelling
   alongside `\d+\s*-\s*paragraf` in the chapter+section lookahead.
+- **An Arabic-digit "boʻlim" can mean CHAPTER, not the roman-numeral
+  structural Part `RE_ROMAN_PART` already handles.** Found 2026-10-30 via
+  gold batch 16 (`gold_id` 618, row 32903): "Fuqarolik kodeksining
+  40-boʻlimi ("Transport ekspeditsiyasi")" — Chapter 40's real title,
+  confirmed via `struct_node` (`C40` = "Freight Forwarding" = Transport
+  ekspeditsiyasi) — uses "boʻlim" as a loose synonym for "bob", a different
+  unit entirely from the Code's own 6 roman-numeral Parts (PI..PVI) that
+  "boʻlim" otherwise always names. `extract()` has no branch for a
+  digit+boʻlim shape at all (RE_ROMAN_PART only matches roman numerals), so
+  this falls through to a bare act citation, losing the chapter grain
+  entirely. Measured corpus-wide (regex: `\d+\s*-\s*bo[ʻ'`]lim` within 80
+  chars of a Civil Code/FK anchor): exactly 1 occurrence. Not fixed given
+  the single-occurrence scope, same precedent as the "paragrif"/
+  Roman-chapter-lookahead/section-mark known_gap records above; recorded as
+  a permanent `gold_citations.json` known_gap record (`gold_id` 618)
+  instead. If ever picked up: a bare `\d+\s*-\s*bo[ʻ'`]lim` match would need
+  to resolve as `target_kind="chapter"` (not `"part"`), the opposite of
+  what `RE_ROMAN_PART` already does for its roman-numeral form — not a
+  simple extension of that regex, a genuinely different unit mapping for
+  the same surface word.
 - ~~**Chapter list with a parenthetical quoted title after EACH chapter
   number drops the whole list.**~~ **FIXED 2026-10-27.** Found 2026-10-24 via
   gold batch 14: row 29093 reads "Fuqarolik kodeksining 43 ("Bank omonati")
@@ -526,7 +575,19 @@ paragraph here.
   `gold_citations.json` known_gap record (`gold_id` 379). Still not fixed —
   same cross-clause-inference risk as before — but if this is ever picked
   up, the fix needs to treat "a different act's own name" generically
-  (kodeks/Qonun/Nizom/Farmon/Qaror), not just kodeks.
+  (kodeks/Qonun/Nizom/Farmon/Qaror), not just kodeks. **Corrected again
+  2026-10-30**: both the original and the 2026-10-10 recount were still
+  regex-anchored on specific act-name substrings. The Extractor rotation's
+  signature-stratified sampler independently re-drew row 37948 a 4th time
+  (batch 16, `gold_id` 623) at an anchor position (3471) neither prior
+  measurement had found, because both were string-matching, not re-running
+  the extractor itself. A generalized, extractor-driven remeasurement (does
+  `extract()` produce zero article/chapter/part/section citation for this
+  anchor despite a digit sitting immediately after it and another act's
+  name — kodeks/Qonun/Nizom/Farmon/Qaror, generically — appearing before any
+  unit word?) found the TRUE corpus-wide count is 7 occurrences / 4 rows
+  (row 37948 alone has 4, not 3) — see `gold_citations.json` `gold_id` 623
+  and DAILY_REVIEW.md 2026-10-30. Still not fixed, same reasoning.
 - **"hamda" not recognized as a list conjunction, only "va".** Found
   2026-09-15 while fixing the space-separator gap (see Log): row 24219 reads
   "Fuqarolik kodeksining 11-12 hamda 14 moddalari" — `_expand`'s top-level
@@ -1183,6 +1244,30 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-10-30 — Extractor rotation: gold batch 16 (605 → 645), fixed a live anchor-regex recall bug (glued digits), corrected the interposed-act-name known_gap's own corpus-wide count again (6/4 → 7/4), found a new digit-"boʻlim"-means-chapter known_gap
+
+**Environment note first**: the container came up with a stale git-LFS pointer stub for both parquet files (`articles/train-00000-of-00001.parquet` was a 134-byte LFS pointer, not the real 163MB file) and `duckdb` installed into a different interpreter's site-packages than the one `python3` resolves to (same `pip`/`python3` split 2026-10-27/28/29's notes already recorded — `python3 -m pip install duckdb` rather than plain `pip install` fixes it). Also found local `main` HEAD detached two commits behind `origin/main` at session start (origin already had 2026-10-28's and 2026-10-29's commits; `git fetch` + `git checkout -B main origin/main` fixed it, no data at risk — same class of bootstrap quirk 2026-10-29's log entry already flagged, recorded again since it recurred).
+
+**Rotation choice**: Extractor last touched 2026-10-27, Data currency 2026-10-28, Cleanup 2026-10-29 — Extractor is next (oldest-touched), continuing the Active-threads-documented plan to keep drawing from the widened (28-feature) signature's novel pool until it exhausts.
+
+**Drew batch 16**: `python build_gold_sample_novel.py --n 40 --seed 20261030` → candidate windows 3251, distinct signatures corpus-wide 728, signatures already covered 533, windows in never-covered signatures 631 across 195 distinct signatures — matches the 2026-10-27 Active-threads note exactly (that session widened the signature and measured this same 631/195 figure before drawing batch 15's own first 40; batch 16 draws the next 40 from what's left of that same pool, not a freshly recomputed one, since nothing has changed the signature function since).
+
+**Hand-verified all 40 against the raw text and the extractor's actual output.** 37/40 straightforwardly correct on first read (parenthetical-publication-record bare-act fallbacks, comma/va/dash mixed-list expansions up to a 39-article range, multi-qism-per-article lists, chapter citations, a "birinchi qism 28-moddasi" book-level-Part locator correctly NOT read as an article-level qism, and several cases where a different code's own numbered list sits in the same window and is correctly left unattributed). 3/40 needed real investigation:
+
+1. **New known_gap, `gold_id` 618 (row 32903): digit-"boʻlim" can mean CHAPTER, not the roman-numeral Part.** "Fuqarolik kodeksining 40-boʻlimi ("Transport ekspeditsiyasi")" — checked `struct_node` directly rather than assuming: `C40` = "Freight Forwarding" = Transport ekspeditsiyasi, a real chapter, not one of the Code's 6 roman-numeral Parts. `extract()` has no branch at all for a digit+boʻlim shape (`RE_ROMAN_PART` only matches roman numerals), so it falls through to a bare act citation. Measured corpus-wide: exactly 1 occurrence. Recorded as a known_gap, not fixed, same single-occurrence precedent as several existing records (paragrif misspelling, Roman-chapter-lookahead, § section-mark).
+
+2. **Known_gap class corpus-wide count corrected AGAIN, `gold_id` 623 (row 37948, anchor_start 3471): 6/4 rows → 7/4.** This row already has 3 recorded occurrences (`gold_id` 194-196) of the "bare number swallowed by an interposed different act's name" class, and the Backlog already recorded a 2026-10-10 correction from 5/3 to 6/4 after finding the original 2026-09-28 regex only checked for an interposing *kodeks*, not *Qonun* too. Batch 16's signature sampler independently redrew row 37948 a 4th time, at an anchor position (3471) neither prior pass had found — both were regex-anchored on specific act-name substrings, never re-running the extractor itself to ask "did this anchor produce nothing, with a digit+other-act-name tail?" generically. Wrote that generalized check (any CC anchor where `extract()` emits no article/chapter/part/section citation despite a digit sitting immediately after it and a kodeks/Qonun/Nizom/Farmon/Qaror name appearing before any unit word) and got exactly 6 hits corpus-wide — which, cross-checked against the existing gold set, turned out to be 3 already-known (194, 196, and the row-26159/53186/42229 ones) plus this ONE genuinely new one at row 37948's anchor_start 3471. True count: 7 occurrences / 4 rows. `gold_id` 195 (row 37948, anchor_start 2254) is a narrower, already-recorded variant — a word-substitution instruction quoting only "Fuqarolik kodeksining 38," with nothing else in its own window — that the generalized check correctly does NOT flag (no other-act-name tail exists there to interpose), so it stays a separate record, not folded into this count. Still not fixed, same cross-clause-inference risk the Backlog already documents for this class.
+
+3. **Real, live bug FIXED at the source, `gold_id` 621 (row 34219): the anchor regex itself can swallow a directly-glued number.** "Fuqarolik kodeksining202 va 203-moddalari" — no space between the genitive suffix and the first number. Traced it precisely: `RE_ANCHOR_CC = r"Fuqarolik\s+kodeks(?:i\w*|ning)"` — Python's `\w` includes ASCII digits, and the `i\w*` alternative's `\w*` is greedy, so on "kodeksining202" it matches "i" then keeps consuming "ning202" in one swallow (confirmed directly: `RE_ANCHOR_CC.search(...).group(0)` returns `"Fuqarolik kodeksining202"`, 24 chars, not the expected ~21). `a_end` then lands AFTER "202", so the per-anchor `window = text[a_end:limit]` for `RE_CLAUSE.finditer` starts at `" va 203-moddalari"` — "202" is gone before the clause scanner ever runs, not just mis-parsed. Measured the TRUE footprint precisely rather than assuming it was a one-off: wrote a corpus-wide check for every `RE_ANCHOR_CC`/`RE_ANCHOR_SELF` match whose own matched text ends on a digit — exactly 2 hits (rows 34219 and 38589; two further `RE_ANCHOR_SELF` hits, rows 48522/53096, turned out to be false alarms in my own measurement script, not real anchors at all — both are `is_the_code=False` documents, so `_anchors()` never includes `RE_ANCHOR_SELF` matches for them in the first place; the citing text's own "ushbu Kodeksning" refers to THAT document's own code, not the Civil Code). Row 34219's swallowed article 202 is a confirmed, clean recall loss (202 appears nowhere else in that field's `extract()` output). Row 38589's swallowed article 190 hits the identical bug but is coincidentally recovered — the same field separately mentions article 190 again later, so the whole-field recall check (same scope `score_gold.py` itself uses) never flagged it, even though the per-anchor bucket for THAT specific occurrence was still wrong. Fixed by narrowing `RE_ANCHOR_CC`'s `i\w*` and (defensively, same input shape, no reason to leave it inconsistent) `RE_ANCHOR_SELF`'s `Kodeks\w*` to use `[^\W0-9]*` instead of `\w*` — matches every real Unicode letter and the ʻ/ʼ okina marks (verified directly against `kodeksiga`/`kodeksida`/`kodeksiniki`/`kodeksining 14-moddasi` — all unaffected) while refusing to cross into digits. 65/65 extractor self-tests still pass. `score_gold.py` against the pre-existing 605 records: precision/recall UNCHANGED at 2608/2623 / 2608/2645 — the fix is scoped tightly enough to touch only the exact glued-digit shape, which nothing in the existing gold set exercised, so zero regression risk from this change specifically (confirmed, not assumed).
+
+**Merged into `gold_citations.json`**: all 40 batch-16 records appended as `gold_id` 605-644. `gold_id` 621 (the fixed-bug record) needed its own position recomputed against the NOW-fixed extractor before merging — anchor_end shifted 94 → 91, and its per-anchor citation set from `[203]` (listing `single`) to `[202, 203]` (listing `list`) — recomputed directly via `cx._anchors`/`cx.extract` on the live text rather than hand-guessed, so `score_gold.py` doesn't flag it as DRIFT. Re-ran `score_gold.py` on the full merged set: **645 records (645 scored, 0 drift), precision 2731/2748 (99.4%), recall 2731/2770 (98.6%)** — consistent with the pre-merge 605-record baseline, confirming a clean merge.
+
+**Re-ran `build_links.py`/`build_llc.py`** against the fixed extractor (not a full `corpus.duckdb` rebuild, since only `citation_extractor.py` changed): `link_edge` 9640 → 9642 edges (+2, from recovering article 202's edge and its corrected listing). `build_llc.py`'s own output (LLC chapter/foundation-article counts, implementing-act tiers, repealed-company-article check) is byte-identical to yesterday's — article 202 isn't LLC-foundation-relevant, as expected. Smoke-tested both apps' `link_edge` queries directly against the updated `corpus.duckdb` (no schema change, only +2 rows of data) — all resolve cleanly; skipped a full Playwright pass since neither app's query shape nor any table/view schema changed.
+
+**Verification**: `python verify_transfer.py` — PASSED, all checks green, reconciliation-detail table unchanged from 2026-10-29's.
+
+**What changed**: `citation_extractor.py` (RE_ANCHOR_CC/RE_ANCHOR_SELF suffix-class fix + comments), `gold_citations.json` (605 → 645 records, batch 16 + its own `_meta` entry), `corpus.duckdb` (link_edge 9640 → 9642 rows, no schema change), `DAILY_REVIEW.md` (this entry, Active threads, Backlog).
 
 ### 2026-10-29 — Cleanup rotation: tenth check (`check_dead_views.py`), found one real dead view (`v_llc_skeleton`, never queried since it was introduced), retired it
 
