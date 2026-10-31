@@ -1027,6 +1027,137 @@ def main() -> int:
         f"qism ({n_normative} of them normative, i.e. the citing act's own text, "
         "not editorial apparatus) — see DAILY_REVIEW.md 2026-10-28 for the full trace.")
 
+    # A new currency signal built from a source this project had never mined:
+    # the English markdown's OWN per-article amendment footnote, e.g. "(Article
+    # 1 was amended in accordance with the Law of the Republic of Uzbekistan
+    # dated ... No. ZRU-476)". Found 2026-10-31 (Data currency rotation, see
+    # DAILY_REVIEW.md): `norm_unit.en_align_status` only certifies STRUCTURAL
+    # alignment (the English article's number/title matches the Uzbek one) —
+    # it says nothing about whether the English article's own TEXT reflects the
+    # most recent substantive amendment. The English markdown carries its own
+    # independent "as of" footnote per article, naming the Law(s) that last
+    # changed it, with an act number (ZRU-NNN) that is the *same* decree number
+    # as the Uzbek-mined article_amendment.amend_act_number (OʻRQ-NNN) — just a
+    # different language's abbreviation for the identical, globally monotonic
+    # sequence number, confirmed 1:1 consistent against amend_date corpus-wide
+    # (66 distinct act numbers, zero amend_date conflicts). That shared ID lets
+    # the two independently-populated sources be compared directly, without
+    # ever having to parse or disambiguate the footnote's own date text (which
+    # mixes "Month DD, YYYY" and bare numeric dates inconsistently, sometimes
+    # even DD.MM vs MM.DD within the same footnote's comma-separated list —
+    # another latent gap, not pursued, since the act-number join sidesteps it
+    # entirely).
+    #
+    # One real wrinkle reused rather than re-solved: article_number "261" is
+    # already-known ambiguous (verify_transfer.py's own
+    # `review_ambiguous_key` finding) — it is shared by Article 26¹'s norm_id
+    # and the unrelated, independently-numbered Article 261's norm_id. Joining
+    # by that bare text would silently conflate the two articles' amendment
+    # histories, so this signal always prefers `article_amendment.norm_id`
+    # (populated for 288/612 rows) and only falls back to the
+    # article_number text match for norm_units whose article_number is NOT
+    # shared by a second norm_id — i.e. every case except that one pair.
+    footnote_re = re.compile(
+        r"in\s+accordance\s+with\s+the\s+Laws?\s+of\s+the\s+Republic\s+of\s+"
+        r"Uzbekistan\s+dated(?P<body>.*?)\)_",
+        re.IGNORECASE | re.DOTALL)
+    actnum_re = re.compile(r"Z\s*R\s*U\s*-\s*(\d+)", re.IGNORECASE)
+
+    footnote_hits = []  # (norm_id, act_number)
+    for norm_id, text in con.execute("""
+        SELECT norm_id, article_text_en FROM norm_unit
+        WHERE article_text_en IS NOT NULL
+    """).fetchall():
+        nums = set()
+        for fm in footnote_re.finditer(text):
+            nums.update(int(n) for n in actnum_re.findall(fm.group("body")))
+        for n in nums:
+            footnote_hits.append((norm_id, n))
+
+    con.execute("""
+        CREATE OR REPLACE TABLE en_amendment_footnote (
+            norm_id     VARCHAR,
+            act_number  INTEGER
+        );
+    """)
+    con.executemany(
+        "INSERT INTO en_amendment_footnote VALUES (?, ?)", footnote_hits)
+    con.commit()
+
+    ambiguous_article_numbers = {
+        row[0] for row in con.execute("""
+            SELECT article_number FROM norm_unit
+            WHERE article_text_en IS NOT NULL
+            GROUP BY article_number HAVING count(DISTINCT norm_id) > 1
+        """).fetchall()
+    }
+    uz_by_norm_id: dict[str, set[int]] = {}
+    uz_by_article_number: dict[str, set[int]] = {}
+    for norm_id, art_num, amend_act_number in con.execute("""
+        SELECT norm_id, target_article_number, amend_act_number
+        FROM article_amendment WHERE amend_act_number IS NOT NULL
+    """).fetchall():
+        m = re.search(r"(\d+)$", amend_act_number)
+        if not m:
+            continue
+        n = int(m.group(1))
+        if norm_id is not None:
+            uz_by_norm_id.setdefault(norm_id, set()).add(n)
+        elif art_num is not None and art_num not in ambiguous_article_numbers:
+            uz_by_article_number.setdefault(art_num, set()).add(n)
+
+    staleness_rows = []  # (norm_id, en_latest_act_number, uz_latest_act_number)
+    en_by_norm_id: dict[str, set[int]] = {}
+    for norm_id, n in footnote_hits:
+        en_by_norm_id.setdefault(norm_id, set()).add(n)
+
+    article_number_by_norm_id = dict(con.execute(
+        "SELECT norm_id, article_number FROM norm_unit "
+        "WHERE article_text_en IS NOT NULL").fetchall())
+
+    for norm_id, en_nums in en_by_norm_id.items():
+        uz_nums = set(uz_by_norm_id.get(norm_id, set()))
+        art_num = article_number_by_norm_id.get(norm_id)
+        if art_num is not None:
+            uz_nums |= uz_by_article_number.get(art_num, set())
+        if not uz_nums:
+            continue
+        staleness_rows.append((norm_id, max(en_nums), max(uz_nums)))
+
+    con.execute("""
+        CREATE OR REPLACE TABLE en_amendment_staleness (
+            norm_id              VARCHAR,
+            en_latest_act_number INTEGER,
+            uz_latest_act_number INTEGER
+        );
+    """)
+    con.executemany(
+        "INSERT INTO en_amendment_staleness VALUES (?, ?, ?)", staleness_rows)
+    con.commit()
+
+    con.execute("""
+        CREATE OR REPLACE VIEW v_en_amendment_staleness AS
+        SELECT s.norm_id, n.article_number, n.article_title_en,
+               s.en_latest_act_number, s.uz_latest_act_number,
+               (s.en_latest_act_number < s.uz_latest_act_number) AS en_text_stale,
+               ea.amend_date AS uz_latest_amend_date
+        FROM en_amendment_staleness s
+        JOIN norm_unit n ON n.norm_id = s.norm_id
+        LEFT JOIN (
+            SELECT DISTINCT amend_act_number, amend_date FROM article_amendment
+        ) ea ON regexp_extract(ea.amend_act_number, '(\\d+)$') =
+                CAST(s.uz_latest_act_number AS VARCHAR)
+    """)
+    con.commit()
+    n_stale = con.execute(
+        "SELECT count(*) FROM v_en_amendment_staleness WHERE en_text_stale"
+    ).fetchone()[0]
+    log(f"\nv_en_amendment_staleness: {len(staleness_rows)} General Part articles "
+        f"carry a dated EN amendment footnote AND a resolvable UZ-mined amendment "
+        f"act number; {n_stale} of them have an EN footnote older than the "
+        "latest UZ-mined amendment — the displayed English article text may not "
+        "reflect current law. See DAILY_REVIEW.md 2026-10-31 for the full trace.")
+
     log("\nGeneral Part coverage:")
     cov = con.execute(f"""
         SELECT count(DISTINCT dst_norm_id) FROM link_edge

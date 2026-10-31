@@ -83,37 +83,74 @@ paragraph here.
   roughly 591 windows / ~190 signatures remain; no new strategy decision
   needed until that pool exhausts too.
 
-- **Data currency rotation — current state: built a new qism-level (specific
-  article-part) currency signal, sharper than the existing article-level
-  `has_removed_or_voided_part` boolean — found and shipped 8 real normative
-  citations into an exactly-removed part of Article 212. Last touched
-  2026-10-28** (see Log for the full trace): `article_amendment.locator` and
-  `link_edge.dst_qism` are both ordinal-typed and both already reuse
-  `citation_extractor`'s canonical ordinal grammar, but nobody had compared
-  them directly. Of 31 `removed`/`voided` article_amendment rows, 9 name a
-  single qism precisely enough to cross-check — found 8 `link_edge` citations
-  (4 distinct citing acts, all `evidence_kind='normative'`) targeting that
-  exact now-gone part of Article 212. 2 of the 4 citing acts predate the 2019
-  removal and are genuinely stale (no correcting act found for either in the
-  corpus); the other 2 are themselves Plenum "fix an old reference" acts, not
-  stale citations — the UI shows all 8 and lets a reader judge, same as every
-  other currency panel here. Shipped as a new `build_links.py` table+view
-  (`qism_void_citation`/`v_qism_void_citation`, purely additive, zero schema
-  change to any existing table) and a new warning block in
-  `app_hierarchy.py::page_article()`, nested under the existing coarser flag.
-  Verified both apps render correctly (installed `streamlit`, drove
-  `app_hierarchy.py` with Playwright — Article 212 shows the 8 citations,
-  Article 173's unrelated `has_removed_or_voided_part=True` case correctly
-  shows nothing new). No thread currently mid-flight; next Data currency
-  rotation should either extend this qism-level angle (the other
-  `removed`/`voided` locator shapes — whole-article and multi-article-list —
-  are already covered by the existing article-level boolean, so this is
-  likely exhausted for `article_amendment`'s current shape; a genuinely new
-  extension would need `repeal_clause.target_locator` to start naming
-  sub-article grain too, which it doesn't today) or pull a fresh pairing from
-  the untried set (`en_align_status`/`derived_status`/`dst_dangling` × version
-  dates — not yet tried; `act.status` is a constant `'in-force'` across all
-  24,267 acts, confirmed 2026-10-28, not worth pursuing as a signal).
+- **Data currency rotation — current state: mined a wholly new source this
+  project had never touched — the English markdown's own per-article
+  amendment footnote — and found that 17/386 (44.7% of the 38 articles whose
+  footnote resolves at all) General Part articles' DISPLAYED English text is
+  provably older than the latest Uzbek-mined amendment, including Article 1
+  itself. Last touched 2026-10-31** (see Log for the full trace):
+  `norm_unit.en_align_status` only certifies STRUCTURAL alignment (the
+  English article's number/title match the Uzbek one) — it says nothing
+  about whether the English article's own BODY TEXT reflects the most recent
+  substantive amendment, and nothing in the corpus had ever measured that
+  until today. The English markdown independently embeds a per-article "(Article
+  N was amended in accordance with the Law of the Republic of Uzbekistan
+  dated ... No. ZRU-NNN)" footnote — never parsed before (parser.py only
+  ever checked it for the substring "lost force"). ZRU-NNN is the same
+  globally-monotonic decree number as `article_amendment.amend_act_number`'s
+  OʻRQ-NNN (confirmed 1:1 consistent against `amend_date` corpus-wide, zero
+  conflicts across 66 distinct numbers) — joining on that shared ID sidesteps
+  ever having to parse the footnote's own inconsistently-formatted date text
+  (mixes "Month DD, YYYY" and bare numeric dates, sometimes DD.MM vs MM.DD
+  within the same footnote's own comma-separated list). 39 articles carry a
+  parseable footnote; for 17 of them the footnote's highest act number is
+  OLDER than the latest UZ-mined amendment for that article — confirmed with
+  real substantive content on the worst case (Article 1: the English
+  footnote cites 2018's ZRU-476, but `article_amendment`'s own evidence text
+  shows a 2021 restatement, OʻRQ-683, that rewrote the article's title AND
+  three of its four parts — not a formality). Deliberately reused rather
+  than re-solved the one latent trap here: `article_number` "261" is
+  verify_transfer.py's own already-known `review_ambiguous_key` (shared by
+  Article 26¹ and the unrelated Article 261) — the join always prefers
+  `article_amendment.norm_id` and only falls back to article_number text
+  matching for norm_units whose article_number isn't shared by a second
+  norm_id, so the one ambiguous pair can't silently conflate. Shipped as two
+  new, purely additive `build_links.py` tables
+  (`en_amendment_footnote`, one row per footnote act-number mention;
+  `en_amendment_staleness`, one row per resolvable article) plus a view
+  (`v_en_amendment_staleness`) and a new warning in
+  `app_hierarchy.py::page_article()`, right under the existing `en_align_status`
+  warning it complements. `app_llc.py` deliberately NOT touched — it never
+  renders `article_text_en` at all (only `article_title_en` for labeling), so
+  there is no surface for this specific warning there; 4 LLC foundation
+  articles (53, 55, 58, 67) are affected but the gap is only visible through
+  `app_hierarchy.py` today. Verified: `check_sql_bindings.py` 111/111,
+  `check_fstring_interp.py` 56/56, `pyflakes` clean, all pre-existing table
+  row counts unchanged (link_edge 9642, article_amendment 612, repeal_clause
+  885 — purely additive), and a Playwright pass on `app_hierarchy.py`
+  (Article 1 shows the new warning with the right numbers; Article 49, the
+  page's default, correctly shows nothing) plus a smoke-test pass on
+  `app_llc.py` (loads without error). `verify_transfer.py` green throughout.
+  **Next Data currency rotation**: the 1/39 article whose footnote act
+  number matched nothing in `article_amendment` — Article 26¹ — turned out
+  to be the ambiguous-key pair's OTHER half misfiring: `build_links.py`'s
+  own amendment-note mining resolved the 2024-02-21 "introduced" event
+  (OʻRQ-911) that the English footnote correctly attributes to Article 26¹
+  (`-111189-a261#1`) onto the WRONG sibling instead — `article_amendment`
+  event_id 24 carries `target_article_number='261'` but `norm_id=
+  '-111189-a261#2'` (the unrelated real Article 261, "Forms of penalty"),
+  so my ambiguous-key guard correctly refused to resolve it via the text
+  fallback, and the direct norm_id join found nothing because the row is
+  attached to the wrong norm_id in the first place. A real, narrow,
+  root-caused bug in the amendment-mining pipeline's own norm_id resolution
+  for this one already-known ambiguous key — not fixed today (out of scope
+  for a signal-building session; needs tracing through `build_links.py`'s
+  amendment-note norm_id assignment, not the code touched today) but fully
+  diagnosed for whoever picks it up. Beyond that, the qism-level angle
+  (2026-10-28) is still likely exhausted
+  for `article_amendment`'s current locator shapes; the untried
+  `derived_status`/`dst_dangling` × version-dates pairing remains available
+  too.
 
 - **Cleanup rotation — current state: ten repeatable checks (the nine as of
   2026-10-26 plus `check_dead_views.py`), all re-ran clean/current as a
@@ -776,7 +813,19 @@ paragraph here.
   `has_removed_or_voided_part` boolean's grain). See Active threads/Log for
   the full trace and the shipped `v_qism_void_citation` signal. `act.status`
   checked and ruled out as a pairing candidate the same day — constant
-  `'in-force'` across all 24,267 acts, zero information.
+  `'in-force'` across all 24,267 acts, zero information. **2026-10-31: sixth
+  hit, a wholly new SOURCE, not just a new pairing of existing columns** —
+  the English markdown's own per-article amendment footnote (never parsed
+  before) cross-checked against `article_amendment.amend_act_number` via
+  the shared ZRU-NNN/OʻRQ-NNN decree-number identity: 17/38 resolvable
+  articles' displayed English text is older than the latest Uzbek-mined
+  amendment, including Article 1 (missing a 2021 restatement of its title
+  and three of its four parts). Shipped as `en_amendment_footnote`/
+  `en_amendment_staleness`/`v_en_amendment_staleness` plus a warning in
+  `app_hierarchy.py::page_article()`. See Active threads and Log for the
+  full trace, including a real root-caused (not just found) bug this
+  surfaced in `build_links.py`'s own amendment-note norm_id resolution for
+  the Article 26¹/261 ambiguous key — see new Backlog item below.
 - ~~**Is `norm_unit.en_repealed` (flagged dead-by-construction in the
   2026-10-22 Cleanup rotation) safe to eventually wire up as a currency
   signal, given more engineering?**~~ **Closed, decided no, 2026-10-23**:
@@ -969,6 +1018,23 @@ paragraph here.
   measurable risk. Do not re-open this without that trigger; a regex fix
   was prototyped, tested, and deliberately reverted today for lack of a
   confirmed bug to justify it.
+- **New, 2026-10-31: `article_amendment`'s own amendment-note mining
+  mis-resolves `norm_id` for the Article 26¹/261 ambiguous key.** Found via
+  the EN-footnote cross-check (see Active threads): event_id 24
+  (`target_article_number='261'`, change_type `inserted`, 2024-02-21,
+  OʻRQ-911) is attached to `norm_id='-111189-a261#2'` (the real,
+  independently-numbered Article 261, "Forms of penalty"), but the English
+  markdown's own footnote on Article 26¹ (`-111189-a261#1`, "Insolvency
+  estate") independently confirms it — not Article 261 — is the one
+  "introduced" by OʻRQ-911 on that date. `verify_transfer.py`'s own
+  `review_ambiguous_key` check already knows article_number "261" is shared
+  by two norm_ids; this is a second, previously-unknown place the same
+  ambiguity causes a real misattribution, this time inside `build_links.py`
+  rather than the parser. Not fixed today — needs tracing through
+  `build_links.py`'s amendment-note norm_id resolution (likely wherever it
+  picks a norm_id for a bare `article_number` without disambiguating by
+  which structural part/context the amendment note actually appeared in),
+  which is separate code from anything touched in today's EN-footnote work.
 - **`act.version_date` (LexUZ's scrape date) surfaced as a snapshot-age
   signal, 2026-10-11 — shipped, not just measured** (see Log for the full
   trace): 78/245 (31.8%) of acts realizing a General Part article, and
@@ -1244,6 +1310,29 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-10-31 — Data currency rotation: mined the English markdown's own per-article amendment footnote (a source never parsed before), cross-checked it against `article_amendment` via the shared ZRU-NNN/OʻRQ-NNN decree number — 17/38 resolvable General Part articles' displayed English text is older than the latest known Uzbek amendment, shipped as a new signal in both the DB and `app_hierarchy.py`; also root-caused (not fixed) a real `norm_id`-misattribution bug the cross-check surfaced
+
+**Environment note first**: the container came up with HEAD detached 3 commits ahead of both local `main` and `origin/main` — 2026-10-28/29/30's work (`ccfbfd9`/`89c99ad`/`8b28ff5`) was committed but never pushed by those sessions, sitting only in this container's checkout. Confirmed via `git merge-base main HEAD` that this was a clean fast-forward (not a real fork — `main`'s tip was an ancestor of `HEAD`, not a sibling), fast-forwarded local `main` to it (`git branch -f main HEAD`), and pushed to `origin/main` before starting today's own work, so that work was no longer sitting at risk of being lost if this container were reclaimed. Also needed `git lfs pull` (the parquet was a stale 134-byte LFS pointer stub) and `python3 -m pip install duckdb` into the interpreter `python`/`python3` actually resolve to — the same recurring bootstrap quirks 2026-10-28/29/30's log entries already flagged.
+
+**Rotation choice**: Extractor touched 2026-10-30, Cleanup 2026-10-29, Data currency 2026-10-28 (oldest) — Data currency is next.
+
+**Picked a fresh angle rather than the two Active-threads suggestions** (extending the qism-level signal, or the `en_align_status`/`derived_status`/`dst_dangling` × version-dates pairing): while exploring `norm_unit`'s English-side columns, noticed `en_align_status` only certifies STRUCTURAL alignment (the English article's number/title match the Uzbek one) — nothing in the corpus had ever measured whether the English article's own BODY TEXT reflects the most recent substantive amendment. The English markdown embeds its own per-article footnote for this exact purpose — "(Article N was amended in accordance with the Law of the Republic of Uzbekistan dated ... No. ZRU-NNN)" — sitting right in `article_text_en`, completely unparsed (`parser.py` only ever checked this text for the substring "lost force", to set `en_repealed`).
+
+**Built the extraction carefully, in stages, because the footnote text is messy:**
+1. First pass (date-text based) found 39 articles with a footnote, but a spot-check on Article 68 ("dated 14.05.2014 No. ZRU-372, 09.01.2018 No. ZRU-459") showed a single footnote can list MULTIPLE comma-separated (date, act-number) pairs when an article has been amended more than once since its English text was last touched — a naive "first dated phrase" regex would have silently used the OLDER of the two and under-counted the English text's own claimed currency.
+2. Also found the date text itself is inconsistently formatted — spelled "Month DD, YYYY" for some entries and bare numeric for others, and within Article 280's own single footnote, mixed DD.MM.YYYY for one date and what reads as MM.DD.YYYY for a second ("10.22.2019" = October 22, 2019, confirmed against the matching `article_amendment` row) — a real, unresolved formatting defect in the source footnote itself. **Decision: sidestep date parsing entirely.** The footnote's act number (ZRU-NNN) is the exact same globally-monotonic decree-number sequence as `article_amendment.amend_act_number`'s OʻRQ-NNN — confirmed 1:1 consistent against `amend_date` corpus-wide first (66 distinct act numbers pulled from `article_amendment`, zero numbers mapping to more than one date). Comparing act NUMBERS instead of dates is both more robust (no format ambiguity) and a stronger join key than anything tried in this thread before.
+3. Final extraction (`in accordance with the Laws? of the Republic of Uzbekistan dated ... \)_`, non-greedy to the footnote's own closing `)_`, then every `ZRU-NNN` inside that span) finds 39 articles / 41 act-number mentions.
+
+**The join had one real trap, caught before shipping, not after:** `article_number` "261" is shared by two distinct `norm_id`s — Article 26¹ (`-111189-a261#1`, "Insolvency estate") and the unrelated, independently-numbered Article 261 (`-111189-a261#2`, "Forms of penalty") — already flagged as `verify_transfer.py`'s own `review_ambiguous_key` finding. A naive join on the bare `article_number` string would have silently conflated the two articles' amendment histories for this one pair. Fixed by preferring `article_amendment.norm_id` (populated 288/612 rows) and only falling back to `article_number` text-matching for norm_units whose `article_number` is NOT shared by a second `norm_id` — which excludes exactly this one pair and nothing else.
+
+**Result, run against the live corpus**: 38/39 articles resolve to at least one comparable UZ-mined act number; of those, **17 (44.7%) have an English footnote older than the article's latest known Uzbek amendment** — meaning the DISPLAYED English article text itself, not just its footnote, may reflect a pre-amendment version of the law. Spot-verified the worst case directly rather than trusting the number alone: Article 1's English footnote cites 2018 (ZRU-476), but `article_amendment`'s own mined evidence text for OʻRQ-683 (2021-04-21) shows "1-moddaning nomi ... tahririda" / "birinchi qismi ... tahririda" / "ikkinchi qismi ... tahririda" / "toʻrtinchi qismi ... tahririda" — the article's TITLE and three of its four parts were substantively restated in 2021, not a formality, with zero trace of that in the English translation 386 users would read today.
+
+**The 39th article (26¹) is the ambiguous-key pair's OTHER half misfiring — a real, narrow, root-caused bug, not just a loose end**: `article_amendment` event_id 24 (`target_article_number='261'`, `inserted`, 2024-02-21, OʻRQ-911) carries `norm_id='-111189-a261#2'` (the real Article 261), but the English footnote independently confirms — and `article_amendment`'s own evidence text, re-read directly, agrees — that OʻRQ-911 actually introduced Article 26¹ (`-111189-a261#1`), not Article 261. My join's ambiguous-key guard correctly refused to resolve this via the text fallback (exactly what it's for), so the gap surfaced as "no match" rather than a silent wrong answer — but the underlying mis-resolution lives in `build_links.py`'s own amendment-note mining, not in anything built today. Documented precisely, not fixed (out of scope for a signal-building session; needs tracing separate code) — see Backlog > Data currency.
+
+**Shipped, not just measured**: two new purely-additive `build_links.py` tables (`en_amendment_footnote`: one row per footnote act-number mention; `en_amendment_staleness`: one row per resolvable article, `en_latest_act_number`/`uz_latest_act_number`), a view (`v_en_amendment_staleness`), and a new warning in `app_hierarchy.py::page_article()` directly under the existing `en_align_status` warning it complements ("English text may be out of date... Trust the Uzbek text for anything substantive"). `app_llc.py` deliberately left untouched — it never renders `article_text_en` (only `article_title_en` for labeling), so there's no surface for this specific signal there, even though 4 LLC foundation articles (53, 55, 58, 67) are among the 17 affected.
+
+**Verification**: re-ran `build_links.py` only (not a full `corpus.duckdb` rebuild) — all pre-existing table row counts unchanged (`link_edge` 9642, `article_amendment` 612, `repeal_clause` 885, `norm_unit` 386, `act` 24267), confirming the change is purely additive. `check_sql_bindings.py` 111/111 (up from 110, the one new parameterized call site). `check_fstring_interp.py` 56/56 unchanged (new query uses `?` parameters, no f-string execute). `pyflakes` clean on both touched files. Installed `streamlit`+`duckdb` into the interpreter the `streamlit` console script actually resolves to (a third interpreter beyond the `python`/`python3` split already noted — `pip install streamlit` alone landed it under a *different* python then the one running `streamlit run`; fixed by `python -m pip install streamlit` + `python -m streamlit run`) and drove both apps with Playwright (pre-installed Chromium at `/opt/pw-browsers/chromium`): `app_hierarchy.py` on Article 1 shows the new warning with the correct numbers (ZRU-476 vs OʻRQ-683, 2021-04-21); Article 49 (the page's own default) correctly shows nothing; `app_llc.py` loads with no error. `python verify_transfer.py` green throughout, identical reconciliation-detail output to this morning's baseline.
 
 ### 2026-10-30 — Extractor rotation: gold batch 16 (605 → 645), fixed a live anchor-regex recall bug (glued digits), corrected the interposed-act-name known_gap's own corpus-wide count again (6/4 → 7/4), found a new digit-"boʻlim"-means-chapter known_gap
 

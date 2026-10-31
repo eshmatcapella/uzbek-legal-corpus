@@ -179,6 +179,21 @@ def page_article() -> None:
         st.warning(f"English text flagged `{align}` — the 2025 translation may not "
                    "match the current Uzbek article. Trust the Uzbek text.")
 
+    staleness = q("""
+        SELECT en_latest_act_number, uz_latest_act_number, uz_latest_amend_date
+        FROM v_en_amendment_staleness WHERE norm_id = ? AND en_text_stale
+    """, [norm_id])
+    if staleness:
+        en_act, uz_act, uz_date = staleness[0]
+        st.warning(
+            f"**English text may be out of date.** Its own amendment footnote "
+            f"cites Law No. ZRU-{en_act} as the most recent change, but LexUZ's "
+            f"Uzbek-side amendment history records a later one — Law No. "
+            f"OʻRQ-{uz_act}, {uz_date} — that the English translation does not "
+            "appear to reflect. `en_align_status` only checks that the article's "
+            "number/title line up, not that its text is current. Trust the "
+            "Uzbek text for anything substantive.")
+
     currency = q("""
         SELECT n_amendments, last_amend_date, last_change_type, has_removed_or_voided_part
         FROM v_article_currency WHERE doc_id = ? AND article_number = ?
