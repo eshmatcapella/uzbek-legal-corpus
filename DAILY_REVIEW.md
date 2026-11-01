@@ -152,38 +152,69 @@ paragraph here.
   `derived_status`/`dst_dangling` × version-dates pairing remains available
   too.
 
-- **Cleanup rotation — current state: ten repeatable checks (the nine as of
-  2026-10-26 plus `check_dead_views.py`), all re-ran clean/current as a
-  baseline, and the one concrete finding (`v_llc_skeleton`, a dead view) is
-  fixed. Last touched 2026-10-29** (re-ran the first nine: `pyflakes`/
-  `vulture` clean; `bandit` 58/3/1, same classes as 2026-10-26; `check_sql_
-  bindings.py` 110/110 (up from 108 — more call sites after 2026-10-28's
-  `qism_void_citation` feature, not drift); `check_code_clones.py` same 5
-  pairs as 2026-10-22; `check_fstring_interp.py` 56/56 clean;
-  `check_dead_columns.py` **14 flagged, not 15** — `article_amendment.
-  event_id` dropped off organically because 2026-10-28's feature now reads
-  it, confirming the checker tracks real drift rather than a stale
-  snapshot). Then built a tenth check, `check_dead_views.py` — the
-  dead-columns idea one grain up: does every `CREATE OR REPLACE VIEW` the
-  pipeline rebuilds every run get queried (`FROM`/`JOIN`) by anything
-  downstream? 1/10 views flagged: `v_llc_skeleton` (`build_llc.py`), never
-  queried since its introduction, not documented anywhere as deliberate
-  future scaffolding, and not even a drop-in match for the one place
-  (`app_llc.py::page_skeleton()`) that does the same `llc_stage`/`llc_norm`
-  join by hand (the view lacks the `ORDER BY`/`layer` filter/currency join
-  every one of that function's call sites needs) — so retired rather than
-  wired in. Proved the checker with a mutation test (removing `v_llc_
-  realization`'s one real query site correctly flags it; reverting restores
-  the clean 9/9 baseline). Deleted the dead view from `build_llc.py` and the
-  live `corpus.duckdb` (10 → 9 views; row counts of `llc_stage`/`llc_norm`/
-  `llc_implementing_act` unchanged: 8/100/135); verified with
-  `verify_transfer.py` green and a Playwright pass on `app_llc.py`'s LLC
-  skeleton page (unaffected, as expected). Next Cleanup rotation should
-  re-run all ten as a baseline; the two deliberately-deferred residuals are
-  unchanged (`check_sql_bindings.py` doesn't trace plain-literal indirection;
-  `check_dead_views.py` doesn't trace transitive view-on-dead-view chains —
-  not the shape of anything found today, but noted for a future check if
-  the view count grows). Full detail: Log, 2026-10-29.
+- **Cleanup rotation — current state: all ten checks re-ran as a baseline;
+  one real clone-risk fix shipped (the two gold samplers' duplicated
+  candidate-window logic merged into a shared module); two new findings
+  since 2026-10-29 hand-verified as non-bugs, one of them a second-order
+  effect of 2026-10-29's own dead-view fix. Last touched 2026-11-01**
+  (`pyflakes`/`vulture` clean; `bandit` 58/3/1, same classes as always;
+  `check_sql_bindings.py` 111/111; `check_fstring_interp.py` **54/54, not
+  56** — expected, not drift: merging the two samplers' identical SQL into
+  one shared function removed 2 duplicate `execute(f"...")` call sites, not
+  2 newly-broken ones; `check_dead_views.py` 10/10 clean, confirmed the
+  transitive-view-chain blind spot still isn't triggered (`v_llc_realization`
+  → `v_act_currency` and `v_realization_struct` → `v_realization` both exist,
+  but both upstream views are themselves live, so no dead-view-feeding-
+  dead-view chain exists today). `check_code_clones.py`: **6 pairs, not 5**
+  before today's fix — two new pairs since 2026-10-29's baseline.
+  (1) `check_dead_columns.py:base_table_columns()` / `check_dead_views.py:
+  view_names()` (0.734) — both new scripts' own small `information_schema`
+  introspection helpers, one over columns, one over views; genuinely
+  parallel by design, not worth merging (same precedent as `score_gold.py`'s
+  `citation_to_dict()` staying separate from this project's own
+  `citation_dict()` below). Left alone. (2) `build_gold_sample.py:main()` /
+  `build_gold_sample_novel.py:build_candidates()` (0.579) — this one was
+  real, and the 0.579 score undersold it: both functions ran the identical
+  SQL (the alias-docs query + the per-row/per-field anchor query) and the
+  identical per-anchor extraction loop, independently maintained since
+  2026-09-25. This is the *exact* class of risk that already caused a live
+  bug once (2026-10-24's signature-span mismatch, see Backlog history) —
+  two near-identical copies of window-building logic drifting apart because
+  a fix lands in one and not the other. Fixed by extracting the shared scan
+  into a new module, `gold_sampling.py` (`build_candidate_windows()`, plus
+  the `citation_dict()`/`PARQUET`/`SOURCE_FIELDS`/`CC_DOCS` it already
+  needed), with each script attaching only its own unique post-processing
+  (`build_gold_sample.py`'s hit/empty split; `build_gold_sample_novel.py`'s
+  signature computation, via an `extra_fn` hook since the signature span is
+  deliberately NOT the same span as `window` — see that script's own
+  comment, preserved verbatim in the new module). Proved byte-identical
+  behavior before/after: `build_gold_sample.py --n 20 --seed 42` and
+  `build_gold_sample_novel.py --n 20 --seed 42` produce byte-for-byte
+  identical JSON and stdout pre- vs post-refactor (diffed directly, zero
+  lines changed). Net effect: -106 lines across the two scripts, the pair
+  dropped off `check_code_clones.py` (6 → 5), and the duplicated-maintenance
+  risk that caused a real bug once is now structurally impossible (one
+  scan function, not two). `check_dead_columns.py`: **15 flagged, same
+  count as 2026-10-22's original baseline, but NOT the same 15** —
+  `article_amendment.event_id` is still off the list (read since
+  2026-10-28, as 2026-10-29 found), but `llc_norm.norm_key` is newly on it.
+  Root-caused: `norm_key` was never a real consumer-read column at all —
+  its ONLY prior "read" was inside `v_llc_skeleton`'s own `SELECT` list
+  (`git show 89c99ad`), the exact view 2026-10-29's Cleanup rotation
+  correctly deleted as dead. Deleting a dead view that happened to be the
+  sole reader of a column orphaned that column one grain down — a genuine
+  second-order effect of a previous, correct cleanup fix, and a nice
+  confirmation that these checks compose rather than just coincidentally
+  agreeing. Hand-verified `norm_key` has no other reader anywhere (every
+  real `llc_norm` join in `build_llc.py`/`app_llc.py`/`verify_transfer.py`
+  joins on `article_number`/`stage_no`, never `norm_key`); it's a `PRIMARY
+  KEY`, so it still earns its place as a real uniqueness constraint even
+  though nothing reads it back — same precedent as the already-recorded
+  `repeal_clause.clause_id`/`item_no`, left alone rather than removed.
+  Next Cleanup rotation should re-run all ten as a baseline; the two
+  deliberately-deferred residuals (`check_sql_bindings.py`'s plain-literal
+  indirection; `check_dead_views.py`'s transitive chains) remain unchanged
+  and still untriggered. Full detail: Log, 2026-11-01.
 
 ---
 
@@ -1306,10 +1337,161 @@ paragraph here.
   `link_edge.src_article_number`, confirmed it was flagged immediately,
   reverted). See Log for the full trace. Now a ninth repeatable Cleanup
   check; next rotation should re-run all nine.
+- ~~**`check_code_clones.py`'s own duplicate-logic flag between
+  `build_gold_sample.py` and `build_gold_sample_novel.py` (0.579 similarity)
+  undersold a real clone-maintenance risk.**~~ **Fixed 2026-11-01**: the two
+  gold samplers independently ran the identical SQL + per-anchor extraction
+  loop to build candidate windows since 2026-09-25 — the exact
+  duplicated-maintenance shape that already caused a live bug once
+  (2026-10-24's signature-span mismatch). Extracted into a shared
+  `gold_sampling.py::build_candidate_windows()`; proved byte-identical
+  output before/after with matched `--seed` runs. See Active threads and
+  Log, 2026-11-01, for the full trace.
+- **`llc_norm.norm_key` is now flagged dead by `check_dead_columns.py`, a
+  second-order effect of 2026-10-29's own `v_llc_skeleton` deletion.**
+  Found 2026-11-01: `norm_key`'s only prior "read" was inside the dead view
+  itself, so deleting the view (correctly) orphaned the column too. It's a
+  `PRIMARY KEY`, so left in place rather than removed — same precedent as
+  `repeal_clause.clause_id`/`item_no` (a real uniqueness constraint that's
+  never queried back). Recorded, not acted on further; see Active threads,
+  2026-11-01.
 
 ---
 
 ## Log
+
+### 2026-11-01 — Cleanup rotation: re-ran all ten checks as a baseline, fixed a real cross-file clone-maintenance risk between the two gold samplers (the exact class of duplication that caused 2026-10-24's bug), hand-verified two new findings including a second-order effect of 2026-10-29's own dead-view fix
+
+Rotation: Cleanup (last touched 2026-10-29, three days ago — Extractor and
+Data currency each had their turn in between, so this keeps the three-way
+round robin exact for a sixth day running).
+
+**Environment note, logged for whoever reads this next**: this cloud run
+started with NONE of the toolchain pre-installed — no `duckdb`, `pandas`,
+`pyflakes`, `vulture`, or `bandit` in either system Python (3.11, the one
+every script's `#!/usr/bin/env python` shebang actually resolves to via
+`/usr/local/bin/python`, or 3.13, the one `pip`/`pip3` happened to be wired
+to). `pip3.11 install duckdb pandas streamlit pyflakes vulture bandit`
+fixed it for this session; every command below was run as `python3.11
+<script>`, not bare `python3`/`python`, to make sure the two stayed
+consistent. Not a repo problem (no `requirements.txt` exists or has ever
+been needed, since prior sessions' containers apparently came pre-seeded)
+— just a one-time setup cost worth naming in case a future session hits
+the same bare container and wonders why `duckdb` is missing.
+
+**Baseline, all ten checks, re-run clean/current**:
+- `pyflakes *.py`: clean.
+- `vulture *.py --min-confidence 60`: clean.
+- `bandit -r . -x ./articles,./documents,./okoz,./structure`: 58 `B608` / 3
+  `B311` / 1 `B110`, same classes as every prior baseline, unchanged.
+- `check_sql_bindings.py`: 111/111 literal queries bind cleanly (up from 110
+  on 2026-10-29 — one more call site after 2026-10-31's `en_amendment_
+  staleness` work, not drift).
+- `check_fstring_interp.py`: 56/56 clean at the start of the session; ended
+  at 54/54 after today's own fix (see below — removing 2 duplicate
+  `execute(f"...")` call sites is the expected effect, not new drift).
+- `check_dead_views.py`: 10/10 clean. Also hand-checked the check's own
+  documented blind spot (transitive view-on-dead-view chains) directly
+  against the live schema: `v_llc_realization` → `v_act_currency` and
+  `v_realization_struct` → `v_realization` are the only two view-on-view
+  edges in the whole schema, and both upstream views (`v_act_currency`,
+  `v_realization`) are themselves confirmed live elsewhere — so there is no
+  dead-view-feeding-dead-view chain today, confirming the check's own
+  "not the shape of anything found" note still holds.
+- `check_dead_columns.py`: 15 flagged — same COUNT as the original
+  2026-10-22 baseline, but a different SET: `article_amendment.event_id`
+  is still off the list (it became real-read on 2026-10-28, as 2026-10-29
+  already found), but `llc_norm.norm_key` is newly on it (see below).
+- `check_code_clones.py`: **6 flagged pairs, not 5** — two new since
+  2026-10-29's baseline (113→114 functions parsed, reflecting the new
+  scripts/features landed since then). Hand-verified both:
+  1. `check_dead_columns.py:base_table_columns()` / `check_dead_views.py:
+     view_names()` (0.734) — both scripts' own tiny `information_schema`
+     introspection helpers (one over columns, one over views). Genuinely
+     parallel by design, same precedent this project already applies to
+     `gold_sampling.citation_dict()` staying separate from `score_gold.py`'s
+     own `citation_to_dict()` (0.795, unresolved, also by design) — left
+     alone.
+  2. `build_gold_sample.py:main()` / `build_gold_sample_novel.py:
+     build_candidates()` (0.579) — this one was real, see below. Fixed.
+
+**The real fix**: reading the 0.579 pair by hand (not just trusting the
+similarity score, which measures surface-level AST structure and can
+undersell a near-exact clone when one side has slightly more inline code
+around it) showed both functions ran the IDENTICAL SQL — the `alias_docs`
+query plus the per-row/per-field anchor-window query — and the IDENTICAL
+per-anchor extraction loop (`cx._anchors()` → `cx.extract()` → window-slice
+→ per-citation dict), independently maintained in two files since
+`build_gold_sample_novel.py` was written on 2026-09-25. This is the *exact*
+risk class that already produced a real, measured bug once: the 2026-10-24
+signature-span mismatch (see Backlog > Extractor recall/precision history)
+was a case of these same two scripts' window-building logic silently
+disagreeing because a fix landed in one copy and not the other. Extracted
+the shared scan into a new module, `gold_sampling.py`
+(`build_candidate_windows()`, carrying the `citation_dict()`/`PARQUET`/
+`SOURCE_FIELDS`/`CC_DOCS` both scripts already needed), with each script
+attaching only its own genuinely-unique post-processing via an `extra_fn`
+hook: `build_gold_sample.py` needs nothing extra (its hit/empty split reads
+`extracted` directly); `build_gold_sample_novel.py` attaches a `signature`
+field computed from the RAW TEXT at `a_end:a_end+WINDOW` — deliberately a
+DIFFERENT span than the shared `window` field (`a_start-20:limit`, limited
+by the next anchor) — preserving verbatim the 2026-10-24 comment explaining
+why those two spans must never be conflated.
+
+Verification: `pyflakes`/`vulture` clean on all three touched/new files.
+Proved byte-identical behavior before vs. after with `git stash`:
+`build_gold_sample.py --n 20 --seed 42` and `build_gold_sample_novel.py
+--n 20 --seed 42` against the pre-refactor code, same commands against the
+post-refactor code, `diff`'d both scripts' stdout and output JSON —
+zero differences in either case (2630 hit/621 empty candidate windows;
+3251 candidates, 727 distinct signatures, 591 novel windows across 155
+novel signatures — all identical pre/post). Net: -106 lines across the two
+scripts, the clone pair dropped off `check_code_clones.py` (6 → 5), and
+`check_fstring_interp.py`'s count dropped 56 → 54 (the 2 removed duplicate
+`execute(f"...")` call sites, expected not alarming). `verify_transfer.py`
+reconfirmed green after the change (full output unchanged except the
+usual `review_ambiguous_key`/`structure_missing_articles`/
+`suspect_version_drift` residuals, all pre-existing). Neither
+`app_hierarchy.py` nor `app_llc.py` reference either gold-sampler script
+(confirmed by grep), so no app-surface check was needed.
+
+**The second-order finding**: `check_dead_columns.py`'s newly-flagged
+`llc_norm.norm_key` traced back cleanly. `git log -S` on `build_llc.py`
+showed `norm_key` WAS read somewhere, once — inside `v_llc_skeleton`'s own
+`SELECT` list (`git show 89c99ad`), which is exactly the dead view
+2026-10-29's Cleanup rotation correctly identified and deleted. That
+view's own `SELECT` was never itself consumed by anything (that's *why* it
+was dead), so `norm_key`'s only "reader" was already not a real reader
+before the view was deleted — deleting the view just made the already-true
+fact visible to `check_dead_columns.py` for the first time. Hand-verified
+there is no other reader anywhere: every real `llc_norm` join in
+`build_llc.py` (`JOIN llc_norm n ON n.article_number = e.dst_article_number`),
+`app_llc.py` (five call sites, all join/filter on `article_number`/
+`stage_no`), and `verify_transfer.py` (four checks, same two columns) joins
+on `article_number`/`stage_no`, never `norm_key`. It IS a `PRIMARY KEY`
+constraint though — a real uniqueness guard against the build inserting two
+rows under the same synthetic key (`f"F{stage_no}-{art}"` / `f"L{r[1]}"`),
+independent of whether anything reads it back — so left in place rather
+than removed, same precedent already applied to `repeal_clause.clause_id`/
+`item_no` on 2026-10-22. Recorded as a permanent, non-actionable finding,
+and as a small confirmation that this project's ten checks compose: a
+correct fix in one check's domain (dead views) can surface a genuinely new,
+correct finding in another's (dead columns) one day later, rather than the
+two being coincidentally unrelated.
+
+`verify_transfer.py`: PASSED, all checks green, output unchanged from
+baseline. Files changed: `build_gold_sample.py`, `build_gold_sample_novel.py`
+(both trimmed), `gold_sampling.py` (new). `corpus.duckdb` untouched (no
+rebuild needed — this was a maintainer-tooling-only change, not a pipeline
+change). `DAILY_REVIEW.md` updated (Active threads, Backlog, this entry).
+
+**Next Cleanup rotation**: re-run all ten as a baseline per usual. The two
+deliberately-deferred residuals are unchanged and still untriggered
+(`check_sql_bindings.py`'s plain-literal indirection, one call site;
+`check_dead_views.py`'s transitive chains, confirmed again today not to be
+the shape of anything live). No new Cleanup backlog item opened today —
+today's fix fully closed the clone-pair it addressed, and `llc_norm.
+norm_key` is recorded as resolved-by-explanation, not left open.
 
 ### 2026-10-31 — Data currency rotation: mined the English markdown's own per-article amendment footnote (a source never parsed before), cross-checked it against `article_amendment` via the shared ZRU-NNN/OʻRQ-NNN decree number — 17/38 resolvable General Part articles' displayed English text is older than the latest known Uzbek amendment, shipped as a new signal in both the DB and `app_hierarchy.py`; also root-caused (not fixed) a real `norm_id`-misattribution bug the cross-check surfaced
 

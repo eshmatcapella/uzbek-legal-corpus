@@ -42,10 +42,7 @@ from collections import Counter
 import duckdb
 
 import citation_extractor as cx
-
-PARQUET = "articles/train-00000-of-00001.parquet"
-SOURCE_FIELDS = ("article_text", "cross_references", "amendment_note")
-CC_DOCS = (cx.DOC_GENERAL, cx.DOC_SPECIAL)
+from gold_sampling import PARQUET, build_candidate_windows
 
 # Feature detectors over the RAW window text (anchor-end to window-limit),
 # independent of what citation_extractor.py itself decides to do with it --
@@ -164,70 +161,24 @@ def signature(window_text: str, anchor_kind: str, field: str) -> tuple:
     )
 
 
-def build_candidates(con) -> list[dict]:
-    raw = f"read_parquet('{PARQUET}', file_row_number=true)"
-    alias_docs = {r[0] for r in con.execute(f"""
-        SELECT DISTINCT doc_id FROM {raw}
-        WHERE regexp_matches(coalesce(article_text, ''), 'bundan buyon matnda FK deb')
-    """).fetchall()}
-    rows = con.execute(f"""
-        SELECT file_row_number, doc_id, doc_type, article_number,
-               article_text, cross_references, amendment_note
-        FROM {raw}
-        WHERE regexp_matches(lower(coalesce(article_text,'') || ' ' || coalesce(cross_references,'')
-                                   || ' ' || coalesce(amendment_note,'')), 'kodeks|\\bfk\\b')
-        ORDER BY file_row_number
-    """).fetchall()
+def _signature_field(text: str, a_start: int, a_end: int, limit: int, kind: str, field: str) -> dict:
+    # Signature text must use the SAME span gold_signatures() recomputes
+    # against (always a_end .. a_end+WINDOW, never bounded by the next
+    # anchor) -- otherwise "novel" (measured here, next-anchor-bounded)
+    # and "covered" (measured there, flat +WINDOW) are computed over two
+    # different spans and silently disagree. Found 2026-10-24 while
+    # merging gold batch 13 (see DAILY_REVIEW.md): the 40 merged windows,
+    # which this function's own (buggy) next-anchor-bounded signature had
+    # called 12 distinct novel signatures, collapsed to just 5 once
+    # recomputed the way "covered" is actually measured -- so this
+    # function had been both under- and over-counting novelty since the
+    # sampler was introduced on 2026-09-25.
+    sig_text = text[a_end:a_end + cx.WINDOW]
+    return {"signature": signature(sig_text, kind, field)}
 
-    candidates: list[dict] = []
-    for row_id, doc_id, doc_type, art_no, *texts in rows:
-        is_code = doc_id in CC_DOCS
-        for field, text in zip(SOURCE_FIELDS, texts):
-            if not text:
-                continue
-            allow_alias = doc_id in alias_docs
-            anchors = cx._anchors(text, allow_fk_alias=allow_alias, is_the_code=is_code)
-            if not anchors:
-                continue
-            all_cites = cx.extract(text, allow_fk_alias=allow_alias, is_the_code=is_code)
-            for i, (a_start, a_end, kind) in enumerate(anchors):
-                limit = min(a_end + cx.WINDOW, anchors[i + 1][0] if i + 1 < len(anchors) else len(text))
-                window_text = text[max(0, a_start - 20):limit]
-                # Signature text must use the SAME span gold_signatures() recomputes
-                # against (always a_end .. a_end+WINDOW, never bounded by the next
-                # anchor) -- otherwise "novel" (measured here, next-anchor-bounded)
-                # and "covered" (measured there, flat +WINDOW) are computed over two
-                # different spans and silently disagree. Found 2026-10-24 while
-                # merging gold batch 13 (see DAILY_REVIEW.md): the 40 merged windows,
-                # which this function's own (buggy) next-anchor-bounded signature had
-                # called 12 distinct novel signatures, collapsed to just 5 once
-                # recomputed the way "covered" is actually measured -- so this
-                # function had been both under- and over-counting novelty since the
-                # sampler was introduced on 2026-09-25.
-                sig_text = text[a_end:a_end + cx.WINDOW]
-                cites_here = [c for c in all_cites if a_start <= c.start < limit]
-                candidates.append({
-                    "row_id": row_id,
-                    "doc_id": doc_id,
-                    "doc_type": doc_type,
-                    "article_number": art_no,
-                    "field": field,
-                    "anchor_kind": kind,
-                    "anchor_start": a_start,
-                    "anchor_end": a_end,
-                    "is_the_code": is_code,
-                    "window": window_text,
-                    "signature": signature(sig_text, kind, field),
-                    "extracted": [
-                        {
-                            "target_kind": c.target_kind, "article": c.article,
-                            "struct_number": c.struct_number, "section_number": c.section_number,
-                            "qism": c.qism, "anchor": c.anchor, "listing": c.listing,
-                            "evidence": c.evidence,
-                        } for c in cites_here
-                    ],
-                })
-    return candidates
+
+def build_candidates(con) -> list[dict]:
+    return build_candidate_windows(con, extra_fn=_signature_field)
 
 
 def gold_signatures(con, gold_path: str) -> set[tuple]:

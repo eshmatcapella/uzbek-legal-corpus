@@ -46,24 +46,7 @@ import random
 
 import duckdb
 
-import citation_extractor as cx
-
-PARQUET = "articles/train-00000-of-00001.parquet"
-SOURCE_FIELDS = ("article_text", "cross_references", "amendment_note")
-CC_DOCS = (cx.DOC_GENERAL, cx.DOC_SPECIAL)
-
-
-def citation_dict(c: cx.Citation) -> dict:
-    return {
-        "target_kind": c.target_kind,
-        "article": c.article,
-        "struct_number": c.struct_number,
-        "section_number": c.section_number,
-        "qism": c.qism,
-        "anchor": c.anchor,
-        "listing": c.listing,
-        "evidence": c.evidence,
-    }
+from gold_sampling import build_candidate_windows
 
 
 def main() -> None:
@@ -74,53 +57,13 @@ def main() -> None:
     args = ap.parse_args()
 
     con = duckdb.connect(":memory:", read_only=False)
-    raw = f"read_parquet('{PARQUET}', file_row_number=true)"
-
-    alias_docs = {r[0] for r in con.execute(f"""
-        SELECT DISTINCT doc_id FROM {raw}
-        WHERE regexp_matches(coalesce(article_text, ''), 'bundan buyon matnda FK deb')
-    """).fetchall()}
-
-    rows = con.execute(f"""
-        SELECT file_row_number, doc_id, doc_type, article_number,
-               article_text, cross_references, amendment_note
-        FROM {raw}
-        WHERE regexp_matches(lower(coalesce(article_text,'') || ' ' || coalesce(cross_references,'')
-                                   || ' ' || coalesce(amendment_note,'')), 'kodeks|\\bfk\\b')
-        ORDER BY file_row_number
-    """).fetchall()
+    candidates = build_candidate_windows(con)
 
     hits: list[dict] = []
     empties: list[dict] = []
-
-    for row_id, doc_id, doc_type, art_no, *texts in rows:
-        is_code = doc_id in CC_DOCS
-        for field, text in zip(SOURCE_FIELDS, texts):
-            if not text:
-                continue
-            anchors = cx._anchors(text, allow_fk_alias=doc_id in alias_docs, is_the_code=is_code)
-            if not anchors:
-                continue
-            all_cites = cx.extract(text, allow_fk_alias=doc_id in alias_docs, is_the_code=is_code)
-            for i, (a_start, a_end, kind) in enumerate(anchors):
-                limit = min(a_end + cx.WINDOW, anchors[i + 1][0] if i + 1 < len(anchors) else len(text))
-                window_text = text[max(0, a_start - 20):limit]
-                cites_here = [c for c in all_cites if a_start <= c.start < limit]
-                rec = {
-                    "row_id": row_id,
-                    "doc_id": doc_id,
-                    "doc_type": doc_type,
-                    "article_number": art_no,
-                    "field": field,
-                    "anchor_kind": kind,
-                    "anchor_start": a_start,
-                    "anchor_end": a_end,
-                    "is_the_code": is_code,
-                    "window": window_text,
-                    "extracted": [citation_dict(c) for c in cites_here],
-                }
-                produced_nonact = any(c["target_kind"] != "act" for c in rec["extracted"])
-                (hits if produced_nonact else empties).append(rec)
+    for rec in candidates:
+        produced_nonact = any(c["target_kind"] != "act" for c in rec["extracted"])
+        (hits if produced_nonact else empties).append(rec)
 
     rng = random.Random(args.seed)
     half = args.n // 2
