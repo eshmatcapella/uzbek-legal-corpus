@@ -558,7 +558,18 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
                 # bob on its own iteration — never misattributed backwards.
                 # Measured 2026-09-10: 3 occurrences corpus-wide, all comma-only
                 # (no such list case exists yet). See DAILY_REVIEW.md.
-                sec = re.match(r"\s*,?\s*(\d+)\s*-\s*paragraf", window[m.end(): m.end() + 30])
+                #
+                # "paragr[ai]f" (not a bare "paragraf" literal): row 46605 spells
+                # it "paragrifi" twice ("65-bobining 1-paragrifi", "65-bobi
+                # 1-paragrifi") -- a genuine LexUZ spelling variant, not a typo
+                # unique to this row's own two occurrences (measured 2026-11-02,
+                # see DAILY_REVIEW.md: gold batch 17, gold_id 25). Without this,
+                # the match below fails, the citation silently downgrades from
+                # "chapter 65, section 1" to just "chapter 65", losing the
+                # paragraph. The only other corpus-wide "paragrif" occurrence
+                # (row 25664) cites a Nizom, not the Code or itself, so it's
+                # outside any anchor's scan window regardless.
+                sec = re.match(r"\s*,?\s*(\d+)\s*-\s*paragr[ai]f", window[m.end(): m.end() + 30])
                 for n in nums:
                     out.append(Citation("section" if sec else "chapter", None, int(n),
                                         int(sec.group(1)) if sec else None, None,
@@ -886,8 +897,25 @@ def _selftest() -> int:
             failures += 1
             print(f"FAIL(section_comma) {text[:64]!r}\n     got  {got}\n     want {expected}")
 
+    # "paragrif" spelling variant (real corpus text, row 46605, both its
+    # occurrences -- found 2026-11-02, gold batch 17 gold_id 25; see
+    # DAILY_REVIEW.md): must resolve to "section", same as the "paragraf"
+    # spelling, not silently downgrade to a bare "chapter".
+    paragrif_cases: list[tuple[str, dict, list[tuple]]] = [
+        ("mazkur Kodeksning 65-bobining 1-paragrifi, “Firma nomlari”", {},
+         [(65, 1)]),
+        ("mazkur Kodeksning 65-bobi 1-paragrifi, “Firma nomlari”", {},
+         [(65, 1)]),
+    ]
+    for text, kwargs, expected in paragrif_cases:
+        got = [(c.struct_number, c.section_number) for c in extract(text, is_the_code=True, **kwargs)
+               if c.target_kind in ("chapter", "section")]
+        if got != expected:
+            failures += 1
+            print(f"FAIL(paragrif) {text[:64]!r}\n     got  {got}\n     want {expected}")
+
     total = (len(cases) + len(qism_cases) + len(stop_cases) + len(pub_paren_cases) + len(docid_cases)
-             + len(section_comma_cases))
+             + len(section_comma_cases) + len(paragrif_cases))
     print(f"{total - failures}/{total} extractor self-tests passed")
     return 1 if failures else 0
 

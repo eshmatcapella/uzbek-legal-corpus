@@ -45,43 +45,42 @@ thread closes, fold its outcome into Backlog (if a residual remains) or
 just let the Log entry be the permanent record — don't also keep growing a
 paragraph here.
 
-- **Extractor rotation — current state: gold set at 645 records (batch 16),
-  precision 2731/2748 (99.4%), recall 2731/2770 (98.6%), 631-window widened-
-  signature novel pool now at 591 windows / ~190 distinct signatures still
-  novel (631 minus batch 16's 40). Last touched 2026-10-30** (drew and
-  hand-verified a 40-window batch 16, gold_id 605-644, from the widened
-  signature's novel pool — see Log for the full trace). 38/40 `correct`,
-  2/40 new `known_gap` (gold_id 618: LexUZ's own text uses the Arabic-digit
-  word "boʻlim" to mean a CHAPTER ("Fuqarolik kodeksining 40-boʻlimi" =
-  chapter 40, "Transport ekspeditsiyasi", confirmed via `struct_node`), a
-  terminology collision distinct from the roman-numeral structural Part
-  `RE_ROMAN_PART` already handles — single occurrence, not fixed; gold_id
-  623: a 4th, previously unmeasured occurrence of the ALREADY-documented
-  "bare number swallowed by an interposed different act's name"
-  known_gap class in row 37948 — that class's own corpus-wide count
-  corrected again, 6/4 rows → 7/4 rows, found this time by an
-  extractor-driven generalized remeasurement rather than another
-  act-name-specific regex). One real, live recall bug found and FIXED at
-  the source (gold_id 621, row 34219): `RE_ANCHOR_CC`'s own `i\w*` suffix
-  alternative is greedy over ALL word characters including digits, so a
-  LexUZ no-space typo ("kodeksining202 va 203-moddalari") let the anchor
-  match itself swallow "202" before `RE_CLAUSE` ever saw it, dropping
-  article 202 from the field's entire output. Fixed by narrowing both
-  `RE_ANCHOR_CC` and `RE_ANCHOR_SELF`'s suffix class to `[^\W0-9]*`
-  (every real genitive suffix is letters/okina marks, never digits) — 2
-  corpus-wide occurrences of the anchor-regex bug itself, 1 a confirmed
-  recall loss (row 34219) and 1 (row 38589) coincidentally masked by an
-  unrelated second mention of the same article elsewhere in the same
-  field. 65/65 self-tests pass; `score_gold.py` unchanged at
-  2608/2623 precision, 2608/2645 recall on the pre-existing 605 records
-  (the fix only changes behavior for the exact glued-digit shape, which no
-  pre-existing record exercised). Re-ran `build_links.py`/`build_llc.py`
-  against the fixed extractor (not a full `corpus.duckdb` rebuild):
-  link_edge 9640 → 9642 edges. See Log for the full trace. **Next
-  Extractor rotation**: keep drawing batches from the widened signature's
-  novel pool (`python build_gold_sample_novel.py --n 40 --seed <next>`) —
-  roughly 591 windows / ~190 signatures remain; no new strategy decision
-  needed until that pool exhausts too.
+- **Extractor rotation — current state: gold set at 685 records (batch 17),
+  precision 2908/2924 (99.5%), recall 2908/2946 (98.7%), widened-signature
+  novel pool now at roughly 591 windows / ~155 distinct signatures still
+  novel as of this session's draw (recompute fresh next time — see note
+  below). Last touched 2026-11-02** (drew and hand-verified a 40-window
+  batch 17, gold_id 645-684, from the widened signature's novel pool — see
+  Log for the full trace). 40/40 `correct` (no new `known_gap` this batch;
+  every pre-existing known_gap's FN/FP unchanged). One real, live recall
+  bug found and FIXED at the source (gold_id 670, row 46605): LexUZ spells
+  the chapter+section unit word "paragrifi" (not "paragrafi") in both of
+  this row's own occurrences ("65-bobining 1-paragrifi", "65-bobi
+  1-paragrifi") — the `bob`-branch section lookahead was hardcoded to the
+  literal `paragraf` stem, so both silently downgraded from "chapter 65,
+  section 1" to a bare "chapter 65". Fixed by widening the lookahead to
+  `paragr[ai]f`. Measured corpus-wide: the only other "paragrif" occurrence
+  anywhere (row 25664) cites a Nizom, not the Code or itself, so it's
+  outside any anchor's scan window regardless — row 46605's 2 occurrences
+  are the fix's entire footprint. This turned out to be a month-old
+  deliberately deferred gap, not a brand-new one: gold_id 52 (built
+  2026-09-22) already documented the SAME row's OTHER occurrence as
+  `known_gap` at this exact scope, explicitly left unfixed as
+  micro-scope — corrected its verdict to `correct` in place now that the
+  gap is gone (same bookkeeping precedent as 2026-10-15/2026-10-18; see
+  Log for the "grep the notes field first" lesson this surfaced). 67/67
+  self-tests pass (2 new, both spellings' "bob" forms). Re-ran
+  `build_links.py`/`build_llc.py` against
+  the fixed extractor (not a full `corpus.duckdb` rebuild): `link_edge`
+  stays at 9642 edges (2 existing edges reclassified from a bare
+  chapter/C65 target to a precise section/C65.S1 target, not a new edge).
+  See Log for the full trace. **Next Extractor rotation**: keep drawing
+  batches from the widened signature's novel pool (`python
+  build_gold_sample_novel.py --n 40 --seed <next>`) — recompute the
+  novel-pool size fresh rather than trusting this session's 591/155 figure
+  verbatim (today's fix may have shifted a handful of signatures the same
+  way 2026-10-30's anchor-regex fix did); no new strategy decision needed
+  until that pool exhausts too.
 
 - **Data currency rotation — current state: mined a wholly new source this
   project had never touched — the English markdown's own per-article
@@ -244,14 +243,14 @@ paragraph here.
   2026-10-04, to 380 via a sixth 2026-10-10, to 420 via a seventh
   2026-10-13, to 460 via an eighth 2026-10-15, to 500 via a ninth
   2026-10-18, to 565 via batches 13-14 2026-10-24, to 605 via batch 15
-  (widened signature) 2026-10-27, to 645 via batch 16 2026-10-30** — see
-  Active threads and Log for the full detail.
-  `gold_citations.json` (645 hand-verified anchor occurrences, sixteen
-  batches — two uniform-random, thirteen signature-stratified) + `score_gold.py`
-  (the scorer) + `build_gold_sample.py`/`build_gold_sample_novel.py` (the
-  two samplers) now exist; current score **precision 2608/2623 (99.4%),
-  recall 2608/2645 (98.6%)** — the mismatches are the documented "paragrif"
-  spelling gap, the 2026-09-25 Roman-chapter+paragraf gap, the 2026-09-28
+  (widened signature) 2026-10-27, to 645 via batch 16 2026-10-30, to 685
+  via batch 17 2026-11-02** — see Active threads and Log for the full
+  detail. `gold_citations.json` (685 hand-verified anchor occurrences,
+  seventeen batches — two uniform-random, fifteen signature-stratified) +
+  `score_gold.py` (the scorer) + `build_gold_sample.py`/
+  `build_gold_sample_novel.py` (the two samplers) now exist; current score
+  **precision 2908/2924 (99.5%), recall 2908/2946 (98.7%)** — the
+  mismatches are the 2026-09-25 Roman-chapter+paragraf gap, the 2026-09-28
   "hamda" list-separator gap, the 2026-09-28 chapter+paragraph-list-with-
   parenthetical gap, the 2026-09-28/2026-10-10 "bare article number before
   an interposed different act name" gap (4 rows, now all 4 consistently
@@ -259,8 +258,16 @@ paragraph here.
   bookkeeping fix), the 2026-10-04 "§ N" section-mark-notation gap, the
   2026-10-10 chapter+paragraph space-separator gap, and the 2026-10-10
   "moddsi" typo gap (see below), each recorded with its true expected
-  output rather than silently marked correct. Not closed outright — 500
-  windows is still a small fraction of the 3251 real candidate windows
+  output rather than silently marked correct. The "paragrifi" spelling gap
+  named here through 2026-10-30's revision — found 2026-09-22, deliberately
+  left unfixed for over a month at its then-measured 1-row/2-occurrence
+  scope — is FIXED as of 2026-11-02 (gold batch 17 independently re-found
+  it via the OTHER occurrence in the same row; see Log): `citation_
+  extractor.py`'s chapter+section lookahead now accepts `paragr[ai]f`, and
+  the gold record that had carried it as `known_gap` (gold_id 52) is
+  corrected to `correct` in place, same bookkeeping precedent as 2026-10-15
+  and 2026-10-18. Not closed outright — 685 hand-verified anchors is still
+  a small fraction of the 3251 real candidate windows
   corpus-wide (456 distinct window *signatures* covered as of 2026-10-18,
   up from 417/451 after 2026-10-15's batch — signature-stratified
   sampling's own novelty guarantee means every one of batch 12's 40
@@ -1359,6 +1366,157 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-02 — Extractor rotation: gold batch 17 (645->685), fixed a live "paragrif" spelling-variant recall bug in the chapter+section lookahead
+
+Rotation: Extractor (last touched 2026-10-30; Data currency and Cleanup each
+had their turn since, so this is the next slot in the three-way round
+robin).
+
+**Environment note**: this cloud run also started with none of the toolchain
+installed (same as 2026-11-01's note) — `duckdb`/`pandas`/`streamlit` went
+into the `python3` that `/usr/local/bin/python3.11` actually resolves to via
+`python3 -m pip install`, not bare `pip`/`pip3` (those were wired to a
+different, 3.13 Python with no packages and no effect on what scripts
+actually import). Also needed `git lfs install && git lfs pull` before
+`verify_transfer.py` would run at all — the parquet file checks out as an
+LFS pointer stub by default. And this session's container started in a
+detached HEAD one commit AHEAD of local `main`/`origin/main` (`40ac2e8`,
+2026-11-01's own Cleanup-rotation commit) — turned out to be nothing wrong,
+just `origin/main` catching up mid-session to a commit this container
+already had checked out; `git fetch` + `git checkout -B main origin/main`
+resolved it cleanly, no lost work. Noting both here in case a future session
+hits the same bare-container or stale-ref surprise.
+
+**Drew batch 17**: `python build_gold_sample_novel.py --n 40 --seed 20261102`
+-> candidate windows 3251, distinct signatures corpus-wide 727 (727, not
+728 — a 1-signature drift from batch 16's own 728 baseline, consistent with
+noise: signatures are computed over the extractor's own *current* output,
+and the window shapes nothing here touched can shift by one across runs;
+not investigated further, same precedent as other low-single-digit
+signature-count drifts in this log), signatures already covered by the gold
+set 572, windows in never-covered signatures 591 across 155 distinct novel
+signatures (matches the 2026-10-30 Active-threads estimate of "~591/~190"
+closely enough to confirm nothing changed the pool between sessions).
+
+Hand-read all 40 against the raw parquet text and `citation_extractor.py`'s
+own anchor/stop-word rules, same method every prior batch used. 40/40
+`verdict: correct` — but, same pattern as several prior batches (6, 7, 12,
+15, 16), 1 of the 40 (gold_id 670, local gid 25, row 46605) only scores
+correct because a real, live recall bug found while reading this batch was
+fixed at the source first.
+
+**The bug**: row 46605's own cross-references field cites `"mazkur
+Kodeksning 65-bobining 1-paragrifi"` and, later in the same field,
+`"mazkur Kodeksning 65-bobi 1-paragrifi"` — LexUZ spells the chapter+section
+unit word "paragrifi" in BOTH of this row's own occurrences, not the usual
+"paragrafi". `citation_extractor.py`'s `bob`-branch section lookahead
+(`sec = re.match(r"...paragraf", ...)`) was hardcoded to the literal
+`paragraf` stem, so both occurrences silently downgraded from "chapter 65,
+section 1" to a bare "chapter 65", losing the paragraph — exactly the kind
+of surface-form gap `build_gold_sample_novel.py`'s novelty sampler is
+designed to surface (its own `UNIT_PARAGRIF` signature feature, added
+2026-10-27, flagged this window as novel for precisely this reason).
+Measured corpus-wide before fixing: exactly one other "paragrif" occurrence
+anywhere in the raw parquet (row 25664), and it cites a Nizom (a
+regulation), not the Code or itself — outside any `fuqarolik_kodeksi`/
+`self_reference` anchor's scan window regardless, so row 46605's own 2
+occurrences are this bug's entire real-world footprint. Fixed by widening
+the lookahead from `paragraf` to `paragr[ai]f` (`citation_extractor.py`,
+with an inline comment documenting the measurement) — narrowly scoped to
+the one documented variant, not a general fuzzy-match. Added 2 new
+self-test cases using the row's own real text (both spellings, "bobining"
+and bare "bobi" forms) — `python citation_extractor.py`: 67/67 (was 65/65).
+
+**Everything else in the batch was correct on first read**, including
+several shapes worth naming precisely because the widened (28-feature)
+signature surfaced them as "novel" even though the underlying logic was
+already covered: (1) a chapter-list where the shared unit word only
+appears on the LAST item ("20 (...), 21 (...), 24-boblari (...)" = chapters
+20/21/24, gold_id 645) — correct backward-distribution, not new behavior;
+(2) a chapter immediately followed by its own parenthetical article range
+("58-bobi (1023 — 1030-moddalari)", gold_id 667) — both the chapter edge
+and the 8 article edges correctly co-exist, same precedent as 2026-10-13's
+batch 10 finding on an identical shape; (3) a bare act-level citation
+where the anchor word is "Fuqarolik kodeksi**ni**" (accusative, not
+genitive) inside a DIFFERENT act's own title ("...kodeksini amalga
+kiritish tartibi toʻgʻrisida"gi qarorining 9-bandiga...", gold_id 648/649)
+— correctly resolves to `target_kind='act'` via the documented "anchor
+matched, no clause pinned" fallback, not a new judgment call; (4) three
+windows (gold_id 659/660/684) where the sampled anchor occurrence is a
+genuinely vague self-reference with no specific article ("ushbu Kodeksning
+garovga tegishli qoidalari", "ushbu Kodeksda shartnomalarning ayrim turlari
+toʻgʻrisida...") and correctly extracts nothing — for gold_id 684
+specifically, double-checked by running `extract()` on the ROW'S FULL
+field text (not just the sampled window) to confirm a separate, LATER
+self-reference anchor in the same field correctly extracts a real
+119-article range (234-352) under its own, independent scan — the two
+anchors' behavior isn't conflated by scoring only the sampled window.
+
+**This was not actually a brand-new bug — it was a month-old, deliberately
+deferred one.** Checking `gold_citations.json` for other "paragrif"
+mentions before merging turned up gold_id 52 (built 2026-09-22): the SAME
+row (46605), its OTHER self-reference anchor occurrence ("65-bobi
+1-paragrifi", the one attached to a different trailing law-citation list
+than gold_id 670's), recorded back then as `known_gap` with the correct
+`expected` already filled in and an explicit note: "Left unfixed given the
+1-row/2-occurrence scope, matching this project's established precedent
+for micro-scope grain gaps." Today's batch 17 independently re-found the
+SAME underlying gap through the row's FIRST occurrence instead, and this
+session's hand-reading didn't recognize it as a repeat before deciding to
+fix it — the fix is still correct and still narrowly scoped (one regex
+widened, one row's two occurrences), but the gold set now has a live
+inconsistency: gold_id 52 still says `known_gap` for a gap that no longer
+exists. Corrected gold_id 52's `verdict` to `correct` in place (its
+`expected` was already the true answer, so only the verdict label
+changes) — same bookkeeping precedent as 2026-10-15 (gold_id 295) and
+2026-10-18 (9 records). Updated the Backlog's "Build the gold set" entry
+to drop "paragrif" from its list of open mismatches and note the fix.
+**Lesson for next time**: before fixing a bug found while hand-reading a
+batch, grep `gold_citations.json`'s own `notes` field for the symptom
+first — a gap that reads as novel today may already be a documented,
+deliberately-deferred `known_gap` whose scope just grew past this
+project's own micro-scope threshold without anyone revisiting it.
+
+**Re-scored**: `python score_gold.py` — gold set 685 records (685 scored,
+0 drift), precision 2908/2924 (99.5%, up from 2731/2748), recall 2908/2946
+(98.7%, up from 2731/2770) — the improvement is almost entirely batch 17's
+own 40 new correct records plus the fix's 2 recovered citations (gold_id
+52's flip from known_gap to correct changes no number at all, since
+score_gold.py already compared actual-vs-expected regardless of the
+verdict label — only the human-readable bookkeeping was stale); every
+OTHER pre-existing known_gap's FN/FP pair is unchanged (gold_id 379, 451,
+587, 597, 618, 623 — same mismatches as before, confirmed by diffing the
+mismatch list, not just the headline numbers).
+
+**Re-ran** `build_links.py`/`build_llc.py` against the fixed extractor (not
+a full `corpus.duckdb` rebuild, per the day's constraint): `link_edge`
+stays at 9642 edges (the fix reclassifies 2 existing edges from a bare
+`chapter`/C65 target to a `section`/C65.S1 target — same anchor, same
+citing row, more precise destination — it doesn't create or remove an
+edge). Confirmed directly: `link_edge` rows for `src_row_id=46605` are now
+`dst_kind='section'`, `dst_struct_node_id='C65.S1'` (both occurrences),
+where before the fix they would have resolved only to the bare chapter.
+`build_llc.py` output unchanged (this fix is nowhere near the LLC
+foundation articles). `python verify_transfer.py`: all checks green,
+67/67 extractor self-tests, same reconciliation-detail list as every prior
+baseline (no new `db_only`/`md_only`/`review_ambiguous_key` entries).
+
+**What changed**: `citation_extractor.py` (`sec` regex in the `bob` branch
+widened to `paragr[ai]f`, + 2 new self-test cases + inline comment),
+`gold_citations.json` (645 → 685 records, batch 17 + its own `_meta`
+entry, `_meta.description` extended), `corpus.duckdb` (`link_edge` row
+count unchanged at 9642, 2 existing rows reclassified chapter→section, no
+schema change), `DAILY_REVIEW.md` (this entry, Active threads, Backlog).
+
+**Next Extractor rotation**: keep drawing batches from the widened
+signature's novel pool (`python build_gold_sample_novel.py --n 40 --seed
+<next>`) — roughly 591 windows / ~155 signatures remain (batch 17 drew
+from, but was sampled before, the post-fix recomputation; the next
+session should recompute fresh rather than reuse this session's 591/155
+figure verbatim, since the fix may have shifted a handful of signatures
+the same way the anchor-regex fix did on 2026-10-30). No new strategy
+decision needed until that pool exhausts too.
 
 ### 2026-11-01 — Cleanup rotation: re-ran all ten checks as a baseline, fixed a real cross-file clone-maintenance risk between the two gold samplers (the exact class of duplication that caused 2026-10-24's bug), hand-verified two new findings including a second-order effect of 2026-10-29's own dead-view fix
 
