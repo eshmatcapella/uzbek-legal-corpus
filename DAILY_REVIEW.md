@@ -130,26 +130,19 @@ paragraph here.
   (Article 1 shows the new warning with the right numbers; Article 49, the
   page's default, correctly shows nothing) plus a smoke-test pass on
   `app_llc.py` (loads without error). `verify_transfer.py` green throughout.
-  **Next Data currency rotation**: the 1/39 article whose footnote act
-  number matched nothing in `article_amendment` — Article 26¹ — turned out
-  to be the ambiguous-key pair's OTHER half misfiring: `build_links.py`'s
-  own amendment-note mining resolved the 2024-02-21 "introduced" event
-  (OʻRQ-911) that the English footnote correctly attributes to Article 26¹
-  (`-111189-a261#1`) onto the WRONG sibling instead — `article_amendment`
-  event_id 24 carries `target_article_number='261'` but `norm_id=
-  '-111189-a261#2'` (the unrelated real Article 261, "Forms of penalty"),
-  so my ambiguous-key guard correctly refused to resolve it via the text
-  fallback, and the direct norm_id join found nothing because the row is
-  attached to the wrong norm_id in the first place. A real, narrow,
-  root-caused bug in the amendment-mining pipeline's own norm_id resolution
-  for this one already-known ambiguous key — not fixed today (out of scope
-  for a signal-building session; needs tracing through `build_links.py`'s
-  amendment-note norm_id assignment, not the code touched today) but fully
-  diagnosed for whoever picks it up. Beyond that, the qism-level angle
-  (2026-10-28) is still likely exhausted
-  for `article_amendment`'s current locator shapes; the untried
-  `derived_status`/`dst_dangling` × version-dates pairing remains available
-  too.
+  **2026-11-03: the 1/39-unresolved residual below is now fixed** — see
+  Backlog > Data currency (resolved item) and Log, 2026-11-03, for the full
+  trace: `norm_by_article`'s article-number-text key was silently lossy for
+  the Article 26¹/261 ambiguous pair; the self-referencing clause that hit
+  it now resolves exactly via `norm_unit.src_row` instead, no heuristic
+  needed. `v_en_amendment_staleness` is 39/39 resolvable (was 38/39), stale
+  count unchanged at 17/39. **Next Data currency rotation**: no open
+  residual from this thread — the qism-level angle (2026-10-28) is still
+  likely exhausted for `article_amendment`'s current locator shapes; the
+  untried `derived_status`/`dst_dangling` × version-dates pairing remains
+  available, and the standing cross-signal technique (Backlog's own note)
+  keeps paying off often enough to default to it again before inventing a
+  wholly new angle.
 
 - **Cleanup rotation — current state: all ten checks re-ran as a baseline;
   one real clone-risk fix shipped (the two gold samplers' duplicated
@@ -1056,23 +1049,65 @@ paragraph here.
   measurable risk. Do not re-open this without that trigger; a regex fix
   was prototyped, tested, and deliberately reverted today for lack of a
   confirmed bug to justify it.
-- **New, 2026-10-31: `article_amendment`'s own amendment-note mining
-  mis-resolves `norm_id` for the Article 26¹/261 ambiguous key.** Found via
-  the EN-footnote cross-check (see Active threads): event_id 24
-  (`target_article_number='261'`, change_type `inserted`, 2024-02-21,
-  OʻRQ-911) is attached to `norm_id='-111189-a261#2'` (the real,
-  independently-numbered Article 261, "Forms of penalty"), but the English
-  markdown's own footnote on Article 26¹ (`-111189-a261#1`, "Insolvency
-  estate") independently confirms it — not Article 261 — is the one
-  "introduced" by OʻRQ-911 on that date. `verify_transfer.py`'s own
-  `review_ambiguous_key` check already knows article_number "261" is shared
-  by two norm_ids; this is a second, previously-unknown place the same
-  ambiguity causes a real misattribution, this time inside `build_links.py`
-  rather than the parser. Not fixed today — needs tracing through
-  `build_links.py`'s amendment-note norm_id resolution (likely wherever it
-  picks a norm_id for a bare `article_number` without disambiguating by
-  which structural part/context the amendment note actually appeared in),
-  which is separate code from anything touched in today's EN-footnote work.
+- ~~**`article_amendment`'s own amendment-note mining mis-resolves `norm_id`
+  for the Article 26¹/261 ambiguous key.**~~ **Fixed 2026-11-03.** Found
+  2026-10-31 via the EN-footnote cross-check (see Log, 2026-10-31):
+  event_id 24 (`target_article_number='261'`, change_type `inserted`,
+  2024-02-21, OʻRQ-911) was attached to `norm_id='-111189-a261#2'` (the
+  real, independently-numbered Article 261, "Forms of penalty") instead of
+  Article 26¹ (`-111189-a261#1`, "Insolvency estate"), which the English
+  markdown's own footnote independently confirms as the true target.
+  Root-caused: `norm_by_article`, the dict `build_links.py` uses to resolve
+  a clause's target article number to a `norm_unit.norm_id`, is keyed on
+  the raw `article_number` text (`{art: nid for nid, art in ...}`) — lossy
+  for this one already-known ambiguous key (`verify_transfer.py`'s own
+  `review_ambiguous_key`), where DuckDB's own row order (no `ORDER BY` on
+  that query) happened to let `a261#2` overwrite `a261#1`. The fix doesn't
+  need the "part range + document order" heuristic
+  `build_corpus_db.py`'s own superscript-resolution already uses for this
+  same ambiguity (see its module docstring) — a cheaper, exact signal was
+  available: this one clause is *self-referencing* (its
+  `target_article_number` names the same article as the `host_article_
+  number` of the raw row the amendment note is physically attached to),
+  and that row's own `norm_id` is already known with zero ambiguity via
+  `norm_unit.src_row == {raw}.file_row_number` (confirmed directly:
+  `file_row_number` 46585 for event_id 24 *is* `a261#1`'s own `src_row`,
+  not `a261#2`'s 46819). Confirmed corpus-wide this is the *only* row that
+  ever touches the "261" key at all (`SELECT ... WHERE target_article_
+  number='261' OR host_article_number='261'` returns exactly 1 row), so no
+  other case needed the row-identity path — `norm_by_article` remains the
+  resolution for every target naming a genuinely different article (the
+  overwhelming majority, and the only path possible when the target
+  doesn't match the host row at all). Added a second dict, `norm_by_row`
+  (`src_row -> norm_id`, unambiguous by construction), and route the
+  self-referencing case through it instead of the text-keyed one. Measured
+  before/after: `link_edge` unchanged at 9642 (this bug never touched
+  citation extraction, only the separate amendment-mining table); `v_en_
+  amendment_staleness` — which already preferred `article_amendment.norm_id`
+  over the ambiguous text match, per its own 2026-10-31 comment, so it's
+  the one live consumer this bug could reach — went from 38/39 resolvable
+  footnote-bearing articles to the full 39/39 (confirmed directly: 39
+  distinct `norm_id`s have a parseable EN footnote at all; only 38 had a
+  matching UZ-side amendment before today, since `a261#1`'s real amendment
+  silently attached to `a261#2` and `a261#2` has no English footnote of
+  its own to collide with). The newly-resolved 39th comes back **not**
+  stale (`en_latest_act_number`/`uz_latest_act_number` both 911) — a
+  correctness fix, not a new finding, and the existing stale count stays
+  exactly 17/39 (same 17 acts, unaffected). Worth noting for whoever reads
+  `v_en_amendment_staleness` next: Article 26¹ separately carries a
+  hand-verified `en_align_status = 'suspect_version_drift'` (the English
+  body text itself describes a different norm than the current Uzbek
+  text, verified 2026-08-12) — today's fix only concerns whether the
+  footnote's *cited act number* is current, a coarser and independently
+  useful signal, not a claim that the body text is otherwise trustworthy;
+  the two signals agree there's a problem with this article by two
+  different routes, not in tension. `verify_transfer.py` green throughout
+  (same `review_ambiguous_key`/`suspect_version_drift` entries as always,
+  now naming the corrected `norm_id`). `check_fstring_interp.py`: 55/55,
+  not 54 — one new f-string `execute()` call (`norm_by_row`'s own query),
+  same `cx.DOC_GENERAL`-constant pattern the adjacent pre-existing
+  `norm_by_article` query already uses, not a new risk class. See Log,
+  2026-11-03, for the full trace.
 - **`act.version_date` (LexUZ's scrape date) surfaced as a snapshot-age
   signal, 2026-10-11 — shipped, not just measured** (see Log for the full
   trace): 78/245 (31.8%) of acts realizing a General Part article, and
@@ -1366,6 +1401,150 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-03 — Data currency rotation: fixed the Article 26¹/261 `norm_id`-misattribution bug diagnosed 2026-10-31, closing `v_en_amendment_staleness`'s last unresolved footnote article (38/39 -> 39/39)
+
+Rotation: Data currency (last touched 2026-10-31; Cleanup took 11-01 and
+Extractor took 11-02, so this is the next slot in the three-way round
+robin). Active threads' Data currency bullet already named the exact
+next step: a real, root-caused-but-unfixed `norm_id` misattribution in
+`build_links.py`'s amendment-note mining, surfaced as a side effect of
+2026-10-31's EN-footnote-staleness work. Picked that up rather than
+starting a new angle, since it was already fully diagnosed and scoped.
+
+**Environment note** (same recurring surprise as 2026-11-01/11-02): this
+container started with no `duckdb` on the default `python3`
+(`/usr/local/bin/python3` -> system Python 3.11, nothing installed) — the
+one with the project's packages is `python3.13`
+(`pip install duckdb` reported "already satisfied" against 3.13's
+site-packages, not 3.11's). Used `python3.13` explicitly for every script
+today rather than fighting the default. Also needed `git lfs install
+--local && git lfs pull` before `corpus_id`/`file_row_number` joins against
+the raw parquet would resolve at all (`articles/train-00000-of-00001.parquet`
+checks out as a 134-byte LFS pointer stub by default, not the 163MB real
+file) — `verify_transfer.py` and `build_links.py` both read it directly, so
+this blocks real work, not just this specific investigation. Worth adding
+to the project's own setup notes if a future session hits the same thing
+repeatedly (it has, three sessions running now).
+
+**The bug, confirmed exactly as 2026-10-31 diagnosed it.** `article_amendment`
+event_id 24 — `host_article_number='261'`, `target_article_number='261'`,
+`change_type='inserted'`, `amend_date='2024-02-21'`, `amend_act_number=
+'OʻRQ-911'` — carried `norm_id='-111189-a261#2'` (the real, independently-
+numbered Article 261, "Forms of penalty", EN title confirmed via `norm_unit`).
+The English markdown's own per-article footnote on Article 26¹
+(`-111189-a261#1`, "Insolvency estate") independently cites the same OʻRQ-911
+as its most recent amendment — so the true target of event_id 24 is `a261#1`,
+not `a261#2`.
+
+**Root cause**: `build_links.py`'s `norm_by_article` dict —
+`{art: nid for nid, art in con.execute("SELECT norm_id, article_number FROM
+norm_unit WHERE doc_id = {cx.DOC_GENERAL}")...}` — is keyed on the raw
+`article_number` TEXT field, which is "261" for both norm_ids (confirmed:
+`a261#1` has `article_base=26, superscript=1`; `a261#2` has
+`article_base=261, superscript=NULL` — the exact ambiguity
+`verify_transfer.py`'s own `review_ambiguous_key` check already flags, and
+the same one `build_corpus_db.py`'s superscript-resolution comment
+describes: "'261' is ambiguous: it is Article 26-super-1 in Part I and
+Article 261 in Part III"). The query carries no `ORDER BY`, so the dict
+comprehension kept whichever row DuckDB happened to return last — `a261#2`,
+the wrong one.
+
+**The fix doesn't need `build_corpus_db.py`'s part-range-plus-document-order
+heuristic at all** — a cheaper, exact signal was already sitting right next
+to the bug. Checked first, directly against the raw parquet (via
+`read_parquet(..., file_row_number=true)`): the amendment-note's own raw row
+— `file_row_number=46585` — is not just "near" `a261#1`, it *is* `a261#1`'s
+own `norm_unit.src_row` (46585), not `a261#2`'s (46819). This is because the
+clause is self-referencing: `target_article_number` ("261") equals
+`host_article_number` ("261") — i.e. the note is attached to, and describing,
+the very row it sits on. For that shape, `norm_unit.src_row ==
+{raw}.file_row_number` resolves the correct norm_id with zero ambiguity,
+no heuristic, no guessing which "part" a bare number belongs to.
+
+Checked corpus-wide before deciding this was even in scope: is event_id 24
+the *only* row that ever touches this ambiguous key? `SELECT event_id FROM
+article_amendment WHERE target_article_number='261' OR
+host_article_number='261'` returns exactly 1 row. So the self-referencing
+path only ever needs to handle this one case today — but it's written as a
+general rule (route through `norm_by_row` whenever `lookup_art == host_art`,
+not a special-cased "if articleNumber == '261'"), since the same shape would
+resolve just as correctly for every non-ambiguous article number too (same
+row, same answer either way) and would self-heal if a future corpus update
+ever adds a second self-referencing clause on this exact key.
+
+**Implementation** (`build_links.py`): added `norm_by_row`, a second dict
+keyed on `norm_unit.src_row` (unambiguous by construction — confirmed 386
+distinct `src_row` values for 386 `norm_unit` rows). In the per-target-article
+resolution loop, renamed the discarded `_row_id` loop variable to `row_id`
+(it was already being read off the cursor, just unused) and branch on
+whether `lookup_art == host_art`: if so, resolve via `norm_by_row.get(row_id)`
+(exact); otherwise keep the existing `norm_by_article.get(lookup_art)` text
+lookup (still correct and necessary for every other target, which never
+shares this ambiguous key).
+
+**Measured before/after** (ran `build_links.py` + `build_llc.py`, not a full
+`corpus.duckdb` rebuild — neither `build_corpus_db.py` nor `build_okoz.py`
+input changed):
+- `article_amendment` row count unchanged at 612; the one row's `norm_id`
+  changed from `-111189-a261#2` to `-111189-a261#1`. No other row's `norm_id`
+  changed (confirmed: this was the only row touching the "261" key at all).
+- `link_edge` unchanged at 9642 edges — expected, since this bug never
+  touched citation extraction, only the separate amendment-mining table (a
+  completely different code path from `citation_extractor.py`/`RE_CLAUSE`).
+- `v_en_amendment_staleness`: 39 distinct `norm_id`s corpus-wide have a
+  parseable EN amendment footnote at all (confirmed via a standalone
+  footnote-regex scan, independent of today's fix). **Before the fix, only
+  38 of them resolved to a staleness row** — `a261#1`'s `uz_nums` came back
+  empty (its real amendment was mis-attached to `a261#2`, which has no
+  English footnote of its own to collide with), so the view's own
+  `if not uz_nums: continue` guard silently dropped it. **After the fix,
+  all 39/39 resolve.** The newly-resolved 39th comes back
+  `en_text_stale=False` (`en_latest_act_number=911 == uz_latest_act_number=
+  911`) — correctly: the English footnote already names the right, most
+  recent act. The pre-existing stale count is unchanged at 17 (same 17
+  articles, confirmed by diffing the full before/after table — only the
+  "261"/"26" rows differ, and "26" itself — the base article, a separate,
+  non-ambiguous `norm_id` — was already resolving correctly both before and
+  after, unaffected by this bug).
+- Worth flagging for whoever reads this view next, so it isn't mistaken for
+  a loose end: Article 26¹ separately carries a hand-verified `norm_unit.
+  en_align_status = 'suspect_version_drift'` (the English body text
+  describes a different norm — "Insolvency estate"/konkurs massa of an
+  individual entrepreneur — than the current Uzbek text — insolvency of a
+  natural person — verified by reading both bodies 2026-08-12, predating
+  this project's EN-footnote work entirely). Today's fix and that
+  pre-existing flag are two independent signals agreeing there's a real
+  problem with this article's English text, not in tension: the footnote
+  check only asks whether the *cited act number* is current (yes, now,
+  correctly); it says nothing about whether the body text was fully
+  incorporated, which the align-status check already covers more directly.
+  Both apps will correctly go on showing their own existing warning for
+  this article (`app_hierarchy.py`'s `en_align_status` warning fires
+  regardless of today's change) — no UI change needed or made.
+- `verify_transfer.py`: **PASSED, all checks green**, same
+  `review_ambiguous_key`/`suspect_version_drift` reconciliation entries as
+  every prior session (now naming the corrected `norm_id`,
+  `-111189-a261#1`, in the `review_ambiguous_key` line — cosmetic, the check
+  itself doesn't score on which norm_id a prior pipeline stage picked).
+- `check_sql_bindings.py`: 111/111, unaffected (no new literal SQL). `check_
+  fstring_interp.py`: **55/55, not 54** — one new f-string `execute()` call
+  (`norm_by_row`'s own `SELECT norm_id, src_row FROM norm_unit WHERE doc_id =
+  {cx.DOC_GENERAL}`), the exact same hardcoded-constant pattern the
+  pre-existing, adjacent `norm_by_article` query already uses — expected
+  drift, not a new risk class (matches the project's own established
+  precedent for this check's count moving when a query is added/merged, see
+  2026-11-01's entry). `pyflakes`/`vulture` not run today (not installed in
+  this container and out of scope for a single targeted fix — Cleanup's own
+  rotation re-runs the full check suite from a baseline, which this session
+  didn't need to duplicate).
+
+**Decision**: ship the fix as-is. It is narrow, measured end-to-end
+(confirmed both the root cause and the exact before/after delta rather than
+assuming), and closes a residual this project had already fully diagnosed
+and explicitly deferred one rotation ago — exactly the kind of "pick up a
+scoped, already-root-caused bug" work the Active-threads convention exists
+to hand off cleanly between sessions.
 
 ### 2026-11-02 — Extractor rotation: gold batch 17 (645->685), fixed a live "paragrif" spelling-variant recall bug in the chapter+section lookahead
 

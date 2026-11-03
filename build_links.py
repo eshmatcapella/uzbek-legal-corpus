@@ -682,6 +682,27 @@ def main() -> int:
             f"SELECT norm_id, article_number FROM norm_unit WHERE doc_id = {cx.DOC_GENERAL}"
         ).fetchall()
     }
+    # `norm_by_article` is lossy for the one already-known ambiguous key,
+    # article_number "261" (verify_transfer.py's own `review_ambiguous_key`
+    # finding): it's shared by Article 26¹'s norm_id (-111189-a261#1) and the
+    # unrelated, independently-numbered Article 261's norm_id (-111189-a261#2),
+    # and this dict comprehension silently keeps whichever row the query
+    # happened to return last — found 2026-10-31 to be the wrong one (see
+    # DAILY_REVIEW.md) for event_id 24, a clause whose own target_art equals
+    # its host row's article_number (a self-referencing "N-modda ... kiritilgan"
+    # note). For exactly that self-referencing shape, the ambiguity is fully
+    # resolvable without any guessing: `host_article_number`/`target_art` name
+    # the row the note is physically attached to, and that row's own norm_id is
+    # already known unambiguously via `row_id == norm_unit.src_row` (confirmed:
+    # file_row_number 46585 for event_id 24 is norm_unit's own src_row for
+    # -111189-a261#1, not a261#2). `norm_by_article` remains the only option
+    # when the target names a genuinely different article (the common case),
+    # since that's the sole ambiguous key in the corpus today.
+    norm_by_row = {
+        row_id: nid for nid, row_id in con.execute(
+            f"SELECT norm_id, src_row FROM norm_unit WHERE doc_id = {cx.DOC_GENERAL}"
+        ).fetchall()
+    }
     re_civil_title = re.compile(r"fuqarolik kodeks", re.IGNORECASE)
 
     # `date+civil-code-title` only fires when the amending act's own TITLE
@@ -813,7 +834,7 @@ def main() -> int:
             SELECT file_row_number, article_number, amendment_note FROM {raw}
             WHERE doc_id = {doc_id} AND amendment_note IS NOT NULL AND amendment_note != ''
         """)
-        for _row_id, host_art, note in cur3.fetchall():
+        for row_id, host_art, note in cur3.fetchall():
             for c in re_amend_clause.findall(note):
                 m = re_amend_event.match(c)
                 if not m:
@@ -861,7 +882,16 @@ def main() -> int:
                 # one per target article, sharing the rest of the event.
                 for target_art in target_arts:
                     lookup_art = target_art if target_art is not None else host_art
-                    norm_id = norm_by_article.get(lookup_art) if doc_id == cx.DOC_GENERAL else None
+                    if doc_id != cx.DOC_GENERAL:
+                        norm_id = None
+                    elif lookup_art == host_art:
+                        # Self-referencing clause (target names the row it's
+                        # attached to): resolve via the row's own identity
+                        # instead of the possibly-ambiguous article_number
+                        # text, so the "261" collision can't misattribute it.
+                        norm_id = norm_by_row.get(row_id)
+                    else:
+                        norm_id = norm_by_article.get(lookup_art)
                     aid += 1
                     amend_rows.append([
                         aid, doc_id, host_art, target_art, norm_id,
