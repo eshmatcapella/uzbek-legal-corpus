@@ -144,69 +144,59 @@ paragraph here.
   keeps paying off often enough to default to it again before inventing a
   wholly new angle.
 
-- **Cleanup rotation — current state: all ten checks re-ran as a baseline;
-  one real clone-risk fix shipped (the two gold samplers' duplicated
-  candidate-window logic merged into a shared module); two new findings
-  since 2026-10-29 hand-verified as non-bugs, one of them a second-order
-  effect of 2026-10-29's own dead-view fix. Last touched 2026-11-01**
-  (`pyflakes`/`vulture` clean; `bandit` 58/3/1, same classes as always;
-  `check_sql_bindings.py` 111/111; `check_fstring_interp.py` **54/54, not
-  56** — expected, not drift: merging the two samplers' identical SQL into
-  one shared function removed 2 duplicate `execute(f"...")` call sites, not
-  2 newly-broken ones; `check_dead_views.py` 10/10 clean, confirmed the
-  transitive-view-chain blind spot still isn't triggered (`v_llc_realization`
-  → `v_act_currency` and `v_realization_struct` → `v_realization` both exist,
-  but both upstream views are themselves live, so no dead-view-feeding-
-  dead-view chain exists today). `check_code_clones.py`: **6 pairs, not 5**
-  before today's fix — two new pairs since 2026-10-29's baseline.
-  (1) `check_dead_columns.py:base_table_columns()` / `check_dead_views.py:
-  view_names()` (0.734) — both new scripts' own small `information_schema`
-  introspection helpers, one over columns, one over views; genuinely
-  parallel by design, not worth merging (same precedent as `score_gold.py`'s
-  `citation_to_dict()` staying separate from this project's own
-  `citation_dict()` below). Left alone. (2) `build_gold_sample.py:main()` /
-  `build_gold_sample_novel.py:build_candidates()` (0.579) — this one was
-  real, and the 0.579 score undersold it: both functions ran the identical
-  SQL (the alias-docs query + the per-row/per-field anchor query) and the
-  identical per-anchor extraction loop, independently maintained since
-  2026-09-25. This is the *exact* class of risk that already caused a live
-  bug once (2026-10-24's signature-span mismatch, see Backlog history) —
-  two near-identical copies of window-building logic drifting apart because
-  a fix lands in one and not the other. Fixed by extracting the shared scan
-  into a new module, `gold_sampling.py` (`build_candidate_windows()`, plus
-  the `citation_dict()`/`PARQUET`/`SOURCE_FIELDS`/`CC_DOCS` it already
-  needed), with each script attaching only its own unique post-processing
-  (`build_gold_sample.py`'s hit/empty split; `build_gold_sample_novel.py`'s
-  signature computation, via an `extra_fn` hook since the signature span is
-  deliberately NOT the same span as `window` — see that script's own
-  comment, preserved verbatim in the new module). Proved byte-identical
-  behavior before/after: `build_gold_sample.py --n 20 --seed 42` and
-  `build_gold_sample_novel.py --n 20 --seed 42` produce byte-for-byte
-  identical JSON and stdout pre- vs post-refactor (diffed directly, zero
-  lines changed). Net effect: -106 lines across the two scripts, the pair
-  dropped off `check_code_clones.py` (6 → 5), and the duplicated-maintenance
-  risk that caused a real bug once is now structurally impossible (one
-  scan function, not two). `check_dead_columns.py`: **15 flagged, same
-  count as 2026-10-22's original baseline, but NOT the same 15** —
-  `article_amendment.event_id` is still off the list (read since
-  2026-10-28, as 2026-10-29 found), but `llc_norm.norm_key` is newly on it.
-  Root-caused: `norm_key` was never a real consumer-read column at all —
-  its ONLY prior "read" was inside `v_llc_skeleton`'s own `SELECT` list
-  (`git show 89c99ad`), the exact view 2026-10-29's Cleanup rotation
-  correctly deleted as dead. Deleting a dead view that happened to be the
-  sole reader of a column orphaned that column one grain down — a genuine
-  second-order effect of a previous, correct cleanup fix, and a nice
-  confirmation that these checks compose rather than just coincidentally
-  agreeing. Hand-verified `norm_key` has no other reader anywhere (every
-  real `llc_norm` join in `build_llc.py`/`app_llc.py`/`verify_transfer.py`
-  joins on `article_number`/`stage_no`, never `norm_key`); it's a `PRIMARY
-  KEY`, so it still earns its place as a real uniqueness constraint even
-  though nothing reads it back — same precedent as the already-recorded
-  `repeal_clause.clause_id`/`item_no`, left alone rather than removed.
-  Next Cleanup rotation should re-run all ten as a baseline; the two
-  deliberately-deferred residuals (`check_sql_bindings.py`'s plain-literal
-  indirection; `check_dead_views.py`'s transitive chains) remain unchanged
-  and still untriggered. Full detail: Log, 2026-11-01.
+- **Cleanup rotation — current state: all ten checks re-ran clean/current at
+  a stable baseline; closed the longer-standing of the two deliberately-
+  deferred residuals (`check_sql_bindings.py`'s plain-literal indirection) by
+  porting `check_fstring_interp.py`'s own bare-name/Assign-chase onto it, and
+  extracted the resulting shared scope-resolution helper into a new module
+  (`ast_scope.py`) before it could become its own clone-risk finding. Last
+  touched 2026-11-04** (see Log for the full trace): re-ran the full ten-check
+  baseline first — `pyflakes`/`vulture` clean; `bandit` 57/3/1 (one fewer
+  `B608` than 2026-11-01's 58, expected: that session's own gold-sampler
+  merge had already removed the f-string call site bandit was counting,
+  just not yet re-measured); `check_sql_bindings.py` 111/111;
+  `check_fstring_interp.py` 55/55; `check_dead_views.py` 10/10;
+  `check_dead_columns.py` 15 flagged, same set as 2026-11-01;
+  `check_code_clones.py` 5 pairs, same set as 2026-11-01 — nothing drifted
+  since the last rotation. Picked up the standing plain-literal-indirection
+  residual rather than re-confirming the two deferred items for a third
+  session running: `check_sql_bindings.py` only ever checked a query that
+  was the *direct* literal argument to `execute()`/`q()`/`qdf()`, so
+  `q = """..."""` then `con.execute(q)` on a later line (exactly
+  `measure_extractor_recall.py::check_cross_reference_disagreement()`'s own
+  shape) was invisible to it — not merely unresolved, never even counted —
+  the identical blind spot `check_fstring_interp.py` had for f-strings until
+  its 2026-10-16 fix. Ported that same fix: `_literal_str()` now chases a
+  bare name through every `Assign` to it within its own function scope
+  (cycle-guarded, all-branches-must-resolve, same shape as that script's
+  `_is_safe()`). 111 → 112 checked queries, the exact
+  `measure_extractor_recall.py` site. Mutation-tested end to end (not just
+  trusted): spliced a typo'd column name into that site's SQL in a scratch
+  copy, confirmed `find_queries()` traces the typo into the resolved text and
+  `PREPARE` rejects it with the exact DuckDB binder error — this call site's
+  schema binding genuinely was unchecked before today, now it is. Doing this
+  the same way `check_fstring_interp.py` already does it immediately
+  reproduced identical top-level helpers (`_assigns_by_name()`, a nested
+  `walk_scope()`) in both files — `check_code_clones.py` caught the new
+  1.000-similarity pair the same session, the exact duplicated-helper shape
+  2026-11-01's gold-sampler fix had just finished eliminating elsewhere.
+  Extracted both into `ast_scope.py` (`build_scope_map()`, `assigns_by_name()`)
+  and had both check scripts import it; re-ran `check_fstring_interp.py`
+  before/after the extraction — identical 55/55 output, confirming the
+  refactor changed no behavior. `check_code_clones.py` back to 5 pairs (the
+  same 5 as 2026-11-01's baseline — `ast_scope.py` introduced no new
+  cross-file duplication of its own). `verify_transfer.py` green throughout
+  (this is a maintainer-tooling-only change; `corpus.duckdb` untouched, no
+  rebuild needed); both apps sanity-parse clean (neither references the
+  touched files). **Next Cleanup rotation**: re-run all ten as a baseline;
+  one residual remains — `check_dead_views.py`'s transitive-view-chain blind
+  spot, still unchanged and still untriggered (no view-on-dead-view chain
+  exists in the live schema as of today's re-check). Worth considering
+  whether it's worth a dedicated transitive-closure check at all given it's
+  gone untriggered for 3+ rotations now, or whether to retire the open
+  question and just keep hand-checking it when a view is deleted (as
+  2026-10-29/2026-11-01 already did) — a genuine design decision for whoever
+  picks up Cleanup next, not yet made.
 
 ---
 
@@ -1329,6 +1319,14 @@ paragraph here.
   (the `measure_extractor_recall.py` site above) — zero injection risk
   since it has no interpolation, so left alone for a single call site, same
   single-occurrence-scope precedent as several Extractor items above.
+  **Resolved 2026-11-04**: ported `check_fstring_interp.py`'s own 2026-10-16
+  bare-name/Assign-chase (now shared via the new `ast_scope.py` module — see
+  that date's entry) onto `check_sql_bindings.py`'s plain-literal side; 111 ->
+  112 checked queries, the exact `measure_extractor_recall.py` site, mutation-
+  tested to confirm a typo'd column in it is now caught (it wasn't before).
+  Not single-occurrence-only forever: the fix is general, so any future
+  `query = "..."; ...; execute(query)` call site anywhere in scope is checked
+  too, not just this one.
 - ~~**A tenth check: the dead-column idea one grain up — a view the
   pipeline rebuilds every run that nothing ever queries.**~~ **Added
   2026-10-29**: `check_dead_views.py` — lists every view in `corpus.duckdb`'s
@@ -1401,6 +1399,148 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-04 — Cleanup rotation: closed the `check_sql_bindings.py` plain-literal-indirection residual (111->112 checked queries, mutation-tested), then extracted the resulting duplicated Assign-chase helper into a new `ast_scope.py` module before it became its own clone-risk finding
+
+Rotation: Cleanup (last touched 2026-11-01; Extractor took 11-02 and Data
+currency took 11-03, so this is the next slot in the three-way round robin).
+
+**Environment note, same recurring pattern as every session since
+2026-10-28**: this container's default `python3`/`pip` had no project
+dependencies at all (`duckdb`/`pandas`/`streamlit`/`pyflakes`/`vulture`/
+`bandit` all missing); the interpreter every script's shebang and this
+project's own tooling actually resolve to is `python3.13`. Installed via
+`python3.13 -m pip install duckdb pandas streamlit pyflakes vulture bandit`
+and used `python3.13 <script>` explicitly throughout, same as every prior
+session's own note. `git lfs pull` was NOT needed this time — the parquet
+checked out at its full 163MB already, unlike several recent sessions.
+
+**A false alarm first, worth recording so it doesn't cause a real scare
+later**: the container came up with `HEAD` detached 3 commits ahead of the
+*locally cached* `origin/main` ref (`40ac2e8`/`ca4a7b4`/`8de035a`, i.e.
+2026-11-01/02/03's own work) — the exact shape 2026-10-31's log entry
+described as a real problem (work committed but never pushed, sitting only
+in that container). This time it wasn't: `git fetch origin main` showed the
+*real* `origin/main` already at `8de035a` — the cached remote-tracking ref
+in this container's snapshot was just stale from before those sessions'
+pushes landed, not a sign the pushes failed. Confirmed before doing
+anything else (`verify_transfer.py` green at `HEAD`, fast-forwarded local
+`main` to it, `git push` correctly reported "Everything up-to-date"). Takeaway
+for whoever reads this next: always re-`fetch` before concluding a detached-
+HEAD-ahead-of-main state means lost work — it has meant that before
+(2026-10-31) and has NOT meant that (today), and the only way to tell the two
+apart is a fresh fetch, not trusting the snapshot's cached ref.
+
+**Baseline, all ten checks, re-run clean/current** (full detail in Active
+threads above): `pyflakes`/`vulture` clean; `bandit` 57/3/1 (one fewer
+`B608` than 2026-11-01's own 58 — that session's gold-sampler merge had
+already removed the extra f-string call site, bandit just hadn't been
+re-run since); `check_sql_bindings.py` 111/111; `check_fstring_interp.py`
+55/55; `check_dead_views.py` 10/10; `check_dead_columns.py` 15 flagged, byte-
+identical set to 2026-11-01's; `check_code_clones.py` 5 pairs, byte-identical
+set to 2026-11-01's. Nothing drifted across three days of other rotations'
+work landing in between — a useful data point on its own (the ten checks are
+stable under real, unrelated changes, not just inert).
+
+**Picked the standing residual rather than a fourth consecutive
+re-confirmation of "still untriggered"**: Active threads' own Cleanup bullet
+has named `check_sql_bindings.py`'s plain-literal indirection as deferred
+since 2026-10-16 (when `check_fstring_interp.py` closed the *same*-shaped
+blind spot for f-strings) — four rotations (10-29, 10-31→11-01, and today)
+had re-confirmed it unchanged without anyone actually closing it. Read
+`check_fstring_interp.py`'s own fix in full first, since the task brief's own
+rule is not to silently override a documented decision: that script's
+`_is_safe()`/`_contains_joinedstr()` chase a bare name through every `Assign`
+to it within the SAME function (not globally — a different function's
+same-named local must not leak in), cycle-guarded, every reachable branch
+must resolve or the whole name is unsafe/unresolved. `check_sql_bindings.py`
+had never gotten the equivalent treatment on its own (non-f-string) side:
+its `_literal_str()` only accepted a direct `Constant`/`BinOp` argument, so
+`q = """...""" ` then `con.execute(q)` on a later line (real, live, exactly
+`measure_extractor_recall.py::check_cross_reference_disagreement()`'s shape)
+was invisible — not flagged as unresolved, not counted at all toward
+"checked N queries", the identical invisibility class the 2026-10-16 fix
+measured and fixed for f-strings.
+
+**The fix** (`check_sql_bindings.py`): rewrote `_literal_str()` to return
+`list[str] | None` instead of `str | None` — resolving a bare `Name` now
+recurses into every `Assign` to it in its enclosing function scope (added
+scope-tracking to `find_queries()`, the same per-node nearest-enclosing-
+function map `check_fstring_interp.py`'s own `find_calls()` builds), and
+only returns a result if EVERY reachable branch is itself a plain literal
+(an f-string, a parameter, or any other unresolved shape anywhere in the
+chain makes the whole name unresolved, not guessed at) — same
+all-branches-must-resolve shape as `_is_safe()`, deliberately, so a provably-
+ambiguous or partially-dynamic query is still left alone rather than risking
+a false pass. `BinOp`/`+`-concatenation now also distributes across however
+many literal variants each side resolves to (a Cartesian product), not just
+the single-value case the original handled.
+
+**Measured**: 111 → 112 checked queries, exactly one new site —
+`measure_extractor_recall.py:172`, the `cr`/`txt`/`art` CTE query assigned to
+`q` four lines above its `con.execute(q)` call. All 112 bind cleanly (no
+latent schema bug was hiding there — confirmed, not assumed).
+
+**Mutation-tested rather than trusted by inspection** (same methodology this
+project has used for every one of its five custom checks' own debut): copied
+`measure_extractor_recall.py` to a scratch file, spliced a typo
+(`dst_article_number` -> `dst_article_numberXYZ`) into the literal SQL
+assigned to `q`, and confirmed two things separately — `find_queries()`
+correctly traces the bare name `q` through its `Assign` and returns the
+MUTATED text (not the original), and running that resolved text through the
+real `PREPARE`-against-`corpus.duckdb` step this script's `main()` already
+does raises `Binder Error: Referenced column "dst_article_numberXYZ" not
+found in FROM clause!` — exactly the failure mode this check exists to
+catch, now reachable from a call shape that was completely invisible to it
+an hour earlier. Scratch files deleted after.
+
+**The second-order finding, caught the same session rather than left for a
+future one**: porting `check_fstring_interp.py`'s own Assign-chase pattern
+onto `check_sql_bindings.py` meant copying its two small scope-resolution
+helpers (`_assigns_by_name()`, and `find_queries()`'s own nested
+`walk_scope()`) nearly verbatim. Re-ran `check_code_clones.py` immediately
+after the fix (not as an afterthought) and it caught exactly this: two new
+`[IDENTICAL 1.000]` cross-file pairs, `check_fstring_interp.py`/
+`check_sql_bindings.py`'s now-duplicated `_assigns_by_name()` and
+`walk_scope()`. This is the *exact* duplicated-helper-function risk class
+2026-11-01's Cleanup rotation had just finished eliminating from the gold
+samplers (`gold_sampling.py`) — introducing a fresh instance of it in the
+same session that fixed something else would have been a genuine step
+backward, not a wash. Extracted both into a new module, `ast_scope.py`
+(`build_scope_map()` — the nearest-enclosing-function node map, renamed from
+`walk_scope` for clarity now that it's a public single-purpose function, not
+a `find_calls()`-local closure; `assigns_by_name()` — the per-scope `Assign`
+collector), and had both `check_fstring_interp.py` and `check_sql_bindings.py`
+import from it instead of defining their own copies.
+
+**Verification of the extraction, not just the fix**: `pyflakes`/`vulture`
+clean on `ast_scope.py` plus both touched check scripts. Ran
+`check_fstring_interp.py` before and after the extraction — byte-identical
+`55/55` output both times (the file count line moved 21 -> 22 only because
+`ast_scope.py` itself is now one more file in its own default glob scan, not
+a behavior change). `check_sql_bindings.py` stayed at `112/112` across the
+extraction. Re-ran `check_code_clones.py` a final time: back down to 5
+pairs, the same 5 as every baseline since 2026-11-01 (`ast_scope.py`
+contributed zero new cross-file duplication of its own — confirmed by
+inspecting the full pair list, not just the count). `verify_transfer.py`:
+**PASSED, all checks green**, output unchanged from baseline — this is a
+maintainer-tooling-only change (no `build_*.py` script, no `corpus.duckdb`
+schema, no table/column/view touched), so no rebuild was needed or done.
+Both `app_hierarchy.py`/`app_llc.py` sanity-parse clean; neither references
+`check_sql_bindings.py`, `check_fstring_interp.py`, or the new `ast_scope.py`
+(confirmed by grep), so there was no app-surface to re-check beyond that.
+
+**Decision**: ship both changes together in one commit — the fix and the
+clone-risk cleanup it immediately caused are one coherent unit of work, the
+same way 2026-11-01's own session shipped its fix and its measurement
+together. Closes the longer-standing of the two deliberately-deferred
+Cleanup residuals for good (it's now a general capability, not a
+single-occurrence carve-out — any future `query = "..."` + `execute(query)`
+site anywhere in scope is checked automatically). One residual remains open:
+`check_dead_views.py`'s transitive-view-chain blind spot, re-confirmed again
+today as still untriggered — see Active threads for the open question of
+whether it's worth keeping as a standing "maybe someday" item at all, now
+that it's gone three-plus rotations without ever firing.
 
 ### 2026-11-03 — Data currency rotation: fixed the Article 26¹/261 `norm_id`-misattribution bug diagnosed 2026-10-31, closing `v_en_amendment_staleness`'s last unresolved footnote article (38/39 -> 39/39)
 

@@ -78,6 +78,9 @@ import ast
 import glob
 import sys
 
+from ast_scope import assigns_by_name as _assigns_by_name
+from ast_scope import build_scope_map
+
 EXCLUDE_FILES = {"check_fstring_interp.py"}
 
 # bare names that can't be resolved by this script's intra-function Assign
@@ -156,24 +159,9 @@ def _contains_joinedstr(node: ast.AST, assigns_by_name: dict[str, list[ast.AST]]
     return False
 
 
-def _assigns_by_name(func: ast.AST) -> dict[str, list[ast.AST]]:
-    out: dict[str, list[ast.AST]] = {}
-    for node in ast.walk(func):
-        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
-            out.setdefault(node.targets[0].id, []).append(node.value)
-    return out
-
-
 def find_calls(path: str) -> list[tuple[int, list[ast.AST], dict[str, list[ast.AST]]]]:
     tree = ast.parse(open(path, encoding="utf-8").read(), filename=path)
-    # map every node to its nearest enclosing function (or the module itself)
-    scope_of: dict[int, ast.AST] = {}
-    def walk_scope(node: ast.AST, scope: ast.AST):
-        scope_of[id(node)] = scope
-        for child in ast.iter_child_nodes(node):
-            next_scope = child if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) else scope
-            walk_scope(child, next_scope)
-    walk_scope(tree, tree)
+    scope_of = build_scope_map(tree)
 
     found = []
     for node in ast.walk(tree):

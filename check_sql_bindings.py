@@ -21,9 +21,20 @@ Only plain (non f-string) string literals are checked -- f-string SQL is
 already covered by the project's own `execute(f"` grep audit, and an f-string
 assembles its table/column names at runtime, so this check would only ever
 validate a query shaped by whatever constants happen to be active. Each
-matched call's query text must be either a bare Str/Constant or a Str
-concatenated with `+`/implicit adjacency, which covers every call site in this
-codebase as of 2026-10-03.
+matched call's query text must resolve to a bare Str/Constant or a Str
+concatenated with `+`/implicit adjacency.
+
+Traces bare-name indirection (`q = "SELECT ..."` then `execute(q)` on a later
+line), the same intra-function `Assign`-chase `check_fstring_interp.py`
+already uses for its own bare-name/f-string case -- closes the "plain-literal
+indirection" gap that script's 2026-10-16 fix deliberately left open on this
+script's side (see DAILY_REVIEW.md, that date, and 2026-11-04 for the fix
+here): a bare name is resolved to every literal string reachable through its
+own function-local assignments; if EVERY reachable assignment resolves to a
+plain literal (recursively), each resolved string is checked as its own query.
+A name with any unresolvable branch (an f-string, a parameter, a runtime
+value) is left alone, same as a direct f-string argument -- this script still
+only validates provably-constant SQL text, never a guess at one.
 
 Scope is deliberately the read-only analysis/app layer (the default file list
 below), not build_corpus_db.py/build_links.py/build_okoz.py/build_llc.py.
@@ -46,25 +57,47 @@ import sys
 
 import duckdb
 
+from ast_scope import assigns_by_name, build_scope_map
+
 DB_PATH = "corpus.duckdb"
 CALL_NAMES = {"q", "qdf", "execute"}
 
 
-def _literal_str(node: ast.AST) -> str | None:
-    """Best-effort: a plain string constant, or a chain of string-literal concatenations."""
+def _literal_str(node: ast.AST, assigns_by_name: dict[str, list[ast.AST]], seen: set[str]) -> list[str] | None:
+    """Resolve node to every literal string it could be. Returns None if any
+    reachable branch isn't a plain string literal (an f-string, a parameter, a
+    runtime value) -- conservative, mirrors check_fstring_interp.py's own
+    all-branches-must-be-safe shape for its bare-name Assign chase."""
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return node.value
+        return [node.value]
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        left, right = _literal_str(node.left), _literal_str(node.right)
-        if left is not None and right is not None:
-            return left + right
+        lefts = _literal_str(node.left, assigns_by_name, seen)
+        rights = _literal_str(node.right, assigns_by_name, seen)
+        if lefts is None or rights is None:
+            return None
+        return [l + r for l in lefts for r in rights]
     if isinstance(node, ast.JoinedStr):
         return None  # f-string: out of scope, covered by the separate grep audit
+    if isinstance(node, ast.Name):
+        if node.id in seen:
+            return None  # cycle guard
+        rhses = assigns_by_name.get(node.id)
+        if not rhses:
+            return None  # a parameter or otherwise-unassigned name
+        out: list[str] = []
+        for rhs in rhses:
+            resolved = _literal_str(rhs, assigns_by_name, seen | {node.id})
+            if resolved is None:
+                return None
+            out.extend(resolved)
+        return out
     return None
 
 
 def find_queries(path: str) -> list[tuple[int, str]]:
     tree = ast.parse(open(path, encoding="utf-8").read(), filename=path)
+    scope_of = build_scope_map(tree)
+
     found = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -74,9 +107,11 @@ def find_queries(path: str) -> list[tuple[int, str]]:
             func.attr if isinstance(func, ast.Attribute) else None)
         if name not in CALL_NAMES or not node.args:
             continue
-        sql = _literal_str(node.args[0])
-        if sql is not None and sql.strip():
-            found.append((node.lineno, sql))
+        scope = scope_of.get(id(node), tree)
+        assigns = assigns_by_name(scope)
+        for sql in _literal_str(node.args[0], assigns, set()) or []:
+            if sql.strip():
+                found.append((node.lineno, sql))
     return found
 
 
