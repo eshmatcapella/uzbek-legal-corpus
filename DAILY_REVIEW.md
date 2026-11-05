@@ -45,42 +45,46 @@ thread closes, fold its outcome into Backlog (if a residual remains) or
 just let the Log entry be the permanent record — don't also keep growing a
 paragraph here.
 
-- **Extractor rotation — current state: gold set at 685 records (batch 17),
-  precision 2908/2924 (99.5%), recall 2908/2946 (98.7%), widened-signature
-  novel pool now at roughly 591 windows / ~155 distinct signatures still
-  novel as of this session's draw (recompute fresh next time — see note
-  below). Last touched 2026-11-02** (drew and hand-verified a 40-window
-  batch 17, gold_id 645-684, from the widened signature's novel pool — see
-  Log for the full trace). 40/40 `correct` (no new `known_gap` this batch;
-  every pre-existing known_gap's FN/FP unchanged). One real, live recall
-  bug found and FIXED at the source (gold_id 670, row 46605): LexUZ spells
-  the chapter+section unit word "paragrifi" (not "paragrafi") in both of
-  this row's own occurrences ("65-bobining 1-paragrifi", "65-bobi
-  1-paragrifi") — the `bob`-branch section lookahead was hardcoded to the
-  literal `paragraf` stem, so both silently downgraded from "chapter 65,
-  section 1" to a bare "chapter 65". Fixed by widening the lookahead to
-  `paragr[ai]f`. Measured corpus-wide: the only other "paragrif" occurrence
-  anywhere (row 25664) cites a Nizom, not the Code or itself, so it's
-  outside any anchor's scan window regardless — row 46605's 2 occurrences
-  are the fix's entire footprint. This turned out to be a month-old
-  deliberately deferred gap, not a brand-new one: gold_id 52 (built
-  2026-09-22) already documented the SAME row's OTHER occurrence as
-  `known_gap` at this exact scope, explicitly left unfixed as
-  micro-scope — corrected its verdict to `correct` in place now that the
-  gap is gone (same bookkeeping precedent as 2026-10-15/2026-10-18; see
-  Log for the "grep the notes field first" lesson this surfaced). 67/67
-  self-tests pass (2 new, both spellings' "bob" forms). Re-ran
-  `build_links.py`/`build_llc.py` against
-  the fixed extractor (not a full `corpus.duckdb` rebuild): `link_edge`
-  stays at 9642 edges (2 existing edges reclassified from a bare
-  chapter/C65 target to a precise section/C65.S1 target, not a new edge).
-  See Log for the full trace. **Next Extractor rotation**: keep drawing
-  batches from the widened signature's novel pool (`python
-  build_gold_sample_novel.py --n 40 --seed <next>`) — recompute the
-  novel-pool size fresh rather than trusting this session's 591/155 figure
-  verbatim (today's fix may have shifted a handful of signatures the same
-  way 2026-10-30's anchor-regex fix did); no new strategy decision needed
-  until that pool exhausts too.
+- **Extractor rotation — current state: gold set at 725 records (batch 18),
+  precision 3024/3040 (99.5%), recall 3024/3062 (98.8%), widened-signature
+  novel pool now at 472 windows / 75 distinct signatures still novel as of
+  this session's post-merge recompute. Last touched 2026-11-05** (drew and
+  hand-verified a 40-window batch 18, gold_id 685-724, from the widened
+  signature's novel pool — see Log for the full trace). 40/40 `correct` —
+  the first fully clean batch (no new bug, no new `known_gap`) since batch
+  13 (2026-10-24; batches 14-17 each found something). Hand-read every window against the raw Uzbek text and
+  `citation_extractor.py`'s own documented stop-word/qism-gating rules
+  rather than trusting the sampler's `extracted` field at face value,
+  deliberately stress-testing the shapes most likely to hide a silent leak:
+  a three-code side-by-side terminology list (gold_id 693, row 8856:
+  "mazkur Kodeks 197-moddasida “qonunchilik”, Uy-joy kodeksining
+  11-moddasining beshinchi va oltinchi qismlarida") confirmed the Housing
+  Code's own "beshinchi va oltinchi qism" correctly stays off Civil Code
+  article 197 because `RE_QISM_BLOCK`'s comma check fires on the comma
+  right after "qonunchilik" before the qism word is ever reached — the
+  same mechanism the existing 2-item self-test already covers, just with a
+  third, unrelated code's clause thrown into the same window; a
+  "Part One/Part Two" adoption-era phrasing (gold_id 701, row 29841:
+  "Fuqarolik kodeksining birinchi qismi tasdiqlansin") was checked directly
+  against `struct_node` (queried live: 6 real `part` rows, PI..PVI, all
+  subject-matter divisions — General Provisions, Right of Ownership, Law of
+  Obligations, Intellectual Property, Inheritance Law, Private International
+  Law — none of them "Part One" of the Code's own 1996/1999 two-stage
+  enactment) to confirm there is no `target_kind` this phrase could resolve
+  to today, so falling through to a bare `act` citation is correct, not a
+  gap; and two long mixed list/range clauses (gold_id 710, row 35811, 36
+  articles across 3 ranges and 2 singles; gold_id 719, row 46569, 11
+  articles across 2 ranges and 4 singles, immediately followed by the Labor
+  Code's own "160-modda, 159-moddasi" — confirmed excluded via `RE_STOP`'s
+  bare "kodeksi" substring match inside "Mehnat kodeksi") were each
+  independently re-expanded by hand against the raw text, endpoint by
+  endpoint. No new bug, no new `known_gap`. 67/67 self-tests still pass
+  (unchanged — no extractor code touched this session). **Next Extractor
+  rotation**: keep drawing batches from the widened signature's novel pool
+  (`python build_gold_sample_novel.py --n 40 --seed <next>`) — 472
+  windows / 75 distinct signatures remain as of this session's own
+  post-merge recompute; no new strategy decision needed until that pool
+  exhausts too.
 
 - **Data currency rotation — current state: mined a wholly new source this
   project had never touched — the English markdown's own per-article
@@ -1399,6 +1403,134 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-05 — Extractor rotation: gold batch 18 (685->725), a fully clean batch — no new bug, no new known_gap — with three windows deliberately stress-tested by hand rather than taken on faith
+
+Rotation: Extractor (last touched 2026-11-02; Data currency took 11-03 and
+Cleanup took 11-04, so this is the next slot in the three-way round robin —
+Extractor was the oldest-touched of the three).
+
+**Environment note, same recurring pattern as every session since
+2026-10-28**: this container's default `python3` (3.11) had no project
+dependencies (`duckdb`/`pyarrow`/`playwright`/`pyflakes`/`vulture`/`bandit`
+all missing) — `pip` itself resolved to a *different* interpreter (3.13),
+so `pip install duckdb` silently installed into the wrong Python and
+`python3 verify_transfer.py` kept failing with `ModuleNotFoundError` until
+switched to `python3 -m pip install ...`. Also needed `git lfs install &&
+git lfs pull` before `articles/train-00000-of-00001.parquet` was anything
+but a 134-byte LFS pointer stub. Recording this again (as 2026-10-28
+onward each did) since it keeps recurring identically every fresh
+container — a standing candidate for a committed setup script, not yet
+acted on (would need to NOT touch the two large git-lfs-tracked parquet
+files by default, since most rotations don't need `verify_transfer.py`'s
+specific AC3 byte-identity check against them).
+
+Drew a fresh batch with `python build_gold_sample_novel.py --n 40 --seed
+20261105`: 3251 candidate windows corpus-wide, 727 distinct signatures (up
+from 727 before — unchanged, since nothing fixed last session changed the
+corpus-wide shape count), 612 already covered by the 685-record gold set,
+551 windows across 115 distinct never-covered signatures remaining (down
+from the 591/155 2026-11-02 left off with — batch 17's own `paragrif` fix
+retroactively recategorized a handful of windows into already-covered
+signatures, exactly the effect flagged as a possibility in that session's
+own "Next Extractor rotation" note).
+
+Hand-read all 40 sampled windows against the raw Uzbek text, independently
+of (not just comparing against) `citation_extractor.py`'s own `extracted`
+output, working through `citation_extractor.py`'s full stop-word/qism-
+gating logic line by line for each one rather than only spot-checking the
+unfamiliar-looking ones. Three windows got special attention because their
+surface shape looked like exactly the kind of thing that could hide a
+silent leak:
+
+- **gold_id 693 (local gid 8, row 8856)**: `"Fuqarolik kodeksi koʻrsatilgan
+  moddalarining tegishli qismlarida bunday huquqiy asos sifatida "qonun
+  hujjatlari", mazkur Kodeks 197-moddasida "qonunchilik", Uy-joy
+  kodeksining 11-moddasining beshinchi va oltinchi qismlarida hamda ..."` —
+  three different codes' own terminology for the same underlying legal
+  concept, listed side by side. The worry: does the Housing Code's own
+  "beshinchi va oltinchi qism" (parts five and six of ITS article 11) leak
+  onto the Civil Code's article 197 citation, since both appear in the
+  same anchor window? Traced `extract()`'s own tail-scan by hand: after
+  matching "197-moddasida", the qism-lookahead's `RE_QISM.search(tail)`
+  finds "oltinchi qism" (the only ordinal immediately adjacent to a
+  qism/band word in the first 60 characters — "beshinchi" itself isn't
+  adjacent, "va oltinchi" sits between it and "qism"), but
+  `RE_QISM_BLOCK.search(tail[:cand.start()])` finds the comma right after
+  "qonunchilik" first and blocks the attachment — article 197 correctly
+  keeps `qism: null`. This is the exact same mechanism the existing
+  2-item self-test ("185-moddasi, 186-moddasi toʻqqizinchi qismi") already
+  covers, just exercised here with a third, unrelated code's own clause
+  thrown into the same window — confirms the gate generalizes, not a new
+  finding, but worth having actually traced rather than assumed.
+- **gold_id 701 (local gid 16, row 29841)**: `"Oʻzbekiston Respublikasi
+  Fuqarolik kodeksining birinchi qismi tasdiqlansin."` — this is the
+  Code's own two-stage 1996/1999 enactment formula ("Part One of the Civil
+  Code ... shall be approved"), and `birinchi qismi` ("first part") LOOKS
+  like it might be the same "part" concept `RE_ROMAN_PART`/`target_kind
+  'part'` already covers. Checked directly against the live corpus rather
+  than assuming either way: `SELECT node_id, kind, label_en FROM
+  struct_node WHERE kind='part'` returns exactly 6 rows (PI..PVI —
+  General Provisions, Right of Ownership and Other Property Rights, Law of
+  Obligations, Intellectual Property, Inheritance Law, Application of
+  Private International Law Norms), every one a subject-matter division
+  of the Code's own body. The adoption-era "Part One" this phrase names is
+  a different, higher-level concept entirely (the whole General Part,
+  articles 1-385, as approved by one law vs. the Special Part approved
+  later) — there is no `target_kind` in the current schema for it, so
+  falling through to a bare `act` citation (the same fallback every other
+  vague Code-mention-with-no-pinned-provision window in this project's
+  history already gets) is the correct, honest answer, not a missed
+  `target_kind='part'` case.
+- **gold_id 710 (local gid 25, row 35811)**, a 36-article mixed list/range
+  (`"915, 917 — 920, 927, 929 — 955, 957 — 959-moddalari"` = 915 + 917-920
+  + 927 + 929-955 + 957-959) and **gold_id 719 (local gid 36, row 46569)**,
+  an 11-article mixed list/range immediately followed by a different
+  code's own articles (`"mazkur Kodeksning 162, 260 — 263, 325 — 326, 330,
+  436, 454-moddalari, 720-moddasi birinchi qismi, Oʻzbekiston
+  Respublikasining Mehnat kodeksi 160-modda, 159-moddasi"`) — both
+  re-expanded by hand, endpoint by endpoint, against the raw text rather
+  than trusting the count; gold_id 719 additionally confirmed that
+  `RE_STOP`'s bare, case-insensitive `"kodeksi"` alternative correctly
+  fires on the plain words "Mehnat kodeksi" ("Labor Code") the same way it
+  fires on any other code named by role, stopping the scan before "160-
+  modda, 159-moddasi" — not a coincidence specific to this window, the
+  same mechanism already measured and documented for `"Qonunining"` and
+  `"kodeksining"` matches.
+
+All 40 — including the three above — matched `extracted` exactly: 40/40
+`verdict: correct`. No new bug, no new `known_gap`. This is the first
+fully clean batch (nothing found, nothing fixed, nothing newly deferred)
+since batch 13 (2026-10-24) — batches 14 through 17 each turned up
+something. 67/67 extractor self-tests still pass (unchanged: no
+`citation_extractor.py` code was touched this session, since nothing
+needed fixing). `build_links.py`/`build_llc.py` NOT re-run (no extractor
+behavior changed); `corpus.duckdb` untouched.
+
+Merged the 40 records as gold_id 685-724 into `gold_citations.json` and
+re-ran `score_gold.py`: precision 3024/3040 (99.5%, up from 2908/2924 at
+685 records — unchanged ratio, purely more coverage), recall 3024/3062
+(98.8%, up from 2908/2946 — same), 0 drift, 24 qism-grain mismatches (the
+same pre-existing, already-documented `known_gap` records from earlier
+batches — nothing new). Recomputed the novel-signature pool after merging
+(`build_gold_sample_novel.py --n 40 --seed 1`, a disposable probe seed, not
+the next real batch's seed): 727 distinct signatures corpus-wide
+(unchanged, as expected — no extractor fix ran), 652 now covered (up from
+612, +40 for exactly this batch's own signatures), 472 windows across 75
+distinct signatures still novel.
+
+`verify_transfer.py`: all checks green (unaffected by this session —
+`gold_citations.json`/`score_gold.py` aren't part of any AC check; the raw
+parquet's sha256 and the derived layer were never touched).
+
+Decided against inventing a new angle this session: the widened signature
+introduced 2026-10-27 is down to 75 distinct novel signatures from the 235
+it opened with, and two of its batches (13, now 18) have come back fully
+clean against one that found something lighter each time in between — not
+yet exhausted (115->75 signatures is still real, measured shrinkage, not a
+plateau), so staying the course and continuing to draw from it remains the
+right call rather than widening the signature a second time or switching
+to a different post-exhaustion strategy pre-emptively.
 
 ### 2026-11-04 — Cleanup rotation: closed the `check_sql_bindings.py` plain-literal-indirection residual (111->112 checked queries, mutation-tested), then extracted the resulting duplicated Assign-chase helper into a new `ast_scope.py` module before it became its own clone-risk finding
 
