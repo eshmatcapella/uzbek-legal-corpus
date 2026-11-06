@@ -180,17 +180,33 @@ def page_article() -> None:
                    "match the current Uzbek article. Trust the Uzbek text.")
 
     staleness = q("""
-        SELECT en_latest_act_number, uz_latest_act_number, uz_latest_amend_date
+        SELECT en_latest_act_number, uz_latest_act_number, uz_latest_amend_date,
+               uz_latest_change_type, days_since_uz_amend
         FROM v_en_amendment_staleness WHERE norm_id = ? AND en_text_stale
     """, [norm_id])
     if staleness:
-        en_act, uz_act, uz_date = staleness[0]
+        en_act, uz_act, uz_date, uz_ctype, days_since = staleness[0]
+        # uz_latest_change_type is a comma-joined set (rare: one law can both
+        # restate and remove/void parts of the same article in one event, see
+        # build_links.py) — describe each type in there, not just the first.
+        ctype_desc = {
+            "restated": "fully restated (replaced with new wording), not just edited",
+            "supplemented": "supplemented with an added provision",
+            "inserted": "inserted as a new provision",
+            "removed": "had a provision removed",
+            "voided": "had a provision voided",
+            "replaced": "replaced",
+        }
+        missed = [ctype_desc.get(t, t) for t in (uz_ctype or "").split(",") if t]
+        missed_str = " and ".join(missed) if missed else "changed"
+        badge = "".join(CHANGE_BADGE.get(t, "") for t in (uz_ctype or "").split(",") if t)
         st.warning(
             f"**English text may be out of date.** Its own amendment footnote "
             f"cites Law No. ZRU-{en_act} as the most recent change, but LexUZ's "
             f"Uzbek-side amendment history records a later one — Law No. "
-            f"OʻRQ-{uz_act}, {uz_date} — that the English translation does not "
-            "appear to reflect. `en_align_status` only checks that the article's "
+            f"OʻRQ-{uz_act}, {uz_date} ({days_since} days ago) — that the English "
+            f"translation does not appear to reflect. {badge} That law **{missed_str}** "
+            "this article. `en_align_status` only checks that the article's "
             "number/title line up, not that its text is current. Trust the "
             "Uzbek text for anything substantive.")
 

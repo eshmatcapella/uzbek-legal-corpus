@@ -86,67 +86,56 @@ paragraph here.
   post-merge recompute; no new strategy decision needed until that pool
   exhausts too.
 
-- **Data currency rotation — current state: mined a wholly new source this
-  project had never touched — the English markdown's own per-article
-  amendment footnote — and found that 17/386 (44.7% of the 38 articles whose
-  footnote resolves at all) General Part articles' DISPLAYED English text is
-  provably older than the latest Uzbek-mined amendment, including Article 1
-  itself. Last touched 2026-10-31** (see Log for the full trace):
-  `norm_unit.en_align_status` only certifies STRUCTURAL alignment (the
-  English article's number/title match the Uzbek one) — it says nothing
-  about whether the English article's own BODY TEXT reflects the most recent
-  substantive amendment, and nothing in the corpus had ever measured that
-  until today. The English markdown independently embeds a per-article "(Article
-  N was amended in accordance with the Law of the Republic of Uzbekistan
-  dated ... No. ZRU-NNN)" footnote — never parsed before (parser.py only
-  ever checked it for the substring "lost force"). ZRU-NNN is the same
-  globally-monotonic decree number as `article_amendment.amend_act_number`'s
-  OʻRQ-NNN (confirmed 1:1 consistent against `amend_date` corpus-wide, zero
-  conflicts across 66 distinct numbers) — joining on that shared ID sidesteps
-  ever having to parse the footnote's own inconsistently-formatted date text
-  (mixes "Month DD, YYYY" and bare numeric dates, sometimes DD.MM vs MM.DD
-  within the same footnote's own comma-separated list). 39 articles carry a
-  parseable footnote; for 17 of them the footnote's highest act number is
-  OLDER than the latest UZ-mined amendment for that article — confirmed with
-  real substantive content on the worst case (Article 1: the English
-  footnote cites 2018's ZRU-476, but `article_amendment`'s own evidence text
-  shows a 2021 restatement, OʻRQ-683, that rewrote the article's title AND
-  three of its four parts — not a formality). Deliberately reused rather
-  than re-solved the one latent trap here: `article_number` "261" is
-  verify_transfer.py's own already-known `review_ambiguous_key` (shared by
-  Article 26¹ and the unrelated Article 261) — the join always prefers
-  `article_amendment.norm_id` and only falls back to article_number text
-  matching for norm_units whose article_number isn't shared by a second
-  norm_id, so the one ambiguous pair can't silently conflate. Shipped as two
-  new, purely additive `build_links.py` tables
-  (`en_amendment_footnote`, one row per footnote act-number mention;
-  `en_amendment_staleness`, one row per resolvable article) plus a view
-  (`v_en_amendment_staleness`) and a new warning in
-  `app_hierarchy.py::page_article()`, right under the existing `en_align_status`
-  warning it complements. `app_llc.py` deliberately NOT touched — it never
-  renders `article_text_en` at all (only `article_title_en` for labeling), so
-  there is no surface for this specific warning there; 4 LLC foundation
-  articles (53, 55, 58, 67) are affected but the gap is only visible through
-  `app_hierarchy.py` today. Verified: `check_sql_bindings.py` 111/111,
-  `check_fstring_interp.py` 56/56, `pyflakes` clean, all pre-existing table
-  row counts unchanged (link_edge 9642, article_amendment 612, repeal_clause
-  885 — purely additive), and a Playwright pass on `app_hierarchy.py`
-  (Article 1 shows the new warning with the right numbers; Article 49, the
-  page's default, correctly shows nothing) plus a smoke-test pass on
-  `app_llc.py` (loads without error). `verify_transfer.py` green throughout.
-  **2026-11-03: the 1/39-unresolved residual below is now fixed** — see
-  Backlog > Data currency (resolved item) and Log, 2026-11-03, for the full
-  trace: `norm_by_article`'s article-number-text key was silently lossy for
-  the Article 26¹/261 ambiguous pair; the self-referencing clause that hit
-  it now resolves exactly via `norm_unit.src_row` instead, no heuristic
-  needed. `v_en_amendment_staleness` is 39/39 resolvable (was 38/39), stale
-  count unchanged at 17/39. **Next Data currency rotation**: no open
-  residual from this thread — the qism-level angle (2026-10-28) is still
-  likely exhausted for `article_amendment`'s current locator shapes; the
-  untried `derived_status`/`dst_dangling` × version-dates pairing remains
-  available, and the standing cross-signal technique (Backlog's own note)
-  keeps paying off often enough to default to it again before inventing a
-  wholly new angle.
+- **Data currency rotation — current state: `v_en_amendment_staleness` (built
+  2026-10-31, fixed to 39/39 resolvable 2026-11-03) now also tells readers
+  WHAT KIND of amendment each of its 17 stale articles is missing — 17/17 are
+  a full `restated` rewrite, not a partial edit — plus how many days it's been
+  missing it (316 to 2,025 days). The `dst_dangling`/`version_date` pairing
+  this thread's note used to flag as untried is now closed: fully exhausted,
+  zero new signal (see Log for both). Last touched 2026-11-06.** Tried the
+  standing backlog pairing first: all 17 corpus-wide `dst_dangling=TRUE`
+  edges target the Civil Code's own 8 already-known 2014-voided articles
+  (the 2026-10-23 `en_repealed` set); `version_date` added nothing since
+  both citing and cited acts were scraped well after the voiding — this
+  fully characterizes, not just samples, `dst_dangling`'s whole extent, so
+  don't re-open it without a new angle. Two `version_date` sanity checks
+  alongside it (snapshot never predates enactment, 0/24,267; superseded
+  acts' own scrape date vs. their `repealed_on`, 10/234 before, 224 after)
+  were both clean — point-in-time archive behavior, not a bug, not pursued
+  further. The real find: cross-checked `v_en_amendment_staleness` against
+  `article_amendment.change_type` for the SPECIFIC missed event per stale
+  article (careful to scope the join by `norm_id`/`article_number` in
+  Python, not globally by act number the way the view's existing
+  `amend_date` join safely is — `change_type`, unlike `amend_date`, is NOT
+  constant per act number: 36 corpus-wide `(norm_id, act_num)` pairs carry
+  >1 row, 5 with >1 distinct `change_type`). Result: 17/17 stale articles'
+  missed amendment is `change_type='restated'` — a full-article rewrite.
+  Checked this isn't vacuous: `restated` is also the dominant last-change
+  type corpus-wide (388/442 articles, 87.8%), so 17/17 isn't a statistical
+  surprise (~11% by chance) — the value is in telling the reader exactly
+  what's missing, not that it's "possibly stale." Shipped two new, purely
+  additive columns on the existing `en_amendment_staleness` table/view
+  (`uz_latest_change_type`, `days_since_uz_amend`) and reworded
+  `app_hierarchy.py`'s staleness warning to state the missed amendment's own
+  change type and days-elapsed in plain language, reusing the existing
+  `CHANGE_BADGE` emoji map. `app_llc.py` untouched (same reasoning as
+  2026-10-31 — never renders `article_text_en`). Verified: `build_links.py`
+  re-run alone (link_edge/repeal_clause/article_amendment row counts
+  unchanged at 9642/885/612 — confirms purely additive), `check_sql_bindings.py`
+  112/112, `check_fstring_interp.py` 55/55, `check_dead_views.py`/
+  `check_dead_columns.py`/`check_code_clones.py` unchanged from the standing
+  Cleanup baseline, `pyflakes` clean, `verify_transfer.py` green throughout,
+  Playwright pass on `app_hierarchy.py` (Article 1 shows the enriched
+  warning correctly; Article 49 still shows nothing) plus a smoke-test pass
+  on `app_llc.py`. **Next Data currency rotation**: new open thread, not yet
+  investigated — `v_article_currency.has_removed_or_voided_part` (drives the
+  ⚠️ badge) only fires for `change_type IN ('removed','voided')`, never for
+  `restated`, even a wholesale rewrite; worth measuring whether `restated`
+  should count toward that badge too, a genuine scope decision for whoever
+  picks this up (see Log for the full framing). The qism-level angle
+  (2026-10-28) remains likely exhausted; the standing cross-signal technique
+  (Backlog's own note) is worth defaulting to again once a specific new pair
+  is identified.
 
 - **Cleanup rotation — current state: all ten checks re-ran clean/current at
   a stable baseline; closed the longer-standing of the two deliberately-
@@ -851,6 +840,40 @@ paragraph here.
   full trace, including a real root-caused (not just found) bug this
   surfaced in `build_links.py`'s own amendment-note norm_id resolution for
   the Article 26¹/261 ambiguous key — see new Backlog item below.
+  **2026-11-06: seventh hit, a severity enrichment of the sixth rather than
+  a new pairing** — cross-checked `v_en_amendment_staleness` against
+  `article_amendment.change_type` for the specific missed event per stale
+  article (scoped by `norm_id`/`article_number` in Python, since unlike
+  `amend_date`, `change_type` is not constant per act number corpus-wide —
+  36 `(norm_id, act_num)` pairs carry >1 row, 5 with >1 distinct type):
+  17/17 stale articles' missed amendment is a full `restated` rewrite, not
+  a partial edit, and ranges 316-2,025 days overdue. Shipped as two new
+  columns (`uz_latest_change_type`, `days_since_uz_amend`) on the same
+  table/view plus a reworded `app_hierarchy.py` warning. See Active threads
+  and Log for the full trace, including why a naive global act-number join
+  (safe for `amend_date`, unsafe for `change_type`) was deliberately not
+  reused, and a new open question it raised about `has_removed_or_voided_
+  part`'s own scope — see new Backlog item below. The same day's attempt at
+  the standing `dst_dangling`/`version_date` pairing (proposed 2026-10-31's
+  own "Next rotation" note) came back fully exhausted rather than a hit:
+  all 17 dangling edges resolve to the same 8 already-known 2014-voided
+  articles from this entry's own 2026-10-23 finding above, and
+  `version_date` added nothing since both sides were scraped well after
+  the voiding — closed, not left open, so don't re-try that specific pair
+  without a new angle.
+- **Does `v_article_currency.has_removed_or_voided_part` (drives the ⚠️
+  "part of this article has been removed/voided" badge in both apps'
+  Legislative history caption) under-warn for a fully `restated` article?**
+  Found 2026-11-06 while shipping the `change_type` severity enrichment
+  above: the badge's `bool_or(change_type IN ('removed', 'voided'))`
+  definition deliberately excludes `restated` — a wholesale article
+  rewrite gets no ⚠️ at all unless it also happens to be one of the 39/612
+  articles with a resolvable EN footnote (today's staleness signal, a much
+  narrower surface). Not yet measured how many `restated`-only articles
+  this leaves with zero in-app currency warning, and not yet decided
+  whether that's the badge's intended scope (subtraction specifically) or
+  a real gap — a genuine design question, not a bug, for whoever picks up
+  Data currency next.
 - ~~**Is `norm_unit.en_repealed` (flagged dead-by-construction in the
   2026-10-22 Cleanup rotation) safe to eventually wire up as a currency
   signal, given more engineering?**~~ **Closed, decided no, 2026-10-23**:
@@ -1403,6 +1426,150 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-06 — Data currency rotation: exhaustively characterized `dst_dangling` (closed, zero new signal) and `act.version_date` sanity checks (clean), then found and shipped a real severity enrichment to the 2026-10-31 EN-staleness signal — all 17 stale articles were missed because of a full *restatement*, not a minor edit
+
+Rotation: Data currency (last touched 2026-11-03; Extractor took 11-05,
+Cleanup took 11-04, so Data currency was the oldest-touched of the three —
+next in the round robin).
+
+**Environment note, same recurring pattern as every session since
+2026-10-28** (see 2026-11-05 for the fullest prior write-up): fresh
+container, no project dependencies installed, `pip` resolved to a
+different interpreter than `python3` again — used `python3 -m pip install
+duckdb pyarrow streamlit playwright pyflakes vulture bandit` and `git lfs
+install && git lfs pull` before anything could run. Also discovered this
+session's repo state needed a `git fetch origin main && git merge
+--ff-only` first: the container started with `HEAD` detached at a commit
+5 days ahead of the local `main` ref (itself just a stale local pointer —
+`origin/main` was already correctly at that same commit), not an actual
+divergence — `git checkout main` then fast-forwarded cleanly, nothing was
+lost or rewritten. Also installed `streamlit`+`playwright` (not in any
+prior session's environment note) to Playwright-test `app_hierarchy.py`
+today's change touches, reusing this environment's pre-installed Chromium
+binary (`/opt/pw-browsers/chromium`) rather than fetching a new one.
+
+**Picked up the backlog's own suggested next angle first**: cross-check
+`link_edge.dst_dangling` against `act.version_date`, pairing the
+2026-10-25 dangling-citation signal with the untried scrape-date angle.
+Pulled all 17 corpus-wide `dst_dangling=TRUE` edges (unchanged from
+2026-10-25's count) with their citing/cited acts' `version_date`s: every
+one targets the Civil Code's own doc_id (-111189), and the 8 distinct
+`dst_article_number`s hit (63, 65, 66, 70, 71, 72, 176, 177) are *exactly*
+`verify_transfer.py`'s own `structure_missing_articles` set (minus 179,
+which nothing happens to cite) — these are the already-known,
+already-explained 2014-voided articles from the 2026-10-23
+`en_repealed` investigation, not a new gap. `version_date` added nothing:
+both the citing and cited acts were scraped in 2025-2026, well *after*
+the 2014 voiding, so there is no snapshot-timing gap left to measure —
+the corpus's own structure already reflects the voided state regardless
+of when either act was scraped. **Closed, not just tried**: this fully
+exhausts `dst_dangling` as a Data currency angle — its complete extent
+(17/17 edges, 8/9 of the known-voided articles) is now enumerated and
+explained from a second independent direction, not merely sampled.
+
+Also ran two smaller, well-defined version_date sanity checks while in
+the area, both clean: (1) `version_date < doc_date` corpus-wide (a
+snapshot predating the act's own enactment would be a scrape bug) — 0/24,267,
+confirmed. (2) For the 234 `v_act_currency.derived_status = 'superseded'`
+acts, whether each one's own `version_date` (LexUZ's last scrape of *that*
+act's page) falls before or after its `repealed_on` date — 10/234 scraped
+*before* their own later repeal (up to 8,187 days / ~22y early), 224
+scraped after. Neither direction is a bug: `version_date` is a one-time
+snapshot timestamp, not a monitored feed, so a scrape predating a
+since-discovered repeal (mined independently, from a *different* act's
+text) is simply what a point-in-time archive looks like — no actionable
+signal, not pursued further.
+
+**New angle, not previously tried**: cross-checked the 2026-10-31
+`v_en_amendment_staleness` signal (17/39 articles whose EN footnote is
+older than the latest UZ-mined amendment) against `article_amendment
+.change_type` — specifically, what KIND of amendment each stale article's
+displayed English text is missing, not just that it's missing one.
+Scoped the join carefully rather than reusing the view's existing
+act-number-only join pattern: `amend_date` is provably constant per act
+number corpus-wide (the view's existing `uz_latest_amend_date` join
+already relies on and documents this), but `change_type` is NOT — 36
+corpus-wide `(norm_id, act_num)` pairs carry more than one
+`article_amendment` row, and 5 of those carry more than one distinct
+`change_type` (the same omnibus law can restate one article while
+removing a qism of another in a single event). A global act-number join
+for `change_type` would risk silently attributing one article's edit kind
+to another's missed amendment — so this was computed in Python instead,
+scoped by `norm_id`/`article_number` the same way the existing
+`uz_by_norm_id`/`uz_by_article_number` dicts already are, with the result
+stored as a new `uz_latest_change_type` column (comma-joined on the rare
+multi-type case) rather than left as a join.
+
+**Result: 17/17 (100%) of the stale articles' missed amendment is
+`change_type = 'restated'`** — the article was replaced wholesale with
+new wording ("... N-moddasi ... tahririda" — "stated in the following
+new wording"), not a `supplemented`/`inserted` partial edit. Checked this
+isn't a vacuous finding: `restated` is the dominant change type
+corpus-wide too (388/442 articles' own *last* amendment event is a
+restatement, 87.8% — computed from `v_article_currency.last_change_type`,
+the same classification the touched views already carry), so 17/17 isn't
+a statistical surprise on its own (≈11% probability by chance alone,
+binomial). The number matters for a different reason: it tells a reader
+exactly what they're missing, not that something is merely "possibly
+stale" — every one of these 17 English bodies predates a *full rewrite*,
+not a word-level tweak. Also computed `days_since_uz_amend` (today minus
+the missed amendment's own UZ-mined date) for a concrete recency ranking
+across the 17: from 316 days (Article 53, one of the four LLC-foundation
+articles already flagged 2026-10-31) to 2,025 days / ~5.5y (Article 1 and
+several others) — Article 53 is the most urgently out of date of the
+LLC-relevant subset, a ranking nothing in the corpus surfaced before today.
+
+**Shipped** (`build_links.py`, purely additive, same `en_amendment_
+staleness`/`v_en_amendment_staleness` table/view 2026-10-31 built): added
+`uz_latest_change_type` (Python-computed, scoped as above) and
+`days_since_uz_amend` (`date_diff('day', uz_latest_amend_date,
+current_date())` — safe as a plain SQL column since it only touches the
+already-correctly-scoped `uz_latest_amend_date`). Reworded
+`app_hierarchy.py::page_article()`'s existing staleness warning to state
+the missed amendment's own date, days-elapsed, and change type in plain
+language ("fully restated (replaced with new wording), not just edited"
+for the common case), reusing the existing `CHANGE_BADGE` emoji map for
+visual consistency with the "Legislative history" caption directly below
+it. `app_llc.py` deliberately left untouched again, same reasoning as
+2026-10-31 (it never renders `article_text_en`, so there is no surface
+for this warning there).
+
+Re-ran `build_links.py` only (not `build_corpus_db.py` — no base-table
+change): `link_edge` 9642, `repeal_clause` 885, `article_amendment` 612,
+all unchanged from the last rebuild — confirms this touched only the two
+new, already-additive columns. `check_sql_bindings.py` 112/112 (same
+count as 2026-11-04, no new query sites — `q()`/parameterized throughout,
+no f-string SQL added); `check_fstring_interp.py` 55/55 (unchanged —
+nothing new interpolated into an `execute()` call); `check_dead_views.py`
+10/10, `check_dead_columns.py` (same 15-column flagged set as
+2026-11-01/04's baseline), `check_code_clones.py` (same 5 pairs) — nothing
+drifted from the standing Cleanup baseline. `pyflakes` clean on both
+touched files. `python3 verify_transfer.py` green throughout, both before
+and after. Playwright pass on `app_hierarchy.py` (installed fresh this
+session, see environment note): Article 1 now shows the enriched warning
+with the correct act numbers, "2025 days ago", and "fully restated
+(replaced with new wording), not just edited"; Article 49 (the page's
+default-adjacent non-stale article) still shows nothing, confirming no
+false positive was introduced. Smoke-test pass on `app_llc.py` (LLC
+skeleton page renders clean, no error, no reference to the touched view
+at all per `grep`).
+
+**Next Data currency rotation**: the `dst_dangling`/`version_date`
+backlog item is now closed (see above — fully exhausted, not just
+sampled); don't re-open without a new angle. New open thread this session
+leaves behind, not yet investigated: `v_article_currency
+.has_removed_or_voided_part` (which drives the General Part explorer's
+⚠️ "part of this article has been removed/voided" badge) only fires for
+`change_type IN ('removed', 'voided')` — a `restated` article, even a
+full wholesale rewrite, gets no ⚠️ badge at all unless it *also* happens
+to be one of the 39/612 articles with a resolvable EN footnote (today's
+`v_en_amendment_staleness` signal). Worth measuring whether `restated`
+should count toward that badge too — a genuine scope/design question
+(does "restated" mean "changed in a way a reader should be warned about"
+the same way "removed/voided" does, or is the badge deliberately scoped
+to subtraction specifically?) for whoever picks up Data currency next,
+not decided today.
 
 ### 2026-11-05 — Extractor rotation: gold batch 18 (685->725), a fully clean batch — no new bug, no new known_gap — with three windows deliberately stress-tested by hand rather than taken on faith
 

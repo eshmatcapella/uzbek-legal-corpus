@@ -1121,10 +1121,24 @@ def main() -> int:
             GROUP BY article_number HAVING count(DISTINCT norm_id) > 1
         """).fetchall()
     }
+    # change_type is tracked per (key, act_num) too, not just the act-number
+    # set itself: unlike amend_date (one value per act number corpus-wide,
+    # confirmed 2026-10-31), change_type is NOT constant per act number — the
+    # same omnibus law can e.g. restate one article while removing a qism of
+    # another in the same event (36 (norm_id, act_num) pairs corpus-wide carry
+    # >1 row; 5 of those also carry >1 distinct change_type). Scoping by
+    # norm_id/article_number here, the same way the act-number sets
+    # themselves already are, avoids a global act-number-only join silently
+    # picking up another article's change_type for this one (the join
+    # `v_en_amendment_staleness` previously used for `uz_latest_amend_date`
+    # is safe to leave act-number-only — that value genuinely doesn't vary by
+    # target article — but the same shape of join would be wrong here).
     uz_by_norm_id: dict[str, set[int]] = {}
     uz_by_article_number: dict[str, set[int]] = {}
-    for norm_id, art_num, amend_act_number in con.execute("""
-        SELECT norm_id, target_article_number, amend_act_number
+    uz_types_by_norm_id: dict[str, dict[int, set[str]]] = {}
+    uz_types_by_article_number: dict[str, dict[int, set[str]]] = {}
+    for norm_id, art_num, amend_act_number, change_type in con.execute("""
+        SELECT norm_id, target_article_number, amend_act_number, change_type
         FROM article_amendment WHERE amend_act_number IS NOT NULL
     """).fetchall():
         m = re.search(r"(\d+)$", amend_act_number)
@@ -1133,10 +1147,12 @@ def main() -> int:
         n = int(m.group(1))
         if norm_id is not None:
             uz_by_norm_id.setdefault(norm_id, set()).add(n)
+            uz_types_by_norm_id.setdefault(norm_id, {}).setdefault(n, set()).add(change_type)
         elif art_num is not None and art_num not in ambiguous_article_numbers:
             uz_by_article_number.setdefault(art_num, set()).add(n)
+            uz_types_by_article_number.setdefault(art_num, {}).setdefault(n, set()).add(change_type)
 
-    staleness_rows = []  # (norm_id, en_latest_act_number, uz_latest_act_number)
+    staleness_rows = []  # (norm_id, en_latest_act_number, uz_latest_act_number, uz_latest_change_type)
     en_by_norm_id: dict[str, set[int]] = {}
     for norm_id, n in footnote_hits:
         en_by_norm_id.setdefault(norm_id, set()).add(n)
@@ -1152,17 +1168,24 @@ def main() -> int:
             uz_nums |= uz_by_article_number.get(art_num, set())
         if not uz_nums:
             continue
-        staleness_rows.append((norm_id, max(en_nums), max(uz_nums)))
+        latest = max(uz_nums)
+        types: set[str] = set()
+        types |= uz_types_by_norm_id.get(norm_id, {}).get(latest, set())
+        if art_num is not None:
+            types |= uz_types_by_article_number.get(art_num, {}).get(latest, set())
+        staleness_rows.append(
+            (norm_id, max(en_nums), latest, ",".join(sorted(types)) or None))
 
     con.execute("""
         CREATE OR REPLACE TABLE en_amendment_staleness (
-            norm_id              VARCHAR,
-            en_latest_act_number INTEGER,
-            uz_latest_act_number INTEGER
+            norm_id               VARCHAR,
+            en_latest_act_number  INTEGER,
+            uz_latest_act_number  INTEGER,
+            uz_latest_change_type VARCHAR
         );
     """)
     con.executemany(
-        "INSERT INTO en_amendment_staleness VALUES (?, ?, ?)", staleness_rows)
+        "INSERT INTO en_amendment_staleness VALUES (?, ?, ?, ?)", staleness_rows)
     con.commit()
 
     con.execute("""
@@ -1170,7 +1193,10 @@ def main() -> int:
         SELECT s.norm_id, n.article_number, n.article_title_en,
                s.en_latest_act_number, s.uz_latest_act_number,
                (s.en_latest_act_number < s.uz_latest_act_number) AS en_text_stale,
-               ea.amend_date AS uz_latest_amend_date
+               ea.amend_date AS uz_latest_amend_date,
+               s.uz_latest_change_type,
+               date_diff('day', CAST(ea.amend_date AS DATE), current_date())
+                   AS days_since_uz_amend
         FROM en_amendment_staleness s
         JOIN norm_unit n ON n.norm_id = s.norm_id
         LEFT JOIN (
@@ -1182,11 +1208,17 @@ def main() -> int:
     n_stale = con.execute(
         "SELECT count(*) FROM v_en_amendment_staleness WHERE en_text_stale"
     ).fetchone()[0]
+    n_stale_restated = con.execute("""
+        SELECT count(*) FROM v_en_amendment_staleness
+        WHERE en_text_stale AND uz_latest_change_type = 'restated'
+    """).fetchone()[0]
     log(f"\nv_en_amendment_staleness: {len(staleness_rows)} General Part articles "
         f"carry a dated EN amendment footnote AND a resolvable UZ-mined amendment "
         f"act number; {n_stale} of them have an EN footnote older than the "
         "latest UZ-mined amendment — the displayed English article text may not "
-        "reflect current law. See DAILY_REVIEW.md 2026-10-31 for the full trace.")
+        f"reflect current law ({n_stale_restated}/{n_stale} of those were missed "
+        "because the article was fully *restated*, not just supplemented). "
+        "See DAILY_REVIEW.md 2026-10-31 and 2026-11-06 for the full trace.")
 
     log("\nGeneral Part coverage:")
     cov = con.execute(f"""
