@@ -137,59 +137,64 @@ paragraph here.
   (Backlog's own note) is worth defaulting to again once a specific new pair
   is identified.
 
-- **Cleanup rotation — current state: all ten checks re-ran clean/current at
-  a stable baseline; closed the longer-standing of the two deliberately-
-  deferred residuals (`check_sql_bindings.py`'s plain-literal indirection) by
-  porting `check_fstring_interp.py`'s own bare-name/Assign-chase onto it, and
-  extracted the resulting shared scope-resolution helper into a new module
-  (`ast_scope.py`) before it could become its own clone-risk finding. Last
-  touched 2026-11-04** (see Log for the full trace): re-ran the full ten-check
-  baseline first — `pyflakes`/`vulture` clean; `bandit` 57/3/1 (one fewer
-  `B608` than 2026-11-01's 58, expected: that session's own gold-sampler
-  merge had already removed the f-string call site bandit was counting,
-  just not yet re-measured); `check_sql_bindings.py` 111/111;
-  `check_fstring_interp.py` 55/55; `check_dead_views.py` 10/10;
-  `check_dead_columns.py` 15 flagged, same set as 2026-11-01;
-  `check_code_clones.py` 5 pairs, same set as 2026-11-01 — nothing drifted
-  since the last rotation. Picked up the standing plain-literal-indirection
-  residual rather than re-confirming the two deferred items for a third
-  session running: `check_sql_bindings.py` only ever checked a query that
-  was the *direct* literal argument to `execute()`/`q()`/`qdf()`, so
-  `q = """..."""` then `con.execute(q)` on a later line (exactly
-  `measure_extractor_recall.py::check_cross_reference_disagreement()`'s own
-  shape) was invisible to it — not merely unresolved, never even counted —
-  the identical blind spot `check_fstring_interp.py` had for f-strings until
-  its 2026-10-16 fix. Ported that same fix: `_literal_str()` now chases a
-  bare name through every `Assign` to it within its own function scope
-  (cycle-guarded, all-branches-must-resolve, same shape as that script's
-  `_is_safe()`). 111 → 112 checked queries, the exact
-  `measure_extractor_recall.py` site. Mutation-tested end to end (not just
-  trusted): spliced a typo'd column name into that site's SQL in a scratch
-  copy, confirmed `find_queries()` traces the typo into the resolved text and
-  `PREPARE` rejects it with the exact DuckDB binder error — this call site's
-  schema binding genuinely was unchecked before today, now it is. Doing this
-  the same way `check_fstring_interp.py` already does it immediately
-  reproduced identical top-level helpers (`_assigns_by_name()`, a nested
-  `walk_scope()`) in both files — `check_code_clones.py` caught the new
-  1.000-similarity pair the same session, the exact duplicated-helper shape
-  2026-11-01's gold-sampler fix had just finished eliminating elsewhere.
-  Extracted both into `ast_scope.py` (`build_scope_map()`, `assigns_by_name()`)
-  and had both check scripts import it; re-ran `check_fstring_interp.py`
-  before/after the extraction — identical 55/55 output, confirming the
-  refactor changed no behavior. `check_code_clones.py` back to 5 pairs (the
-  same 5 as 2026-11-01's baseline — `ast_scope.py` introduced no new
-  cross-file duplication of its own). `verify_transfer.py` green throughout
-  (this is a maintainer-tooling-only change; `corpus.duckdb` untouched, no
-  rebuild needed); both apps sanity-parse clean (neither references the
-  touched files). **Next Cleanup rotation**: re-run all ten as a baseline;
-  one residual remains — `check_dead_views.py`'s transitive-view-chain blind
-  spot, still unchanged and still untriggered (no view-on-dead-view chain
-  exists in the live schema as of today's re-check). Worth considering
-  whether it's worth a dedicated transitive-closure check at all given it's
-  gone untriggered for 3+ rotations now, or whether to retire the open
-  question and just keep hand-checking it when a view is deleted (as
-  2026-10-29/2026-11-01 already did) — a genuine design decision for whoever
-  picks up Cleanup next, not yet made.
+- **Cleanup rotation — current state: `check_dead_views.py`'s standing
+  transitive-view-chain blind spot is now CLOSED, not just re-confirmed by
+  hand — it's a real two-layer closure check (view dependency graph from
+  the catalog's own SQL, plus a root-use scan that excludes hits inside any
+  view's own definition block), mutation-tested to prove it catches what
+  the one-level version structurally could not. Last touched 2026-11-07**
+  (see Log for the full trace): re-ran the nine other checks as a baseline
+  first — `pyflakes`/`vulture` clean; `bandit` 57 `B608`/3 `B311`/1 `B110`,
+  byte-identical to 2026-11-04's baseline; `check_sql_bindings.py` 112/112;
+  `check_fstring_interp.py` 55/55; `check_dead_columns.py` 15 flagged, same
+  set as 2026-11-04 — nothing drifted since the
+  last rotation. Picked up the one open question Cleanup had been deferring
+  for 3+ rotations: is `check_dead_views.py`'s one-level "is this view
+  queried by anything, including another view's own definition" check
+  actually safe, or does treating view-on-view use as unconditional proof of
+  liveness hide a fully-dead `A queries B, nothing real queries A` chain?
+  Measured first, rather than guessing: pulled every view's authoritative
+  SQL straight from `duckdb_views()` (not grepped Python source) and found
+  corpus-wide there is exactly one view-on-view edge today,
+  `v_llc_realization -> v_act_currency` (inside `v_llc_realization`'s own
+  `CREATE VIEW` in `build_llc.py`). Rewrote the check into two explicit
+  layers: (1) a dependency graph built from that authoritative SQL; (2) a
+  root-use scan — the same per-line `FROM`/`JOIN <view>` grep as before, but
+  a hit now only counts as a genuine root use if it falls OUTSIDE every
+  view's own definition block, with those blocks located precisely via
+  `ast.parse()` (the `Constant`/`JoinedStr` string argument to
+  `con.execute(...)`, its `(lineno, end_lineno)`) rather than a single-line
+  regex — then closure: `live = root_used`, repeatedly add anything
+  reachable through the dependency graph, anything left over is dead. On
+  today's real schema this changes nothing (10/10 live, 0 flagged) — both
+  `v_act_currency` and `v_llc_realization` turn out to have real,
+  independent root uses elsewhere (`app_hierarchy.py`, `app_llc.py`,
+  `build_llc.py`'s own ad-hoc queries, `verify_transfer.py` for the former;
+  `app_llc.py:218` for the latter) — but it is now an actually-checked
+  guarantee instead of a hand-verified one. Didn't stop at "same answer,
+  trust the rewrite": mutation-tested in a scratch copy by deleting every
+  genuine root-level `FROM`/`JOIN` line for both views (keeping only
+  `v_llc_realization`'s own definition, which still references
+  `v_act_currency`) — the OLD script, run against that exact mutated copy,
+  printed "defined but never queried" for `v_llc_realization` ALONE and
+  silently missed `v_act_currency` entirely (it still saw `FROM
+  v_act_currency` inside `v_llc_realization`'s own dead definition and
+  counted that as use); the NEW script, same mutated copy, correctly flags
+  BOTH as dead and names the chain (`v_act_currency` "only ever selected
+  FROM/JOINed inside: v_llc_realization"). A toy-graph unit check
+  (`dep_graph={"A":{"B"}}`, zero root uses for either) confirms the same
+  closure function used in production reports both `A` and `B` dead, the
+  exact shape the module docstring had been describing as untested since
+  2026-10-29. `verify_transfer.py` green throughout (maintainer-tooling-only
+  change, `corpus.duckdb` untouched); `check_code_clones.py` still 5 pairs
+  (same set, one pair's similarity score shifted 0.734→0.614 from the
+  function rename but stayed in the same "SIMILAR" bucket — not a new
+  clone). Both apps untouched and unreferenced by the touched file. **Next
+  Cleanup rotation**: re-run all ten as a baseline; no open residuals remain
+  from this thread — the question is answered and the artifact ships. If a
+  future session adds an 11th view or a second view-on-view edge, this
+  closure now actually exercises the multi-hop case for the first time for
+  real, not just in the toy test.
 
 ---
 
@@ -1426,6 +1431,143 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-07 — Cleanup rotation: closed `check_dead_views.py`'s 3+-rotation-old transitive-chain question with a real two-layer closure check, mutation-tested against the exact dead-chain shape the old one-level check structurally could not see
+
+Rotation: Cleanup (last touched 2026-11-04; Extractor took 11-05, Data
+currency took 11-06, so Cleanup was the oldest-touched of the three — next
+in the round robin).
+
+**Continuity note first**: session started in detached HEAD at `c63df9d`
+while the local `main` branch ref and this clone's cached `origin/main` were
+both stale at `5468489` (2026-10-31's commit) — looked, at first glance,
+like 6 days of committed-and-claimed-pushed work (2026-11-01 through
+2026-11-06) might have been silently orphaned off `main`. `git ls-remote
+origin` settled it immediately: the real remote `refs/heads/main` IS at
+`c63df9d` — nothing was lost, this was purely a stale local tracking ref from
+however this container's checkout was bootstrapped. `git fetch origin main`
++ `git merge --ff-only origin/main` brought local `main` current with no
+conflict. Recording this so a future session doesn't re-spend time
+re-diagnosing the same "am I about to lose a week of work" scare — the fix
+is always `git fetch` + compare against `git ls-remote origin`, never assume
+either local ref is ground truth.
+
+**Environment setup**: fresh clone, `git lfs pull` (134-byte pointer stub,
+the standard cold-start state). `duckdb`/`pandas`/`streamlit`/`pyflakes`/
+`vulture`/`bandit` not importable under the system `python` (3.11) even
+though plain `pip install` claimed success — `pip`/`pip3` on this box resolve
+against a *different* interpreter's site-packages (python3.13) than
+`python`/`python3` (3.11), the same split noted in several prior sessions'
+logs, just with a different pair of version numbers this time. Fixed with
+`python -m pip install duckdb pandas streamlit pyflakes vulture bandit`,
+which installs against the interpreter actually running the scripts.
+
+**Baseline re-run, all ten existing checks, before touching anything**:
+`pyflakes`/`vulture --min-confidence 60` clean. `bandit -r . -x ./articles`:
+57 `B608`/3 `B311`/1 `B110`, byte-identical to 2026-11-04's baseline — no
+drift. `check_sql_bindings.py`: 112/112. `check_fstring_interp.py`: 55/55.
+`check_dead_views.py` (pre-fix, one-level version): 10/10, "every view is
+queried somewhere". `check_dead_columns.py`: 15 flagged, same set as
+2026-11-04. `check_code_clones.py`: same 5 pairs as 2026-11-04's baseline.
+Confirms the Cleanup baseline is genuinely stable — nothing drifted across
+three consecutive rotations now (2026-10-29/2026-11-01/2026-11-04/
+2026-11-07), so this session's time went entirely to the one open question,
+not to re-verifying a baseline that keeps coming back identical.
+
+**The open question**: `check_dead_views.py`'s own docstring had been
+carrying, unchanged, since 2026-10-29: "genuinely transitive dead views
+(view B is only ever queried by view A, and A itself is dead) would still
+mark B as 'used' here — checked by hand for today's run: not the shape of
+anything found." Three rotations (2026-10-29, 2026-11-01, 2026-11-04) had
+each re-confirmed by hand that this blind spot wasn't currently triggered,
+without ever building the actual check that would catch it if it ever were.
+Decided today: stop deferring and build it, rather than retire the question
+by assertion — a hand-check that's never actually been exercised against a
+real failure case is a belief, not a guarantee.
+
+**Method**. Pulled every view's authoritative SQL straight from DuckDB's own
+catalog (`SELECT view_name, sql FROM duckdb_views() WHERE schema_name='main'
+AND NOT internal`) rather than grepping Python source for it — the catalog's
+text is DuckDB's own fully-rendered SQL, immune to any Python
+string-formatting noise. Searched each view's SQL for `FROM`/`JOIN
+<other_view>` to build a real dependency graph. Result, corpus-wide: exactly
+one view-on-view edge exists today, `v_llc_realization -> v_act_currency`
+(inside `v_llc_realization`'s own `CREATE VIEW` statement in
+`build_llc.py:270-287`) — the only place in the whole schema this blind spot
+could even bite. Confirmed the other 9 views have zero view-on-view
+dependencies at all (`v_act_currency`, `v_act_partial_repeal`,
+`v_article_currency`, `v_en_amendment_staleness`, `v_general_part`,
+`v_okoz_general_part`, `v_qism_void_citation`, `v_realization`,
+`v_realization_struct`).
+
+Rewrote `check_dead_views.py` around that graph. Layer 1 (above) is the
+dependency graph. Layer 2 is root usage: the same per-line `FROM`/`JOIN
+<view>` grep the old script used across every `*.py` file, but a hit now
+only counts as a genuine root use if it falls OUTSIDE every view's own
+`CREATE VIEW` definition block — and those blocks are located precisely via
+`ast.parse()` (the `Constant`/`JoinedStr` string literal passed to
+`con.execute(...)` whose text matches `CREATE [OR REPLACE] VIEW <name>`;
+its node's `(lineno, end_lineno)` is the block), not a single-line regex, so
+a definition spanning many lines (every real one here does — 13 to 24 lines
+each) is bounded exactly rather than guessed at. Layer 3 is closure:
+`live = root_used`, then repeatedly add any view reachable through the
+dependency graph from something already live, to a fixed point. Anything
+left over is flagged dead, with the chain that made it dead printed
+(`"only ever selected FROM/JOINed inside: <views>"`).
+
+**This is the actual fix, not a reformulation of the same answer**: the old
+script's "query" classification counted `FROM v_act_currency` on
+`build_llc.py:285` (inside `v_llc_realization`'s own definition) as proof
+`v_act_currency` is used — full stop, no check on whether anything real
+ever reaches `v_llc_realization` itself. If `v_llc_realization` ever lost
+every genuine external caller, the old script would still print "every view
+is queried somewhere" for both views, incorrectly.
+
+**Verified, not just trusted**: on the real, current schema, the rewrite
+changes nothing — 10/10 live, 0 flagged — because both `v_act_currency` and
+`v_llc_realization` independently have real root uses today
+(`v_act_currency`: `app_hierarchy.py:297/315`, `app_llc.py:285/299/321`,
+`build_llc.py:234/257` (its own ad-hoc queries, outside the view-def block),
+`verify_transfer.py:436/439/470`; `v_llc_realization`: `app_llc.py:218`).
+Same-answer isn't proof the rewrite works, so mutation-tested it: copied the
+repo to scratch, deleted every one of those genuine root-level `FROM`/`JOIN`
+lines for both views (keeping only `v_llc_realization`'s own definition,
+which still legitimately selects `FROM v_act_currency` inside itself) to
+synthesize exactly the blind-spot shape — "nothing real calls `A`, `A` calls
+`B`, nothing real calls `B` either." Ran the OLD script (saved from git)
+against that mutated copy: it printed `1 flagged — defined but never
+queried: v_llc_realization` and said nothing about `v_act_currency` at all —
+confirmed, concretely, that the blind spot is real, not hypothetical. Ran
+the NEW script against the identical mutated copy: `2 flagged`, both
+`v_act_currency` and `v_llc_realization`, with `v_act_currency` annotated
+`only ever selected FROM/JOINed inside: v_llc_realization`. Also ran a
+minimal toy-graph check (`dep_graph = {"A": {"B"}}`, zero root uses) through
+the same `closure()` function used in production — correctly reports both
+`A` and `B` dead, the textbook shape the docstring had named since
+2026-10-29 without ever exercising it.
+
+**Collateral checks, same session**: `pyflakes`/`vulture` clean on the
+rewritten file. `check_code_clones.py` still finds the same 5 pairs as the
+standing baseline — one pair's similarity score moved (0.734→0.614,
+`check_dead_columns.py::base_table_columns()` vs. the renamed
+`check_dead_views.py::view_sql()`, née `view_names()`) but stayed inside the
+same "SIMILAR" bucket, not a new clone. `verify_transfer.py` green
+throughout — this is a maintainer-tooling-only change, `corpus.duckdb`
+untouched, no rebuild needed. Grepped both `app_hierarchy.py` and
+`app_llc.py` for any reference to `check_dead_views.py`: none — the touched
+file is invisible to both apps, as expected for a build-time/CI-time check
+script. `git status` confirmed exactly one file changed
+(`check_dead_views.py`, +143/-68 lines) before committing.
+
+**Decision**: the backlog's standing question — "is a dedicated
+transitive-closure check worth building given 3+ rotations of zero
+trigger?" — is answered: yes, and it's built. It changes nothing on today's
+schema (as expected, consistent with every prior hand-check), but it is now
+an algorithmic guarantee instead of a claim, and the mutation test proves
+it will actually catch the shape the moment a future change makes it real
+(e.g. if `v_act_currency`'s direct app/build/verify uses were ever removed
+and only `v_llc_realization`'s internal reference remained). No residual
+left open on this thread.
 
 ### 2026-11-06 — Data currency rotation: exhaustively characterized `dst_dangling` (closed, zero new signal) and `act.version_date` sanity checks (clean), then found and shipped a real severity enrichment to the 2026-10-31 EN-staleness signal — all 17 stale articles were missed because of a full *restatement*, not a minor edit
 
