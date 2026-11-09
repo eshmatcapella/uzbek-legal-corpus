@@ -391,6 +391,39 @@ RE_LEADING_PUB_PAREN = re.compile(
     r"^\s*\((?P<body>[^()]*(?:[Aa]xborotnoma|[Vv]edomosti|to[ʻ']?plam|№)[^()]*)\)"
 )
 
+# "<N>-bobining 1 (“title”), 7-paragraflari (“title”)" -- a LIST of paragraf
+# numbers after a single chapter, each optionally carrying its own short
+# parenthetical title, same as RE_CLAUSE's own top-level `nums` group already
+# allows for modda/bob/paragraf lists (see its own comment above) -- this is
+# the identical grammar one level deeper: the chapter+section lookahead below
+# used to accept only ONE bare digit immediately before "paragraf" ("3-paragrafi"),
+# so a list of two-or-more paragraf numbers for the same chapter silently
+# downgraded to a bare chapter citation, losing every section in the list, not
+# just the grain of a single one (same failure class as the already-recorded
+# "paragrif"/Roman-chapter-lookahead/section-mark known_gaps, but affecting a
+# LIST rather than a single item). Found 2026-11-09 via the signature-stratified
+# gold sampler (batch 19, gold_id 23/row 41009): "Fuqarolik kodeksi 29-bobining
+# 1 (“Oldi-sotdi toʻgʻrisida umumiy qoidalar”), 7-paragraflari (“Koʻchmas mulkni
+# sotish”), 30 (“Ayirboshlash”) va 31-boblari (“Hadya”)" -- chapter 29's own
+# paragraf 1 and paragraf 7 both vanished entirely (not even downgraded to one
+# bare chapter-29 citation per paragraf -- a single bare chapter 29 total),
+# while chapters 30/31 (plain list items, not a paragraf list) were already
+# handled correctly by the existing list support. Measured corpus-wide: the
+# widened lookahead (100 chars, not 30, to fit a title) changes the match/
+# no-match outcome in exactly 4 rows (41009, plus a second distinct citation
+# duplicated across 41010/41012, plus a third, 25634) -- re-ran the OLD
+# 30-char/single-digit lookahead against every "bob" match corpus-wide and
+# diffed against this new one: zero other rows change at all, so widening is
+# purely additive, not a new false-positive source. Reuses _expand() for the
+# actual list/range parsing (strips the parenthetical, splits on comma/va,
+# expands a dash range) -- the exact same proven logic RE_CLAUSE's own `nums`
+# group already relies on, not a new parsing path.
+RE_SECTION_LIST = re.compile(
+    r"\s*,?\s*(?P<nums>\d+(?:\s*\([^()]{0,100}\))?"
+    r"(?:\s*(?:,|va)\s*\d+(?:\s*\([^()]{0,100}\))?)*)"
+    r"\s*-\s*paragr[ai]f"
+)
+
 
 @dataclass
 class Citation:
@@ -569,12 +602,22 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
                 # paragraph. The only other corpus-wide "paragrif" occurrence
                 # (row 25664) cites a Nizom, not the Code or itself, so it's
                 # outside any anchor's scan window regardless.
-                sec = re.match(r"\s*,?\s*(\d+)\s*-\s*paragr[ai]f", window[m.end(): m.end() + 30])
+                sec = RE_SECTION_LIST.match(window[m.end(): m.end() + 150])
+                # When the paragraf lookahead itself is a list/range ("1 va
+                # 2-paragraflari"), the resulting citations' own `listing`
+                # must describe THAT list, not the (usually single) chapter
+                # number in front of it -- gold_id 148 (row 25634) expects
+                # listing="list" for both sections, not the chapter's own
+                # "single". Only overridden when sec actually matched; the
+                # bare-chapter fallback keeps the chapter-level `listing`
+                # exactly as before.
+                secs, sec_listing = _expand(sec.group("nums")) if sec else ([None], listing)
                 for n in nums:
-                    out.append(Citation("section" if sec else "chapter", None, int(n),
-                                        int(sec.group(1)) if sec else None, None,
-                                        kind, listing, abs_start, abs_end,
-                                        _evidence(text, abs_start, abs_end)))
+                    for s in secs:
+                        out.append(Citation("section" if sec else "chapter", None, int(n),
+                                            int(s) if s is not None else None, None,
+                                            kind, sec_listing, abs_start, abs_end,
+                                            _evidence(text, abs_start, abs_end)))
             else:  # a bare "N-paragrafi" without its chapter is not resolvable
                 continue
 
@@ -640,6 +683,14 @@ def _selftest() -> int:
          [("chapter", None, "single")]),
         ("Oʻzbekiston Respublikasi Fuqarolik kodeksi 37-bobining 3-paragrafi", {},
          [("section", None, "single")]),
+        # a LIST of paragraf numbers for one chapter, each carrying its own
+        # short parenthetical title (real corpus phrasing, row 41009,
+        # 2026-11-09 -- see DAILY_REVIEW.md): both paragraf 1 and paragraf 7
+        # of chapter 29 must be found, not just one bare chapter-29 citation
+        ("Oʻzbekiston Respublikasi Fuqarolik kodeksi 29-bobining 1 "
+         "(“Oldi-sotdi toʻgʻrisida umumiy qoidalar”), 7-paragraflari "
+         "(“Koʻchmas mulkni sotish”) va 31-boblari (“Hadya”).", {},
+         [("section", None, "list"), ("section", None, "list"), ("chapter", None, "single")]),
         # Part-level ("boʻlim") citations, both the hyphen and the bare-space
         # forms, and both apostrophe-like spellings LexUZ uses for the vowel
         # (real corpus phrasings, 2026-10-02 — see DAILY_REVIEW.md)

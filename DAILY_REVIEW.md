@@ -45,46 +45,59 @@ thread closes, fold its outcome into Backlog (if a residual remains) or
 just let the Log entry be the permanent record — don't also keep growing a
 paragraph here.
 
-- **Extractor rotation — current state: gold set at 725 records (batch 18),
-  precision 3024/3040 (99.5%), recall 3024/3062 (98.8%), widened-signature
-  novel pool now at 472 windows / 75 distinct signatures still novel as of
-  this session's post-merge recompute. Last touched 2026-11-05** (drew and
-  hand-verified a 40-window batch 18, gold_id 685-724, from the widened
-  signature's novel pool — see Log for the full trace). 40/40 `correct` —
-  the first fully clean batch (no new bug, no new `known_gap`) since batch
-  13 (2026-10-24; batches 14-17 each found something). Hand-read every window against the raw Uzbek text and
-  `citation_extractor.py`'s own documented stop-word/qism-gating rules
-  rather than trusting the sampler's `extracted` field at face value,
-  deliberately stress-testing the shapes most likely to hide a silent leak:
-  a three-code side-by-side terminology list (gold_id 693, row 8856:
-  "mazkur Kodeks 197-moddasida “qonunchilik”, Uy-joy kodeksining
-  11-moddasining beshinchi va oltinchi qismlarida") confirmed the Housing
-  Code's own "beshinchi va oltinchi qism" correctly stays off Civil Code
-  article 197 because `RE_QISM_BLOCK`'s comma check fires on the comma
-  right after "qonunchilik" before the qism word is ever reached — the
-  same mechanism the existing 2-item self-test already covers, just with a
-  third, unrelated code's clause thrown into the same window; a
-  "Part One/Part Two" adoption-era phrasing (gold_id 701, row 29841:
-  "Fuqarolik kodeksining birinchi qismi tasdiqlansin") was checked directly
-  against `struct_node` (queried live: 6 real `part` rows, PI..PVI, all
-  subject-matter divisions — General Provisions, Right of Ownership, Law of
-  Obligations, Intellectual Property, Inheritance Law, Private International
-  Law — none of them "Part One" of the Code's own 1996/1999 two-stage
-  enactment) to confirm there is no `target_kind` this phrase could resolve
-  to today, so falling through to a bare `act` citation is correct, not a
-  gap; and two long mixed list/range clauses (gold_id 710, row 35811, 36
-  articles across 3 ranges and 2 singles; gold_id 719, row 46569, 11
-  articles across 2 ranges and 4 singles, immediately followed by the Labor
-  Code's own "160-modda, 159-moddasi" — confirmed excluded via `RE_STOP`'s
-  bare "kodeksi" substring match inside "Mehnat kodeksi") were each
-  independently re-expanded by hand against the raw text, endpoint by
-  endpoint. No new bug, no new `known_gap`. 67/67 self-tests still pass
-  (unchanged — no extractor code touched this session). **Next Extractor
+- **Extractor rotation — current state: gold set at 765 records (batch 19),
+  precision 3161/3177 (99.5%), recall 3161/3198 (98.8%), widened-signature
+  novel pool now at 346 windows / 35 distinct signatures still novel as of
+  this session's post-merge recompute. Last touched 2026-11-09** (drew and
+  hand-verified a 40-window batch 19, gold_id 725-764, from the widened
+  signature's novel pool — see Log for the full trace). This batch found
+  and FIXED a real bug, the first since batch 13 (2026-10-24) to need a code
+  change rather than a deferred `known_gap`: row 41009's "Fuqarolik kodeksi
+  29-bobining 1 (“Oldi-sotdi toʻgʻrisida umumiy qoidalar”), 7-paragraflari
+  (“Koʻchmas mulkni sotish”), 30 (“Ayirboshlash”) va 31-boblari (“Hadya”)"
+  was losing BOTH paragraf numbers of chapter 29 entirely (not even
+  downgraded to one bare chapter-29 citation per paragraf — a single bare
+  chapter-29 total) because the chapter+section lookahead only ever tried a
+  single bare digit immediately before "paragraf", and this list's
+  parenthetical chapter/section titles broke it. Fixed via `RE_SECTION_LIST`
+  (reuses `_expand()`'s existing parenthetical-stripping/list/range logic,
+  the same grammar `RE_CLAUSE`'s own top-level `nums` group already uses,
+  not a new parsing path) — measured corpus-wide before fixing (diffed the
+  old 30-char/single-digit lookahead against the new one across every `bob`
+  match in the whole corpus): exactly 4 rows change (41009; 41010/41012, a
+  second citation duplicated verbatim across two articles' own commentary;
+  and 25634, the pre-existing `gold_id` 148 `known_gap` from
+  2026-09-10/2026-09-28, now corrected to `correct` in place — see Backlog),
+  zero collateral change anywhere else in the corpus. 68/68 self-tests pass
+  (one new case added). `build_links.py` re-run: `link_edge` 9642 → 9646
+  (+4, matching 4 rows upgrading from one bare-chapter edge each to two
+  section edges each). The SAME batch also found and recorded a new
+  single-occurrence `known_gap` (`gold_id` 763, row 30003): a self-naming
+  "(... deb yuritiladi)" parenthetical creates a spurious second anchor
+  (the phrase "Fuqarolik kodeksi" recurs literally inside its own
+  "hereinafter referred to as" clause), whose own truncated window then
+  runs into a SECOND, chained publication-record parenthetical that
+  `RE_LEADING_PUB_PAREN`'s single-leading-paren design doesn't reach —
+  dropping article 327 entirely. Measured corpus-wide: exactly 8 rows share
+  the naming clause, only this one also chains a pub-paren before the real
+  citation, so the true in-scope footprint is 1 occurrence; not fixed,
+  recorded as a known_gap per this project's standing single-occurrence
+  precedent (see Backlog for the full trace and the two viable fix designs
+  for whoever picks it up next). Everything else in the batch (38/40
+  records before accounting for the known_gap and the fixed bug) was
+  hand-verified `correct` against the raw text and `citation_extractor.py`'s
+  documented rules — multi-qism attachment, self-reference range/list
+  expansion, Roman-numeral chapter lists, "kodeksi"/"Qonun(ining/ning)"
+  stop-word exclusions of sibling-code citations, and the per-anchor window
+  boundary cutting a real citation into a different anchor's bucket (rows
+  5291/18091/25971/30057/30344/30762/30789, the other 7 rows sharing row
+  30003's naming clause) — no further bugs found. **Next Extractor
   rotation**: keep drawing batches from the widened signature's novel pool
-  (`python build_gold_sample_novel.py --n 40 --seed <next>`) — 472
-  windows / 75 distinct signatures remain as of this session's own
-  post-merge recompute; no new strategy decision needed until that pool
-  exhausts too.
+  (`python build_gold_sample_novel.py --n 40 --seed <next>`) — 346
+  windows / 35 distinct signatures remain as of this session's own
+  post-merge recompute; the pool is getting thin (down from 472/75 one
+  batch ago) — the post-exhaustion strategy options (Backlog) are worth
+  revisiting once it empties, likely within 1-2 more batches.
 
 - **Data currency rotation — current state: `v_en_amendment_staleness` (built
   2026-10-31, fixed to 39/39 resolvable 2026-11-03) now also tells readers
@@ -225,12 +238,13 @@ paragraph here.
   2026-10-13, to 460 via an eighth 2026-10-15, to 500 via a ninth
   2026-10-18, to 565 via batches 13-14 2026-10-24, to 605 via batch 15
   (widened signature) 2026-10-27, to 645 via batch 16 2026-10-30, to 685
-  via batch 17 2026-11-02** — see Active threads and Log for the full
-  detail. `gold_citations.json` (685 hand-verified anchor occurrences,
-  seventeen batches — two uniform-random, fifteen signature-stratified) +
+  via batch 17 2026-11-02, to 725 via batch 18 2026-11-05, to 765 via batch
+  19 2026-11-09** — see Active threads and Log for the full detail.
+  `gold_citations.json` (765 hand-verified anchor occurrences, nineteen
+  batches — two uniform-random, seventeen signature-stratified) +
   `score_gold.py` (the scorer) + `build_gold_sample.py`/
   `build_gold_sample_novel.py` (the two samplers) now exist; current score
-  **precision 2908/2924 (99.5%), recall 2908/2946 (98.7%)** — the
+  **precision 3161/3177 (99.5%), recall 3161/3198 (98.8%)** — the
   mismatches are the 2026-09-25 Roman-chapter+paragraf gap, the 2026-09-28
   "hamda" list-separator gap, the 2026-09-28 chapter+paragraph-list-with-
   parenthetical gap, the 2026-09-28/2026-10-10 "bare article number before
@@ -447,6 +461,46 @@ paragraph here.
   what `RE_ROMAN_PART` already does for its roman-numeral form — not a
   simple extension of that regex, a genuinely different unit mapping for
   the same surface word.
+- **A self-naming "(... deb yuritiladi)" parenthetical creates a spurious
+  second anchor, which can chain into a second, un-reached publication
+  parenthetical and drop a real citation entirely.** Found 2026-11-09 via
+  gold batch 19 (`gold_id` 763, row 30003): "...Fuqarolik kodeksining
+  (keyingi oʻrinlarda Fuqarolik kodeksi deb yuritiladi) (Oʻzbekiston
+  Respublikasi Oliy Majlisining Axborotnomasi, 1996-yil, 2-songa ilova)
+  327-moddasiga muvofiq..." — the naming clause "(hereinafter referred to
+  as the Civil Code)" itself contains the literal phrase "Fuqarolik
+  kodeksi", which `RE_ANCHOR_CC` matches as a second, meaningless anchor
+  right after the real one (same mechanism, inverted, as the already-
+  recorded "an amending law's own next heading can be misattributed"
+  false-positive class, 2026-10-27 — here the noise is the Code's OWN name
+  recurring, not another act's). This spurious anchor's own window starts
+  immediately with the naming clause's closing "deb yuritiladi)", then the
+  act's genuine publication-record parenthetical, then the real citation.
+  `RE_LEADING_PUB_PAREN` only blanks a publication paren sitting at the
+  very START of a window; here it's the SECOND of two consecutive leading
+  parens, never reached, so `RE_STOP`'s break fires on "Axborotnomasi"
+  inside it and article 327 is lost entirely — not a display artifact, no
+  other anchor in the row recovers it either. Measured corpus-wide: exactly
+  8 rows share the literal naming clause "Fuqarolik kodeksi deb
+  yuritiladi/ataladi" (5291, 18091, 25971, 30003, 30057, 30344, 30762,
+  30789); only row 30003 also chains a second publication parenthetical
+  before the real citation — the other 7 either have no pub-paren there (so
+  the spurious anchor's own window reaches the real citation unobstructed,
+  recovering it by coincidence, with a harmless redundant bare `act` edge
+  alongside the real one) or have no article number following at all (row
+  18091). True in-scope footprint: exactly 1 occurrence. Not fixed given
+  the single-occurrence scope, same precedent as several items on this
+  list; recorded as a permanent `gold_citations.json` known_gap record
+  (`gold_id` 763) instead. If ever picked up, two viable designs: (a)
+  exclude an anchor match that falls entirely inside an immediately-
+  preceding "(... deb yuritiladi/ataladi)" naming parenthetical, so the
+  spurious anchor never forms and the REAL anchor's own window (currently
+  truncated at the spurious anchor's start) reaches through the whole
+  naming clause to the real citation instead — this would also remove the
+  5 redundant `act` edges the coincidence-recovery rows carry today; or (b)
+  generalize `RE_LEADING_PUB_PAREN` to chain through multiple consecutive
+  leading parens, not just one. (a) is the more complete fix (also cleans
+  up the redundant-edge rows); (b) is narrower and more purely additive.
 - ~~**Chapter list with a parenthetical quoted title after EACH chapter
   number drops the whole list.**~~ **FIXED 2026-10-27.** Found 2026-10-24 via
   gold batch 14: row 29093 reads "Fuqarolik kodeksining 43 ("Bank omonati")
@@ -572,24 +626,27 @@ paragraph here.
   corpus-wide, exactly matching the 2026-10-18 scoping (rows 21303, 25801,
   26169, 41003, 43296, 46794, 46898); `link_edge` now carries 769
   `dst_qism` values across 9634 edges. See Log, 2026-10-21.
-- **One remaining chapter+paragraph-list attachment gap (single occurrence).**
-  Found 2026-09-10 while fixing the comma-punctuated case (see Log): row
-  25634's `cross_references` reads "Fuqarolik kodeksi 4-bobining 1
-  (“Umumiy qoidalar”) va 2-paragraflari" — a *list* of two paragraphs for
-  one chapter, with a parenthetical section title sitting between the first
-  paragraph number and the "va" that introduces the second. The section
-  lookahead regex only tries a single `\d+-paragraf` immediately after the
-  bob match, so this produces a bare chapter-4 citation with no paragraph
-  grain at all (not dropped, just coarser — same fallback the comma fix
-  added now applies). Confirmed corpus-wide this is exactly 1 occurrence
-  (searched for `bob\w*\s+\d+\s*\(.{0,40}\)\s*va\s*\d+\s*-\s*paragraf`-shaped
-  text), so not fixed today given the single-occurrence scope and the
-  parenthetical-skipping complexity a real fix would need — worth a look if
-  a future corpus update introduces more of these. **Formalized 2026-09-28**:
-  the signature-stratified sampler independently re-drew this exact row
-  (`gold_id` 148) — merged as a permanent `gold_citations.json` known_gap
-  record with the true two-section expected output instead of leaving it as
-  a bare backlog line with no regression check.
+- ~~**One remaining chapter+paragraph-list attachment gap (single
+  occurrence).**~~ **FIXED 2026-11-09.** Found 2026-09-10 while fixing the
+  comma-punctuated case (see Log): row 25634's `cross_references` reads
+  "Fuqarolik kodeksi 4-bobining 1 (“Umumiy qoidalar”) va 2-paragraflari" — a
+  *list* of two paragraphs for one chapter, with a parenthetical section
+  title sitting between the first paragraph number and the "va" that
+  introduces the second, breaking the section lookahead's single-bare-digit
+  regex. Measured at exactly 1 occurrence in 2026-09-10 and left unfixed;
+  **formalized 2026-09-28** as `gold_citations.json` `known_gap` record
+  `gold_id` 148. Re-measured 2026-11-09 via gold batch 19 (row 41009, a
+  bigger instance of the identical shape: a parenthetical-titled paragraf
+  LIST, two items instead of row 25634's own two): widening the lookahead
+  to accept a full nums-list-with-parenthetical (same grammar `RE_CLAUSE`'s
+  own top-level `nums` group already uses, via `_expand()`) turned out to
+  affect 4 rows corpus-wide, not 1 — crossing this project's own
+  fix-vs-defer threshold (same precedent as the 2026-10-27 chapter-list-
+  parenthetical fix, which moved from a measured "1" to a true "5"). Fixed
+  in `citation_extractor.py` (`RE_SECTION_LIST`); `gold_id` 148 corrected to
+  `verdict: correct` in place (same precedent as `gold_id` 52 on 2026-11-02
+  and `gold_id` 621 on 2026-10-30). See Active threads and Log, 2026-11-09,
+  for the full corpus-wide measurement and the `link_edge` rebuild.
 - **Bare article number before an interposed different code's own name
   loses its unit word entirely.** Found 2026-09-28 via the second
   signature-stratified gold batch of the day (see Log): row 37948 (an
@@ -1431,6 +1488,171 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-09 — Extractor rotation: gold batch 19 (725->765), fixed a real chapter+paragraf-list recall bug (link_edge 9642->9646), found and recorded a new self-naming/chained-pub-paren known_gap, corrected a 2026-09-10 known_gap to `correct` in place
+
+Rotation: Extractor (last touched 2026-11-05; Data currency took 11-06,
+Cleanup took 11-07 — Extractor was the oldest-touched of the three). No
+2026-11-08 entry exists (the scheduled run that day either didn't fire or
+left no record) — picked up Extractor's own documented next step rather
+than guessing at what 11-08 might have done.
+
+Environment note: this is a fresh cloud container with no prior setup.
+`duckdb`/`pandas`/`pyarrow` were importable under `/usr/local/bin/python3.13`
+but NOT under `/usr/local/bin/python` (a symlink to `/usr/bin/python3.11`,
+the interpreter `python`/`python3` actually resolve to) — installed them for
+3.11 too (`/usr/bin/python3.11 -m pip install duckdb pandas pyarrow`) before
+anything else would run. Also needed `git lfs install && git lfs pull` —
+`articles/train-00000-of-00001.parquet` was a 134-byte LFS pointer stub,
+not the real 163MB parquet, until pulled. Neither is a project bug, just
+first-run container setup; noting it here in case a future session hits
+the same `ModuleNotFoundError`/`verify_transfer.py` LFS-stub error cold.
+
+Baseline before touching anything: `verify_transfer.py` green,
+`score_gold.py` 3024/3040 precision (99.5%), 3024/3062 recall (98.8%) on
+the pre-existing 725-record gold set — matches Active threads exactly, confirming
+no drift since 2026-11-05.
+
+**Batch 19.** `python build_gold_sample_novel.py --n 40 --seed 20261109`:
+3251 candidate windows, 727 distinct signatures corpus-wide, 652 already
+covered (472 windows / 75 signatures still novel) — exactly matching the
+2026-11-05 session's own post-merge recompute, confirming the novel pool's
+measurement is stable across sessions when nothing's been merged into it
+in between. Hand-read all 40 windows against the raw Uzbek text (via
+direct `citation_extractor.extract()` calls on the full row text, not just
+the sampler's own per-anchor `extracted` field) and against the module's
+documented stop-word/qism/anchor rules. 38/40 were correct on inspection
+(self-reference range/list expansion including a 3-range, 29-article
+clause; multi-qism attachment with comma and "va"; Roman-numeral chapter
+lists; "kodeksi"/"Qonun(ining/ning)" stop-word exclusions correctly
+dropping sibling-code articles that happen to share a number with a real
+Civil Code one, e.g. row 21934's coincidental "251" from a different Law;
+and the per-anchor window-boundary convention correctly splitting one
+citation across two different anchors' own buckets, e.g. row 7452's
+chapter-57 citation belonging to the SECOND of two adjacent anchors in the
+same window). Two records needed real investigation:
+
+1. **Bug found and fixed: a parenthetical-titled paragraf LIST for one
+   chapter lost every section in the list, not just one.** Row 41009,
+   `gold_id` 23 (local): "Fuqarolik kodeksi 29-bobining 1 (“Oldi-sotdi
+   toʻgʻrisida umumiy qoidalar”), 7-paragraflari (“Koʻchmas mulkni
+   sotish”), 30 (“Ayirboshlash”) va 31-boblari (“Hadya”)" — chapter 29's
+   own paragraf 1 AND paragraf 7 both vanished (not downgraded to a
+   per-paragraf bare chapter citation — a SINGLE bare chapter-29 citation
+   total), because the existing chapter+section lookahead
+   (`re.match(r"\s*,?\s*(\d+)\s*-\s*paragr[ai]f", window[m.end():m.end()+30])`)
+   only ever tried one bare digit in a 30-char window, and the
+   parenthetical title before "7-paragraflari" both exceeds that window
+   and isn't a bare digit. This is the exact same shape as the
+   2026-09-10/2026-09-28 `gold_id` 148 `known_gap` (row 25634, chapter 4,
+   also a two-item parenthetical-titled paragraf list) — re-measured
+   corpus-wide before deciding whether to fix (same discipline as every
+   prior known_gap re-measurement in this project): widened the lookahead
+   to 150 chars and to accept a full nums-list-with-parenthetical (reusing
+   `_expand()` — the exact grammar `RE_CLAUSE`'s own top-level `nums` group
+   already uses, not a new parsing path), then diffed the OLD 30-char/
+   single-digit regex against the NEW one across every `bob`-unit
+   `RE_CLAUSE` match in the ENTIRE corpus (every field, every anchor
+   window, not just a grep). Result: exactly 4 rows change — 41009 itself;
+   41010 and 41012 (the identical "34-bobining 1 (“Umumiy qoidalar”),
+   4-paragraflari (“Binolar va inshootlar ijarasi”)" commentary duplicated
+   verbatim across two different articles' own `cross_references`); and
+   25634 (`gold_id` 148). Zero other rows anywhere in the corpus change —
+   purely additive, not a new false-positive source. This crosses the
+   project's own fix-vs-defer line (same precedent as the 2026-10-27
+   chapter-list-parenthetical fix, which moved from a measured "1" to a
+   true "5" on re-measurement and got fixed) — 2026-09-10's original "1
+   occurrence" measurement undercounted for the same reason 2026-10-27's
+   did: a narrower regex than the real shape deserves. Fixed in
+   `citation_extractor.py`: added `RE_SECTION_LIST` (the widened lookahead)
+   and changed the `bob` branch to emit one `Citation` per
+   `(chapter, section)` pair when the lookahead resolves to a list/range,
+   instead of always exactly one per chapter. Also fixed the `listing`
+   field in the same pass: the sections' own list/range shape now sets
+   `listing` (e.g. "list" for "1 va 2"), not the chapter's — the chapter is
+   almost always a single number even when its paragrafs are a list, and
+   `gold_id` 148 specifically expects `listing="list"` for both of its
+   sections, which the first version of the fix (reusing the outer
+   chapter's `listing`) got wrong until caught by immediately re-running
+   `score_gold.py` and seeing a NEW mismatch appear on 148 that hadn't been
+   there in the baseline. Added one self-test case for the list-with-parens
+   shape (modeled on row 41009, trimmed to 2 chapters). **68/68 self-tests
+   pass.** `score_gold.py` after merging batch 19: precision 3161/3177
+   (99.5%, up from the 725-record baseline's 3024/3040), recall 3161/3198
+   (98.8%) — `gold_id` 148 no longer appears in the mismatch list at all
+   (corrected to `verdict: correct` in place, same precedent as `gold_id`
+   52 on 2026-11-02 and `gold_id` 621 on 2026-10-30); every OTHER
+   pre-existing mismatch (123, 140, 194, 195, 196, 295, 324, 341, 370, 379,
+   451, 587, 597, 618, 623) is byte-for-byte unchanged — confirms the fix
+   touched nothing else. `build_links.py` re-run: `link_edge` 9642 → 9646
+   (+4 — the 4 affected rows each go from one bare-chapter edge to two
+   section edges). `build_llc.py` re-run clean (no LLC-relevant rows
+   affected; "repealed company-form articles" check still finds zero real
+   hits). `check_sql_bindings.py` 112/112, `check_fstring_interp.py` 55/55
+   (both unchanged — no SQL/f-string code touched). Both apps parse cleanly
+   (`ast.parse`); neither queries `link_edge.target_kind='section'` in a
+   way a content-only change could break, and no schema/column changed,
+   so no deeper smoke test was needed beyond that.
+
+2. **New known_gap recorded (not fixed): a self-naming parenthetical can
+   spawn a spurious second anchor that chains into an un-reached
+   publication parenthetical, dropping a real citation.** Row 30003,
+   `gold_id` 29 (local) → 763 (merged): "...Fuqarolik kodeksining (keyingi
+   oʻrinlarda Fuqarolik kodeksi deb yuritiladi) (Oʻzbekiston Respublikasi
+   Oliy Majlisining Axborotnomasi, 1996-yil, 2-songa ilova) 327-moddasiga
+   muvofiq..." — traced via `cx._anchors()` directly (not just the
+   sampler's own window) and found there are TWO "Fuqarolik kodeksi"-shaped
+   anchors back to back here: the real one ("Fuqarolik kodeksining", ending
+   right before the naming parenthetical), and a SECOND, spurious one —
+   the literal "Fuqarolik kodeksi" that the naming clause itself uses to
+   state its own abbreviation. `extract()`'s "never scan past the next
+   anchor" rule (correct in general) means the REAL anchor's own window
+   gets truncated at the spurious anchor's start, before it ever reaches
+   "327-moddasiga" — so the real anchor's own bucket produces nothing, and
+   whether article 327 is still found depends entirely on what the
+   SPURIOUS anchor's own (separately-windowed) scan can reach. Compared
+   this exact row directly against row 25971, which shares the identical
+   naming clause with no following pub-paren: there, the spurious anchor's
+   window reaches "327-moddasiga" unobstructed and recovers the citation by
+   coincidence (confirmed directly: `extract()` on row 25971 returns
+   `[act, article 327, article 1157]` — the bogus `act` from the real,
+   truncated anchor, plus the genuine article 327 from the spurious one).
+   Row 30003 additionally has the act's own publication-record parenthetical
+   chained right after the naming clause, and `RE_LEADING_PUB_PAREN` only
+   blanks a publication paren sitting at the very START of a window — here
+   it's the window's SECOND leading paren (the window starts mid-naming-
+   clause, with "deb yuritiladi)", not with "("), so it's never reached,
+   `RE_STOP` fires on "Axborotnomasi" inside it, and article 327 is lost
+   for good — no other anchor anywhere in the row recovers it. Measured
+   corpus-wide (`regexp_matches` for the literal naming clause "Fuqarolik
+   kodeksi deb (yuritiladi|ataladi)"): exactly 8 rows share it
+   (5291, 18091, 25971, 30003, 30057, 30344, 30762, 30789); ran
+   `extract()` on each directly and checked whether the real citation
+   nearby survives — 30003 is the ONLY one that loses it (the chained
+   pub-paren is unique to this row among the 8); 18091 has no article
+   number following at all (a descriptive sentence); the other 6 all
+   recover their real citation via the same lucky-coincidence mechanism as
+   25971, each also carrying a redundant bare `act` edge alongside the real
+   one (harmless to precision/recall — `act` is still a true, if weaker,
+   statement — but worth noting for whoever eventually fixes the root
+   anchor-formation issue). True in-scope footprint: exactly 1 occurrence.
+   Not fixed given the single-occurrence scope — same standing precedent as
+   the "paragrif"/Roman-chapter-lookahead/section-mark/`boʻlim`-chapter
+   known_gaps — recorded as a permanent `gold_citations.json` known_gap
+   (`gold_id` 763) with its true expected output (`article 327, single`)
+   and the full trace in its own `notes` field; also added to Backlog with
+   both viable fix designs (exclude anchors formed inside a naming
+   parenthetical, vs. generalize `RE_LEADING_PUB_PAREN` to chain through
+   multiple leading parens) for whoever picks it up.
+
+`verify_transfer.py`: **VERIFICATION PASSED — all checks green** (re-run
+after the fix and the full rebuild chain). Novel-signature pool after
+merging batch 19: 727 distinct signatures corpus-wide (unchanged — the
+fix didn't change any window's raw-text signature, only what the
+extractor does with it), 692 covered (up from 652), 346 windows / 35
+distinct signatures still novel (down from 472/75) — getting thin; the
+post-exhaustion strategy options in Backlog are worth revisiting within
+1-2 more batches if this keeps shrinking at the current rate.
 
 ### 2026-11-07 — Cleanup rotation: closed `check_dead_views.py`'s 3+-rotation-old transitive-chain question with a real two-layer closure check, mutation-tested against the exact dead-chain shape the old one-level check structurally could not see
 
