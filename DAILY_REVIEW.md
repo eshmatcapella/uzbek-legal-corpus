@@ -99,56 +99,85 @@ paragraph here.
   batch ago) — the post-exhaustion strategy options (Backlog) are worth
   revisiting once it empties, likely within 1-2 more batches.
 
-- **Data currency rotation — current state: `v_en_amendment_staleness` (built
-  2026-10-31, fixed to 39/39 resolvable 2026-11-03) now also tells readers
-  WHAT KIND of amendment each of its 17 stale articles is missing — 17/17 are
-  a full `restated` rewrite, not a partial edit — plus how many days it's been
-  missing it (316 to 2,025 days). The `dst_dangling`/`version_date` pairing
-  this thread's note used to flag as untried is now closed: fully exhausted,
-  zero new signal (see Log for both). Last touched 2026-11-06.** Tried the
-  standing backlog pairing first: all 17 corpus-wide `dst_dangling=TRUE`
-  edges target the Civil Code's own 8 already-known 2014-voided articles
-  (the 2026-10-23 `en_repealed` set); `version_date` added nothing since
-  both citing and cited acts were scraped well after the voiding — this
-  fully characterizes, not just samples, `dst_dangling`'s whole extent, so
-  don't re-open it without a new angle. Two `version_date` sanity checks
-  alongside it (snapshot never predates enactment, 0/24,267; superseded
-  acts' own scrape date vs. their `repealed_on`, 10/234 before, 224 after)
-  were both clean — point-in-time archive behavior, not a bug, not pursued
-  further. The real find: cross-checked `v_en_amendment_staleness` against
-  `article_amendment.change_type` for the SPECIFIC missed event per stale
-  article (careful to scope the join by `norm_id`/`article_number` in
-  Python, not globally by act number the way the view's existing
-  `amend_date` join safely is — `change_type`, unlike `amend_date`, is NOT
-  constant per act number: 36 corpus-wide `(norm_id, act_num)` pairs carry
-  >1 row, 5 with >1 distinct `change_type`). Result: 17/17 stale articles'
-  missed amendment is `change_type='restated'` — a full-article rewrite.
-  Checked this isn't vacuous: `restated` is also the dominant last-change
-  type corpus-wide (388/442 articles, 87.8%), so 17/17 isn't a statistical
-  surprise (~11% by chance) — the value is in telling the reader exactly
-  what's missing, not that it's "possibly stale." Shipped two new, purely
-  additive columns on the existing `en_amendment_staleness` table/view
-  (`uz_latest_change_type`, `days_since_uz_amend`) and reworded
-  `app_hierarchy.py`'s staleness warning to state the missed amendment's own
-  change type and days-elapsed in plain language, reusing the existing
-  `CHANGE_BADGE` emoji map. `app_llc.py` untouched (same reasoning as
-  2026-10-31 — never renders `article_text_en`). Verified: `build_links.py`
-  re-run alone (link_edge/repeal_clause/article_amendment row counts
-  unchanged at 9642/885/612 — confirms purely additive), `check_sql_bindings.py`
-  112/112, `check_fstring_interp.py` 55/55, `check_dead_views.py`/
-  `check_dead_columns.py`/`check_code_clones.py` unchanged from the standing
-  Cleanup baseline, `pyflakes` clean, `verify_transfer.py` green throughout,
-  Playwright pass on `app_hierarchy.py` (Article 1 shows the enriched
-  warning correctly; Article 49 still shows nothing) plus a smoke-test pass
-  on `app_llc.py`. **Next Data currency rotation**: new open thread, not yet
-  investigated — `v_article_currency.has_removed_or_voided_part` (drives the
-  ⚠️ badge) only fires for `change_type IN ('removed','voided')`, never for
-  `restated`, even a wholesale rewrite; worth measuring whether `restated`
-  should count toward that badge too, a genuine scope decision for whoever
-  picks this up (see Log for the full framing). The qism-level angle
-  (2026-10-28) remains likely exhausted; the standing cross-signal technique
-  (Backlog's own note) is worth defaulting to again once a specific new pair
-  is identified.
+- **Data currency rotation — current state: `has_removed_or_voided_part`'s
+  own standing scope question (below) is CLOSED — not by widening it to
+  `restated`, but by fixing a real chronology bug the question's own
+  framing exposed: `bool_or(change_type IN ('removed','voided'))` ignored
+  WHEN each event happened, so a qism that was voided and later restated
+  with new text still showed ⚠️ forever. 2/31 removed/voided events are
+  exactly this (Articles 210 and 212); both flags, and the 2026-10-28
+  `v_qism_void_citation` feature's headline 8-citation count for Article
+  212, are corrected (see Log). Last touched 2026-11-10.** Measured the
+  question literally first: is a blanket `restated` -> `has_removed_or_
+  voided_part=TRUE` extension right? No — 381/442 amended articles have
+  `restated` as their ONLY ever change (law evolving normally), so the
+  extension would fire on 86% of all amended articles and mislabel every
+  one of them "removed/voided" when the text is actually current; a
+  permutation test on the alternative "citing act predates the target's
+  restatement" framing came back statistically real (93.7% vs. a 1000-trial
+  shuffle-null mean of 89.4%, real rate exceeds 999/1000 shuffles) but
+  practically useless as a UI signal — it fires on nearly every qism
+  citation into a restated article regardless of whether anything the
+  citing act relies on actually changed, the same "real but not
+  actionable" shape as 2026-10-17's snapshot-age threshold. Decided NOT to
+  ship either. Kept digging anyway rather than stopping at a clean "no":
+  found that `restated` locators ARE qism-specific 71% of the time
+  (380/534, parsed by the exact same `re_qism_locator` regex
+  `qism_void_citation` already uses for removed/voided — e.g. "48-moddaning
+  uchinchi qismi ... tahririda"), which raised the real question — does any
+  qism currently flagged removed/voided actually have a LATER restated
+  event at that exact same locator, meaning it has real text today and the
+  flag is stale? Checked exhaustively, not sampled: grouped ALL 21
+  non-empty-locator removed/voided events corpus-wide by exact
+  `(doc_id, article, locator)` string (sidesteps qism-ordinal parsing risk
+  entirely) and compared each to that same key's chronologically LATEST
+  event (by `amend_date`, tie-broken by `event_id`) across every
+  `change_type`, not just removed/voided — confirmed the same 2 hits with
+  the narrower qism-regex approach too, so it's not an artifact of either
+  method. Found exactly 2: Article 210's qism 2 (voided 2020-01-14,
+  restated 2021-04-21 in the sweeping Civil-Code-wide overhaul) and Article
+  212's qism 4 (removed AND restated on the literal SAME day, 2019-03-04 —
+  two separate LexUZ footnote markers for one drafting-level "exclude old
+  text, state new text" replace, confirmed by reading the raw
+  `amendment_note` parenthetical directly from the source parquet, not
+  just the mined rows). Both are real omissions in `has_removed_or_voided_
+  part`'s `bool_or(change_type IN ('removed','voided'))` definition, which
+  only ever asked "did this EVER happen", never "is it still true" — fixed
+  by adding `v_locator_amendment_status` (a shared view, reused by both
+  `has_removed_or_voided_part` and `void_qism` so the two can't drift
+  again) that resolves each locator to its true latest state via a
+  `last_value() OVER (... ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED
+  FOLLOWING)` window, with the 10/31 empty-locator (chapter/paragraph-
+  level) events deliberately left conservatively flagged since there's no
+  locator to resolve them against. Effect: `has_removed_or_voided_part`
+  flips 210 and 212 from TRUE to FALSE (29/31 other flagged articles
+  unaffected — confirmed each still shows the ⚠️ correctly, Article 173
+  spot-checked live in `app_hierarchy.py`); `v_qism_void_citation` — the
+  2026-10-28 feature built directly on this same stale data — drops from
+  8 normative citations (all 8 were the Article 212 false positive) to 0;
+  `link_edge`/`repeal_clause` row counts unchanged (9646/885, confirms this
+  is purely a downstream-view fix, not a re-extraction). Also fixed a
+  latent robustness bug the now-possible empty `void_qism` exposed:
+  `con.executemany(...)` on an empty `hits` list raised `duckdb.
+  InvalidInputException` — guarded with `if hits:`. Verified:
+  `check_sql_bindings.py` 112/112, `check_fstring_interp.py` 55/55,
+  `check_dead_views.py` 11 views/2 view-on-view edges (up from 10/1, the new
+  view correctly picked up live by the 2026-11-07 two-layer closure check),
+  `check_dead_columns.py` 15 flagged (unchanged baseline), `check_code_
+  clones.py` 5 pairs (unchanged baseline), `pyflakes` clean,
+  `verify_transfer.py` green throughout. Playwright, live: Article 212 now
+  shows no ⚠️ (just the plain "5 amendment event(s), last restated on
+  2021-04-21" line); Article 173 (a genuinely still-void qism, unaffected by
+  the fix) still correctly shows "⚠️ part of this article has been
+  removed/voided"; `app_llc.py` smoke-tested (LLC skeleton page renders, no
+  exception). **Next Data currency rotation**: this thread is closed, no
+  residual. Fall back to the standing cross-signal technique (Backlog's own
+  note) — the growing set of independently-populated currency/evidence
+  columns (`evidence_kind`, `dst_dangling`, `derived_status`,
+  `en_align_status`, `has_removed_or_voided_part`, `locator_latest_
+  change_type` now joins that set, version dates) has found something real
+  on most tries so far (see Backlog's own running count) — pick two not yet
+  tried together.
 
 - **Cleanup rotation — current state: `check_dead_views.py`'s standing
   transitive-view-chain blind spot is now CLOSED, not just re-confirmed by
@@ -884,10 +913,17 @@ paragraph here.
   signal built by comparing `article_amendment.locator`'s ordinal text
   against `link_edge.dst_qism`'s, both normalized through
   `citation_extractor`'s own ordinal grammar: 8 normative citations (4 acts)
-  into the exact qism of Article 212 that was later removed, not just
-  "somewhere in an article that had something removed" (the existing
-  `has_removed_or_voided_part` boolean's grain). See Active threads/Log for
-  the full trace and the shipped `v_qism_void_citation` signal. `act.status`
+  into the exact qism of Article 212 that was then believed removed, not
+  just "somewhere in an article that had something removed" (the existing
+  `has_removed_or_voided_part` boolean's grain) — **correction, 2026-11-10:
+  that qism was actually restated with new text the SAME day by the same
+  law (a removed+restated pair is LexUZ's own footnote convention for a
+  drafting-level "exclude old text, state new text" replace); the 8-citation
+  count was this false positive and is now 0 — see that day's Log entry.
+  The underlying mechanism (`v_qism_void_citation`, comparing
+  `article_amendment.locator` against `link_edge.dst_qism` through shared
+  ordinal normalization) is still sound and still shipped; only the
+  dataset it draws from got more precise.** `act.status`
   checked and ruled out as a pairing candidate the same day — constant
   `'in-force'` across all 24,267 acts, zero information. **2026-10-31: sixth
   hit, a wholly new SOURCE, not just a new pairing of existing columns** —
@@ -923,19 +959,22 @@ paragraph here.
   `version_date` added nothing since both sides were scraped well after
   the voiding — closed, not left open, so don't re-try that specific pair
   without a new angle.
-- **Does `v_article_currency.has_removed_or_voided_part` (drives the ⚠️
+- ~~**Does `v_article_currency.has_removed_or_voided_part` (drives the ⚠️
   "part of this article has been removed/voided" badge in both apps'
-  Legislative history caption) under-warn for a fully `restated` article?**
-  Found 2026-11-06 while shipping the `change_type` severity enrichment
-  above: the badge's `bool_or(change_type IN ('removed', 'voided'))`
-  definition deliberately excludes `restated` — a wholesale article
-  rewrite gets no ⚠️ at all unless it also happens to be one of the 39/612
-  articles with a resolvable EN footnote (today's staleness signal, a much
-  narrower surface). Not yet measured how many `restated`-only articles
-  this leaves with zero in-app currency warning, and not yet decided
-  whether that's the badge's intended scope (subtraction specifically) or
-  a real gap — a genuine design question, not a bug, for whoever picks up
-  Data currency next.
+  Legislative history caption) under-warn for a fully `restated`
+  article?**~~ **Closed, decided no, 2026-11-10 (see Active threads/Log for
+  the full trace).** A blanket `restated` extension would mislabel 381/442
+  amended articles (law evolving normally, not a currency problem) and a
+  narrower "citing act predates the restatement" signal, while
+  statistically real (permutation test), fires too broadly to be
+  actionable. The question's framing led somewhere more valuable instead:
+  `has_removed_or_voided_part` had a real, unrelated chronology bug — it
+  never checked whether a LATER event resolved the void, so 2/31
+  removed/voided events (Articles 210 and 212) kept showing ⚠️ after the
+  qism had already been given new text. Fixed via a new shared view,
+  `v_locator_amendment_status`; `v_qism_void_citation`'s 2026-10-28 "8
+  normative citations into Article 212" headline count is now 0 (that
+  entire count was this false positive). See 2026-11-10 Log entry.
 - ~~**Is `norm_unit.en_repealed` (flagged dead-by-construction in the
   2026-10-22 Cleanup rotation) safe to eventually wire up as a currency
   signal, given more engineering?**~~ **Closed, decided no, 2026-10-23**:
@@ -1488,6 +1527,152 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-10 — Data currency rotation: closed the `has_removed_or_voided_part`/`restated` scope question — decided against extending it, but found and fixed a real chronology bug it exposed (2 articles' ⚠️ flags were stale; `v_qism_void_citation`'s 8-citation headline from 2026-10-28 drops to 0, all of it this false positive)
+
+Rotation: Data currency (last touched 2026-11-06; Extractor took 11-09,
+Cleanup took 11-07 — Data currency was the oldest-touched of the three).
+
+**The open question, measured literally first.** The 2026-11-06 entry left
+one open thread: should `v_article_currency.has_removed_or_voided_part`
+(`bool_or(change_type IN ('removed','voided'))`, drives the ⚠️ "part of
+this article has been removed/voided" badge in both apps) also fire for
+`change_type='restated'`, since a full-article rewrite is at least as
+disruptive as a partial removal? Measured before deciding anything:
+`SELECT doc_id, article, arg_max(change_type, amend_date) FROM
+article_amendment GROUP BY 1,2` shows 381 of 442 amended (doc_id, article)
+pairs have `restated` as their ONLY-EVER change_type, with zero
+removed/voided history. Extending the flag to `restated` would fire on
+86% of every amended article in the corpus and badge all of them "part
+removed/voided" — false for nearly all of them, since a `restated` event
+means the provision has NEW TEXT today, not a gap. Decided: no, don't
+widen the boolean itself; the semantics are too different to conflate.
+
+**Tried a narrower alternative anyway, and it taught a real lesson about
+statistical vs. practical significance.** Instead of flagging the whole
+article, what about flagging a specific qism-level normative citation
+(`link_edge.dst_qism IS NOT NULL`) whose citing act's own `doc_date`
+PREDATES the target qism's restatement — i.e., "this citation may be
+relying on wording that's since been rewritten"? Raw rate: 159 qism-
+specific normative citations into a `restated`-only (no removed/voided)
+target, 149/159 (93.7%) predate the restatement. Before trusting that
+number, checked it against the right baseline, not a naive "93.7% is
+high" read: ALL normative citations into the Civil Code generally are
+old relative to the 2021 reform (1079/1217 = 88.7% predate 2021-04-21,
+the single biggest restatement wave, 293/534 restated events), so most
+of the 93.7% could just be "citations are old in general," not anything
+specific to the target article's own restatement. Ran a proper test: for
+the same 159 `(src_date, target's last restated date)` pairs, shuffled
+the pairing 1000 times and recomputed the rate each time — real rate
+(93.7%) beat 999/1000 shuffles (null mean 89.4%, 95% range 86.8%-91.8%),
+so the correlation IS real, not pure age-bias noise (p<0.01-ish by this
+test). But real ≠ useful: a signal that fires on 93.7% of the population
+it's defined over has almost no discriminating power as a UI badge — the
+same shape of finding as 2026-10-17's snapshot-age threshold (measurable,
+statistically non-null, not actionable). Decided: don't ship this either.
+Numbers only, no code changed for this half of the investigation.
+
+**Kept digging past the clean "no" rather than stopping there.** While
+building the baseline check, noticed `restated` locators are qism-specific
+71% of the time (380/534 parse against the exact same `re_qism_locator`
+regex `qism_void_citation` already uses for removed/voided — e.g.
+"48-moddaning uchinchi qismi ... tahririda", not just whole-article
+rewrites). That raised a sharper, different question: does ANY qism
+currently flagged removed/voided actually have a LATER (or same-day)
+event at that EXACT SAME locator that is NOT removed/voided — meaning the
+"void" was itself resolved and the flag is now stale? Checked exhaustively
+two ways to rule out a parsing artifact: (1) via the qism-ordinal regex
+(9 of article_amendment's 31 removed/voided events have a parseable
+single-qism locator; of those, 2 keys' chronologically-latest event is
+`restated`), and (2) independently via EXACT locator STRING matching
+(sidesteps qism-ordinal parsing risk entirely — 21 of the 31 have a
+non-empty locator at all; same 2 keys resolve). Both methods agree:
+exactly 2 corpus-wide. Read the raw evidence to understand WHY, not just
+accept the dates:
+- **Article 210, qism 2**: voided 2020-01-14 (Law OʻRQ-602), then restated
+  2021-04-21 as part of the sweeping Civil-Code-wide reform (Law OʻRQ-683,
+  which restated 293 other events the same day) — genuinely two different
+  years, the gap was later filled back in.
+- **Article 212, qism 4**: removed AND restated on the LITERAL SAME DAY,
+  2019-03-04 (Law OʻRQ-526). Pulled the raw `amendment_note` straight from
+  `articles/train-00000-of-00001.parquet` (not the mined rows) to confirm
+  this isn't a duplicate-extraction bug: LexUZ really does carry TWO
+  separate parenthetical footnotes at that locator — "... chiqarilgan"
+  (excluded) immediately followed by "... tahririda" (restated) — LexUZ's
+  own convention for recording a single drafting-level "exclude the old
+  text, state the new text" replace as two footnote markers. Net legal
+  effect: the qism has real text today; it was never actually blank in
+  force.
+
+**The fix.** `has_removed_or_voided_part`'s `bool_or` only ever asked "did
+a removed/voided event EVER happen to this article", never "is it STILL
+true" — a real, if narrow, chronology bug, not a design-scope question.
+Added `v_locator_amendment_status` (new shared view in `build_links.py`):
+for every `article_amendment` row with a non-empty `locator`, resolves
+`locator_latest_change_type` via `last_value(change_type) OVER (PARTITION
+BY doc_id, article, locator ORDER BY amend_date, event_id ROWS BETWEEN
+UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)`; rows with an empty locator
+(10/31 — chapter/paragraph-level notes with no specific sub-unit to
+resolve against) pass through unresolved and stay conservatively flagged.
+Both `v_article_currency.has_removed_or_voided_part` and the Python
+`void_qism` dict (which feeds `qism_void_citation`/`v_qism_void_citation`)
+now read from this one shared view instead of raw `article_amendment`
+directly, so the two can't drift out of sync again (reused, not
+reimplemented, per this project's standing Cleanup-rotation norm).
+Verified the SQL reproduces the Python cross-check exactly before editing
+`build_links.py`, not just assumed it. One incidental robustness fix the
+now-possible-empty result exposed: `con.executemany("INSERT INTO
+qism_void_citation...", hits)` raised `duckdb.InvalidInputException` on an
+empty `hits` list (previously always non-empty since Article 212 always
+contributed 8 rows) — guarded with `if hits:`.
+
+**Measured effect.** `has_removed_or_voided_part` flips Articles 210 and
+212 from TRUE to FALSE; the other 29/31 flagged articles (General Part
+`-111189`: 173, 176, 177, 179, 63, 65, 66, 71, 72; Special Part `-180552`:
+770, 852, 1054, 1071, 1080, 6261, 1053, 1057, 1064, 1066, 1072, 1143, 459,
+769, 1052, 1055, 1081, 1107, 1147) are untouched. `v_qism_void_citation`
+(the 2026-10-28 feature) drops from 8 normative citations (4 citing acts,
+all of them this exact false positive) to 0 — `void_qism`'s dict itself
+drops from 9 parseable single-qism locators to 7, and none of the
+remaining 7 happen to be cited at the qism level by any act, so the table
+is legitimately empty now, not broken. `link_edge` (9646) and
+`repeal_clause` (885) row counts unchanged — confirms this is purely a
+downstream-view correction, not a re-extraction; `article_amendment` row
+count unchanged at 612 (the underlying events are still all there, just
+resolved differently).
+
+**Verification.** `build_links.py` re-run alone (not a full
+`build_corpus_db.py` rebuild). `check_sql_bindings.py` 112/112,
+`check_fstring_interp.py` 55/55 (no interpolation added — the new view is
+static SQL). `check_dead_views.py`: 11 views / 2 view-on-view edges (up
+from 10/1 — the new view is correctly picked up as live, both via
+`v_article_currency`'s view-on-view reference and the `void_qism` Python
+query's own root use, exercising the 2026-11-07 two-layer closure check's
+multi-hop case on new data for the first time). `check_dead_columns.py`
+15 flagged (unchanged baseline), `check_code_clones.py` 5 pairs (unchanged
+baseline), `pyflakes` clean. `verify_transfer.py` green throughout — ran
+before AND after the fix. Playwright, live against `app_hierarchy.py`:
+Article 212 now shows only "📝 5 amendment event(s), last restated on
+2021-04-21" with no ⚠️; Article 173 (qism voided 2023-10-23, genuinely
+still void, unaffected by the fix) still correctly shows "⚠️ part of this
+article has been removed/voided" — confirms the fix is targeted, not a
+blanket suppression. `app_llc.py` smoke-tested separately (LLC skeleton
+page renders cleanly, no exception) since it also reads
+`has_removed_or_voided_part` (lines 100-101, 167-168, 335-338) but neither
+of the two corrected articles happens to be an LLC foundation norm, so no
+visible change expected or found there.
+
+**Decision for the record:** `restated` does NOT get folded into
+`has_removed_or_voided_part`'s boolean — the semantics are genuinely
+different (deletion vs. rewrite) and doing so would mislabel the 86% of
+amended articles whose law has simply evolved normally. The real gap
+exposed by asking the question was narrower and purely chronological, and
+is now fixed.
+
+**Next Data currency rotation**: this thread is closed, no residual.
+Default to the standing cross-signal technique (Backlog's own note) —
+pick two independently-populated currency/evidence columns not yet
+compared (`locator_latest_change_type` is now a candidate too).
 
 ### 2026-11-09 — Extractor rotation: gold batch 19 (725->765), fixed a real chapter+paragraf-list recall bug (link_edge 9642->9646), found and recorded a new self-naming/chained-pub-paren known_gap, corrected a 2026-09-10 known_gap to `correct` in place
 

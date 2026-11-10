@@ -909,6 +909,40 @@ def main() -> int:
     log(f"  by change_type: {amend_type_counts}")
     log(f"  by match_method: {amend_method_counts}")
 
+    # `change_type IN ('removed', 'voided')` on its own isn't the provision's
+    # CURRENT state, just one historical event — LexUZ sometimes records a
+    # qism as "chiqarilgan" (excluded) and, same clause's own net effect, as
+    # "tahririda" (restated/given new wording) via a SEPARATE footnote at the
+    # exact same locator, either the same day (a drafting-level "exclude old
+    # text, state new text" replace) or years later (voided, then eventually
+    # filled back in). Either way, if a LATER-or-equal event at that exact
+    # (doc_id, article, locator) triple is NOT removed/voided, the provision
+    # has real text today and is not actually missing. Found 2026-11-10 (Data
+    # currency rotation, see DAILY_REVIEW.md): exhaustively checked all 21
+    # non-empty-locator removed/voided events corpus-wide (the other 10 of 31
+    # total removed/voided events carry an empty, chapter/paragraph-level
+    # locator and can't be resolved this way, so they stay conservatively
+    # flagged) — exactly 2 are stale this way: Article 210 qism 2 (voided
+    # 2020-01-14, restated 2021-04-21) and Article 212 qism 4 (removed AND
+    # restated on the SAME day, 2019-03-04 — a same-day replace). This view
+    # is the shared source of truth for "is this locator's removed/voided
+    # status still current", reused below by both `has_removed_or_voided_part`
+    # and `void_qism` so the two don't drift (see DAILY_REVIEW.md).
+    con.execute("""
+        CREATE OR REPLACE VIEW v_locator_amendment_status AS
+        SELECT *,
+               CASE WHEN locator = '' THEN change_type
+                    ELSE last_value(change_type) OVER (
+                        PARTITION BY doc_id,
+                                     coalesce(target_article_number, host_article_number),
+                                     locator
+                        ORDER BY amend_date, event_id
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+               END AS locator_latest_change_type
+        FROM article_amendment
+    """)
+    con.commit()
+
     con.execute("""
         CREATE OR REPLACE VIEW v_article_currency AS
         SELECT doc_id,
@@ -917,11 +951,21 @@ def main() -> int:
                count(*)                                     AS n_amendments,
                max(amend_date)                               AS last_amend_date,
                arg_max(change_type, amend_date)               AS last_change_type,
-               bool_or(change_type IN ('removed', 'voided')) AS has_removed_or_voided_part
-        FROM article_amendment
+               bool_or(change_type IN ('removed', 'voided')
+                       AND locator_latest_change_type IN ('removed', 'voided'))
+                                                              AS has_removed_or_voided_part
+        FROM v_locator_amendment_status
         GROUP BY doc_id, coalesce(target_article_number, host_article_number)
     """)
     con.commit()
+    n_resolved = con.execute("""
+        SELECT count(*) FROM v_locator_amendment_status
+        WHERE change_type IN ('removed', 'voided')
+          AND locator_latest_change_type NOT IN ('removed', 'voided')
+    """).fetchone()[0]
+    log(f"\nv_locator_amendment_status: {n_resolved} removed/voided event(s) are "
+        "stale (a later-or-same-day event at the exact same locator gave the "
+        "provision new text) — excluded from has_removed_or_voided_part")
 
     # An act is superseded if a later act repealed it, whole, by date+number.
     # `target_locator IS NULL` excludes the 45% of repeal-list items that
@@ -1011,8 +1055,9 @@ def main() -> int:
 
     void_qism = {}  # (doc_id, article_number, qism_ordinal) -> amend event_id
     for event_id, doc_id, locator in con.execute("""
-        SELECT event_id, doc_id, locator FROM article_amendment
+        SELECT event_id, doc_id, locator FROM v_locator_amendment_status
         WHERE change_type IN ('removed', 'voided') AND locator <> ''
+          AND locator_latest_change_type IN ('removed', 'voided')
     """).fetchall():
         m = re_qism_locator.match(locator.strip())
         if m:
@@ -1033,7 +1078,8 @@ def main() -> int:
         event_id = void_qism.get((doc_id, art, qism_ordinal(qism)))
         if event_id is not None:
             hits.append((edge_id, event_id))
-    con.executemany("INSERT INTO qism_void_citation VALUES (?, ?)", hits)
+    if hits:
+        con.executemany("INSERT INTO qism_void_citation VALUES (?, ?)", hits)
     con.commit()
 
     con.execute("""
