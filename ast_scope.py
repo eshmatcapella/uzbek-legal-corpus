@@ -35,11 +35,27 @@ def build_scope_map(tree: ast.AST) -> dict[int, ast.AST]:
 
 
 def assigns_by_name(scope: ast.AST) -> dict[str, list[ast.AST]]:
-    """Every `Assign` right-hand side within `scope`, keyed by the assigned name.
-    Only single-target `Name = ...` assignments count -- the shape every call
-    site in this codebase actually uses for a query/SQL variable."""
+    """Every `Assign`/`AnnAssign` right-hand side within `scope`, keyed by the
+    assigned name. Only single-target `Name = ...` (or annotated `Name: T =
+    ...`) assignments count -- the shape every call site in this codebase
+    actually uses for a query/SQL/row-accumulator variable.
+
+    `AnnAssign` (`rows: list[list] = []`) is a distinct AST node from `Assign`
+    (it has one bare `.target`, not a `.targets` list) and was missed
+    entirely before 2026-11-11 -- every `name: list[...] = []` initializer in
+    this codebase (e.g. build_corpus_db.py's `assignments`/`updates`/`report`,
+    build_links.py's `edges`/`clauses`/`amend_rows`, build_llc.py's `rows`)
+    resolved to "no assignment found" rather than "resolves to an empty
+    list", silently treating a real, later-populated accumulator the same as
+    an unassigned name. Found while building check_param_arity.py (7/59
+    parameterized-call sites unresolved, all seven exactly this pattern);
+    fixed here since both check_sql_bindings.py and check_fstring_interp.py
+    import this same helper and would hit the identical gap the moment either
+    one's own file scope grows a type-annotated accumulator."""
     out: dict[str, list[ast.AST]] = {}
     for node in ast.walk(scope):
         if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
             out.setdefault(node.targets[0].id, []).append(node.value)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
+            out.setdefault(node.target.id, []).append(node.value)
     return out

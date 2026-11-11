@@ -179,64 +179,84 @@ paragraph here.
   on most tries so far (see Backlog's own running count) — pick two not yet
   tried together.
 
-- **Cleanup rotation — current state: `check_dead_views.py`'s standing
-  transitive-view-chain blind spot is now CLOSED, not just re-confirmed by
-  hand — it's a real two-layer closure check (view dependency graph from
-  the catalog's own SQL, plus a root-use scan that excludes hits inside any
-  view's own definition block), mutation-tested to prove it catches what
-  the one-level version structurally could not. Last touched 2026-11-07**
-  (see Log for the full trace): re-ran the nine other checks as a baseline
-  first — `pyflakes`/`vulture` clean; `bandit` 57 `B608`/3 `B311`/1 `B110`,
-  byte-identical to 2026-11-04's baseline; `check_sql_bindings.py` 112/112;
-  `check_fstring_interp.py` 55/55; `check_dead_columns.py` 15 flagged, same
-  set as 2026-11-04 — nothing drifted since the
-  last rotation. Picked up the one open question Cleanup had been deferring
-  for 3+ rotations: is `check_dead_views.py`'s one-level "is this view
-  queried by anything, including another view's own definition" check
-  actually safe, or does treating view-on-view use as unconditional proof of
-  liveness hide a fully-dead `A queries B, nothing real queries A` chain?
-  Measured first, rather than guessing: pulled every view's authoritative
-  SQL straight from `duckdb_views()` (not grepped Python source) and found
-  corpus-wide there is exactly one view-on-view edge today,
-  `v_llc_realization -> v_act_currency` (inside `v_llc_realization`'s own
-  `CREATE VIEW` in `build_llc.py`). Rewrote the check into two explicit
-  layers: (1) a dependency graph built from that authoritative SQL; (2) a
-  root-use scan — the same per-line `FROM`/`JOIN <view>` grep as before, but
-  a hit now only counts as a genuine root use if it falls OUTSIDE every
-  view's own definition block, with those blocks located precisely via
-  `ast.parse()` (the `Constant`/`JoinedStr` string argument to
-  `con.execute(...)`, its `(lineno, end_lineno)`) rather than a single-line
-  regex — then closure: `live = root_used`, repeatedly add anything
-  reachable through the dependency graph, anything left over is dead. On
-  today's real schema this changes nothing (10/10 live, 0 flagged) — both
-  `v_act_currency` and `v_llc_realization` turn out to have real,
-  independent root uses elsewhere (`app_hierarchy.py`, `app_llc.py`,
-  `build_llc.py`'s own ad-hoc queries, `verify_transfer.py` for the former;
-  `app_llc.py:218` for the latter) — but it is now an actually-checked
-  guarantee instead of a hand-verified one. Didn't stop at "same answer,
-  trust the rewrite": mutation-tested in a scratch copy by deleting every
-  genuine root-level `FROM`/`JOIN` line for both views (keeping only
-  `v_llc_realization`'s own definition, which still references
-  `v_act_currency`) — the OLD script, run against that exact mutated copy,
-  printed "defined but never queried" for `v_llc_realization` ALONE and
-  silently missed `v_act_currency` entirely (it still saw `FROM
-  v_act_currency` inside `v_llc_realization`'s own dead definition and
-  counted that as use); the NEW script, same mutated copy, correctly flags
-  BOTH as dead and names the chain (`v_act_currency` "only ever selected
-  FROM/JOINed inside: v_llc_realization"). A toy-graph unit check
-  (`dep_graph={"A":{"B"}}`, zero root uses for either) confirms the same
-  closure function used in production reports both `A` and `B` dead, the
-  exact shape the module docstring had been describing as untested since
-  2026-10-29. `verify_transfer.py` green throughout (maintainer-tooling-only
-  change, `corpus.duckdb` untouched); `check_code_clones.py` still 5 pairs
-  (same set, one pair's similarity score shifted 0.734→0.614 from the
-  function rename but stayed in the same "SIMILAR" bucket — not a new
-  clone). Both apps untouched and unreferenced by the touched file. **Next
-  Cleanup rotation**: re-run all ten as a baseline; no open residuals remain
-  from this thread — the question is answered and the artifact ships. If a
-  future session adds an 11th view or a second view-on-view edge, this
-  closure now actually exercises the multi-hop case for the first time for
-  real, not just in the toy test.
+- **Cleanup rotation — current state: an 11th repeatable check,
+  `check_param_arity.py`, now closes the one class of bug none of the other
+  ten (schema-name validation, dead code, dead columns/views, f-string
+  safety, cross-file clones) could see — a `?` placeholder count that
+  doesn't match the number of values actually bound at that call site.
+  59/59 parameterized call sites in the codebase resolve and check clean
+  (0 live bugs), and building it surfaced and fixed a real blind spot in
+  the shared `ast_scope.py` module two existing checks also depend on.
+  Last touched 2026-11-11.** Re-ran the ten existing checks as a baseline
+  first — all clean/unchanged (`pyflakes`/`vulture` clean; `bandit` 57
+  `B608`/3 `B311`/1 `B110`, same as 2026-11-07; `check_sql_bindings.py`
+  112/112; `check_fstring_interp.py` 55/55; `check_code_clones.py` 5 pairs,
+  same set; `check_dead_columns.py` 15 flagged, same set; `check_dead_views.py`
+  11/11 live, 2 view-on-view edges). Then asked what none of the ten
+  actually validate: `check_sql_bindings.py` proves every table/column name
+  in a query resolves via `PREPARE`, but deliberately never calls `EXECUTE`
+  with real values — confirmed directly that `PREPARE` alone does NOT catch
+  an arity mismatch (`PREPARE t AS SELECT ... WHERE a=? AND b=?` then
+  `EXECUTE t(1)` raises "Values were not provided for parameter 2" — an
+  error only `EXECUTE`, never `PREPARE`, produces), so a `con.executemany()`
+  row one element short of its own `INSERT`'s column list, or a Streamlit
+  page's `q(sql, params)` call with the wrong number of bound values, is
+  invisible to every existing check until that exact unexercised code path
+  actually runs — the same shape `check_sql_bindings.py`/
+  `check_fstring_interp.py` were each built to close one level up. Built
+  `check_param_arity.py`: AST-resolves every `q()`/`qdf()`/`execute()`/
+  `executemany()` call's SQL text (reusing and extending `check_sql_bindings.py`'s
+  literal-string resolver with `str*int` and `str.join()` support, needed
+  for the 4 real call sites — `link_edge`/29, `article_amendment`/13,
+  `llc_norm`/11, `repeal_clause`/10 placeholders — that build their column
+  list via `",".join("?" * n)` rather than typing it out) and counts `?`
+  outside quoted SQL string literals; separately resolves the bound
+  row/params shape by *structure only* (element count, never values) —
+  direct list/tuple literals, a `ListComp`'s `elt` shape, or an
+  empty-list-then-`.append(<literal tuple>)` accumulator pattern, the same
+  conservative "any unresolvable branch = skip, never guess" precedent
+  every AST-based check here follows. Unscoped deliberately wider than
+  `check_sql_bindings.py`: placeholder-count checking needs no live DB
+  connection and has nothing to do with `CREATE TABLE`/temp-table ordering,
+  so it covers all 23 `*.py` files, including the `build_*.py` pipeline
+  scripts `check_sql_bindings.py` excludes on schema grounds. First pass:
+  52/59 call sites with >=1 placeholder resolved clean, 7 unresolved — all
+  seven were `name: list[list] = []` (annotated) accumulators in
+  `build_corpus_db.py`/`build_links.py`/`build_llc.py`
+  (`assignments`/`updates`/`report`/`edges`/`clauses`/`amend_rows`/`rows`).
+  Root cause: `ast_scope.py::assigns_by_name()` — shared by this check AND
+  `check_sql_bindings.py`/`check_fstring_interp.py` — only ever matched
+  plain `ast.Assign`, never `ast.AnnAssign` (a distinct AST node, one bare
+  `.target` not a `.targets` list), so every type-annotated initializer
+  resolved as "no assignment found" rather than "resolves to an empty
+  list", silently treating a real, later-populated accumulator the same as
+  an unassigned name. Fixed in the shared module (not a local workaround)
+  since the other two checks import the same helper and would hit the
+  identical gap the moment their own scope grew one; confirmed zero
+  regression (`check_sql_bindings.py` still 112/112, `check_fstring_interp.py`
+  still 55/55, byte-identical results) and `check_param_arity.py` now
+  resolves all 59/59, still 0 mismatches. Proved the check with two mutation
+  tests in scratch copies: dropped one element from `build_okoz.py`'s
+  `okoz_node` listcomp row (6 placeholders, 5-element row) — caught,
+  correct line/diagnosis; dropped one element from `build_links.py`'s
+  `edges.append([...])` row (the 29-placeholder `",".join("?"*29)` site) —
+  caught too, proving the `str.join()` placeholder-count resolution and the
+  `.append()`-row-shape tracer work together, not just separately.
+  `verify_transfer.py` green throughout (`corpus.duckdb` untouched — pure
+  maintainer-tooling change); `check_code_clones.py` re-run after adding the
+  new file: still the same 5 pairs, `check_param_arity.py` itself not
+  flagged as a clone of `check_sql_bindings.py` despite the shared lineage
+  of its string resolver (extended enough — `Mult`/`join` support, the
+  separate arity-tracing half — to fall under the 0.55 similarity floor).
+  Both apps untouched and unreferenced by either touched file; no
+  Playwright re-check needed (no schema/table/column change). **Next
+  Cleanup rotation**: re-run all eleven as a baseline; no open residual
+  from this thread. The one deliberately-out-of-scope case: `check_param_arity.py`
+  only resolves `.append()` calls whose own argument is a literal-shaped
+  tuple/list — a row built by a helper function call or concatenated from
+  two partial tuples would stay unresolved (skipped, not flagged), same
+  single-occurrence-style precedent as this project's other static checks;
+  zero call sites in the codebase hit that shape today.
 
 ---
 
@@ -1523,10 +1543,167 @@ paragraph here.
   `repeal_clause.clause_id`/`item_no` (a real uniqueness constraint that's
   never queried back). Recorded, not acted on further; see Active threads,
   2026-11-01.
+- ~~**An eleventh check: something that validates bound *parameter counts*,
+  not just schema names.**~~ **Added 2026-11-11**: `check_param_arity.py` —
+  resolves every `q()`/`qdf()`/`execute()`/`executemany()` call's `?`
+  placeholder count and its bound row's element count purely by AST
+  structure (never values), flags any provable mismatch. 59/59 resolvable
+  call sites clean (0 live bugs); fixed a real `ast.AnnAssign` blind spot in
+  the shared `ast_scope.py` module along the way (see Active threads/Log for
+  the full trace). Now an eleventh repeatable Cleanup check; next rotation
+  should re-run all eleven.
 
 ---
 
 ## Log
+
+### 2026-11-11 — Cleanup rotation: built an eleventh check, `check_param_arity.py` (SQL placeholder count vs. bound-value count), 0 live bugs but a real shared-infra fix shipped along the way (`ast_scope.py`'s `AnnAssign` blind spot)
+
+Rotation: Cleanup (last touched 2026-11-07; Extractor took 11-09, Data
+currency took 11-10 — Cleanup was the oldest-touched of the three).
+
+Recovery note before starting: this container's `main` and the local
+working tree had already converged with `origin/main` by the time of the
+first `git status`/`git log` check (an earlier stale local ref briefly
+suggested two days' commits — 11-09's gold batch 19, 11-10's chronology-bug
+fix — were unpushed; `git fetch origin main` immediately showed
+`origin/main` already at the same commit as `HEAD`, so this was a stale
+local ref from before the session's first fetch, not a real divergence; no
+action needed beyond the fetch itself, recorded here only so a future
+session doesn't waste time re-diagnosing the same non-issue). Also needed
+the environment's standing cold-start steps before any check could run:
+`python3 -m pip install duckdb pandas pyarrow streamlit pyflakes vulture
+bandit` (this container's default `python3` had none of them; `pip` itself
+resolves to a different interpreter's site-packages per prior sessions'
+notes, so used `python3 -m pip install` which targets the interpreter
+actually running the scripts) and `git lfs install && git lfs pull` (the
+raw parquet was a 134-byte LFS pointer stub). `verify_transfer.py` green
+immediately after both, confirming the starting state was sound.
+
+Re-ran the ten existing Cleanup checks as a baseline before touching
+anything: `pyflakes`/`vulture` clean; `bandit` 57 `B608`/3 `B311`/1 `B110`
+(byte-identical to 2026-11-07); `check_sql_bindings.py` 112/112;
+`check_fstring_interp.py` 55/55; `check_code_clones.py` 5 pairs (same set);
+`check_dead_columns.py` 15 flagged (same set); `check_dead_views.py` 11/11
+live, 2 view-on-view edges. Nothing drifted since the last rotation.
+
+Then asked the question none of the ten actually answer: every one of them
+validates SQL *text* — table/column names, dead code, f-string safety,
+cross-file duplication — but none validates that a query's bound
+*parameter count* matches what the call site actually supplies.
+`check_sql_bindings.py` calls `PREPARE`+`DEALLOCATE` only, deliberately
+never `EXECUTE`, specifically so it needs no real parameter values to
+validate schema names — but that design choice means it structurally
+cannot see an arity mismatch. Confirmed directly rather than assuming:
+`PREPARE t1 AS SELECT ... WHERE a=? AND b=?` followed by `EXECUTE
+t1(1)` (one value for two placeholders) raises "Values were not provided
+for the following parameters: 2" — an error `EXECUTE` produces and
+`PREPARE` alone never does. So a `con.executemany()` row one element short
+of its own `INSERT`'s column list, or a Streamlit page's `q(sql, params)`
+call with the wrong number of bound values, is invisible to every existing
+check until that exact, possibly-unexercised code path actually runs at
+runtime — the same "invisible until clicked" shape `check_sql_bindings.py`
+(2026-10-03) and `check_fstring_interp.py` (2026-10-12) were each built to
+close, one level up from where this gap sits.
+
+Built `check_param_arity.py`: for every `q()`/`qdf()`/`execute()`/
+`executemany()` call, resolves the SQL text to count `?` placeholders
+(outside quoted SQL string literals), and separately resolves the bound
+row/params argument's *element count only* — never its values, which is
+all arity-checking ever needs, a much weaker and therefore much more
+often provable claim than the full literal-value resolution
+`check_sql_bindings.py` needs for its own job. Row-shape resolution covers
+direct list/tuple literals, a `ListComp`'s `elt` shape (one arity for
+every row the comprehension generates), and the empty-list-then-
+`.append(<literal tuple>)` accumulator pattern used throughout the
+`build_*.py` pipeline scripts — any branch that isn't literal-shaped (a
+function call, a dynamically-sized list) is left unresolved and skipped,
+the same "never guess, only flag a provable mismatch" precedent every
+AST-based check in this project follows.
+
+Needed one real extension to reuse `check_sql_bindings.py`'s own
+literal-string resolver: four real call sites (`link_edge`/29 placeholders,
+`article_amendment`/13, `llc_norm`/11, `repeal_clause`/10 — all wide
+`INSERT`s) build their `?, ?, ...` column list via `",".join("?" * n)`
+rather than typing it out, which a bare `Constant`/`BinOp(Add)` resolver
+can't see through. Added `str * int` (`BinOp(Mult)`) and `str.join(...)`
+resolution to the extended copy of the resolver so those four queries'
+placeholder counts resolve too, rather than silently falling outside this
+check's coverage the way they would have with an unextended copy.
+
+Scoped deliberately wider than `check_sql_bindings.py`: placeholder-count
+checking needs no live DuckDB connection at all (it's pure AST structure,
+never schema-dependent), so unlike the schema-binding check it isn't
+blocked by `build_*.py`'s `CREATE TABLE`/temp-table ordering — covers all
+23 `*.py` files in the repo, including the four build-pipeline scripts
+`check_sql_bindings.py` excludes on schema grounds.
+
+First run: 52/59 call sites with >=1 placeholder resolved and checked
+clean, 7 unresolved. All seven were the exact same shape:
+`name: list[list] = []` (a type-annotated accumulator) in
+`build_corpus_db.py` (`assignments`, `updates`, `report`), `build_links.py`
+(`edges`, `clauses`, `amend_rows`), and `build_llc.py` (`rows`) — each
+later populated via `.append(...)` inside a loop, the textbook shape this
+check's own row-resolution logic is built to trace. Root-caused rather
+than special-cased: `ast_scope.py::assigns_by_name()` — the shared helper
+`check_sql_bindings.py` and `check_fstring_interp.py` both import for their
+own bare-name/Assign-chase — only ever matched plain `ast.Assign`.
+`ast.AnnAssign` (`x: T = ...`) is a structurally distinct node (one bare
+`.target`, not a `.targets` list), so every annotated initializer resolved
+as "no assignment found in this scope" rather than "resolves to an empty
+list" — silently indistinguishable from an unassigned name, a real gap in
+shared infrastructure two other checks also depend on, not something
+local to the new check. Fixed in `ast_scope.py` itself (added an
+`ast.AnnAssign` branch alongside the existing `ast.Assign` one) rather than
+working around it in `check_param_arity.py` alone, so any future growth of
+either sibling check's own scope into this pattern is covered too, not
+just today's seven sites. Confirmed zero regression first:
+`check_sql_bindings.py` still 112/112 and `check_fstring_interp.py` still
+55/55, byte-identical to the pre-fix baseline (neither script's own
+in-scope files currently use a SQL-bearing or params-bearing annotated
+assignment, so the fix had nothing to change for them today — but the
+blind spot it closes is now gone from the shared module either way).
+`check_param_arity.py` re-run after the fix: 59/59 resolved, 0 mismatches.
+
+Proved the check catches a real mismatch with two mutation tests in
+scratch copies (never touching the real repo files): (1) dropped
+`n.ordinal` from `build_okoz.py`'s `okoz_node` insert listcomp row (6
+placeholders, mutated row now 5 elements) — flagged immediately, correct
+line and "6 placeholder(s), row shape gives [5]" diagnosis; (2) dropped one
+`None` from `build_links.py`'s `edges.append([...])` row (the
+`",".join("?" * 29)`-built `link_edge` insert, mutated row now 28
+elements) — also flagged correctly, proving the `str.join()`
+placeholder-count resolution and the `.append()`-row-arity tracer compose
+correctly together, not just in isolation. Both scratch copies deleted
+after the test.
+
+Zero live bugs in the real, unmutated codebase — same honest outcome as
+`check_code_clones.py`'s 2026-10-09 debut and several gold batches'
+"clean" results: the check is new, repeatable, now-proven infrastructure
+whether or not it found something on day one. `pyflakes`/`vulture` clean
+on both touched/new files; `check_code_clones.py` re-run with the new file
+present: still the same 5 cross-file pairs, `check_param_arity.py` not
+flagged as a clone of `check_sql_bindings.py` despite sharing the lineage
+of its string resolver — extended enough (the `Mult`/`join` handling, the
+entirely separate row-arity tracing half) to fall under the 0.55
+similarity floor. `check_dead_views.py`/`check_dead_columns.py`/`bandit`
+re-run after the new file existed too, all unchanged. `verify_transfer.py`
+green throughout; `corpus.duckdb` untouched (pure maintainer-tooling
+change — no schema, table, or column touched). Both apps
+(`app_hierarchy.py`/`app_llc.py`) untouched and reference neither
+`check_param_arity.py` nor the `ast_scope.py` edit, so no Playwright
+re-check was needed (nothing user-facing could have changed).
+
+Decided and recorded, not deferred: `check_param_arity.py` only resolves
+`.append()` calls whose argument is itself a literal-shaped tuple/list —
+a row assembled by a helper function or concatenated from two partial
+tuples elsewhere would stay unresolved (skipped, not flagged), the same
+single-occurrence-scope precedent several Extractor `known_gap` items use.
+Zero call sites in the codebase hit that shape today, so not worth
+building out further until one does.
+
+Files touched: `check_param_arity.py` (new), `ast_scope.py` (+19/-3).
+`corpus.duckdb` not touched — no rebuild, no binary diff.
 
 ### 2026-11-10 — Data currency rotation: closed the `has_removed_or_voided_part`/`restated` scope question — decided against extending it, but found and fixed a real chronology bug it exposed (2 articles' ⚠️ flags were stale; `v_qism_void_citation`'s 8-citation headline from 2026-10-28 drops to 0, all of it this false positive)
 
