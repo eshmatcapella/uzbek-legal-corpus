@@ -535,7 +535,8 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
 
     for i, (a_start, a_end, kind) in enumerate(anchors):
         # Never scan past the next anchor: its numbers belong to it.
-        limit = min(a_end + WINDOW, anchors[i + 1][0] if i + 1 < len(anchors) else len(text))
+        hard_limit = anchors[i + 1][0] if i + 1 < len(anchors) else len(text)
+        limit = min(a_end + WINDOW, hard_limit)
         window = text[a_end:limit]
 
         pub_paren = RE_LEADING_PUB_PAREN.match(window)
@@ -557,7 +558,20 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
             abs_start, abs_end = a_end + m.start(), a_end + m.end()
 
             if unit == "modda":
-                tail = window[m.end(): m.end() + 60]
+                # Qism/band tail-window truncation (found 2026-09-04, see
+                # DAILY_REVIEW.md Backlog): `window` is itself already capped
+                # at `limit` (a_end+WINDOW, or the next anchor -- whichever
+                # comes first), so re-slicing `window[m.end():m.end()+60]`
+                # silently shortens to fewer than 60 chars whenever a modda
+                # match lands close to that cap, dropping a qism/band clause
+                # that sits just past it even though it's well within 60 raw
+                # chars of the match and still before the next anchor. Slice
+                # from `text` directly instead, bounded by `hard_limit` (the
+                # next anchor's own start, never WINDOW) -- the same fix this
+                # project's own backlog note proposed. Measured corpus-wide
+                # before shipping: 8 real qism/band attachments recovered,
+                # zero collateral change (see DAILY_REVIEW.md).
+                tail = text[abs_end: min(abs_end + 60, hard_limit)]
                 suffix = m.group("suffix").lower()
                 if suffix.startswith("sining"):
                     qms = _qism_list(tail) or _qism_range(tail)

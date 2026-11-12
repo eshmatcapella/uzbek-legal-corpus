@@ -45,59 +45,47 @@ thread closes, fold its outcome into Backlog (if a residual remains) or
 just let the Log entry be the permanent record — don't also keep growing a
 paragraph here.
 
-- **Extractor rotation — current state: gold set at 765 records (batch 19),
-  precision 3161/3177 (99.5%), recall 3161/3198 (98.8%), widened-signature
-  novel pool now at 346 windows / 35 distinct signatures still novel as of
-  this session's post-merge recompute. Last touched 2026-11-09** (drew and
-  hand-verified a 40-window batch 19, gold_id 725-764, from the widened
-  signature's novel pool — see Log for the full trace). This batch found
-  and FIXED a real bug, the first since batch 13 (2026-10-24) to need a code
-  change rather than a deferred `known_gap`: row 41009's "Fuqarolik kodeksi
-  29-bobining 1 (“Oldi-sotdi toʻgʻrisida umumiy qoidalar”), 7-paragraflari
-  (“Koʻchmas mulkni sotish”), 30 (“Ayirboshlash”) va 31-boblari (“Hadya”)"
-  was losing BOTH paragraf numbers of chapter 29 entirely (not even
-  downgraded to one bare chapter-29 citation per paragraf — a single bare
-  chapter-29 total) because the chapter+section lookahead only ever tried a
-  single bare digit immediately before "paragraf", and this list's
-  parenthetical chapter/section titles broke it. Fixed via `RE_SECTION_LIST`
-  (reuses `_expand()`'s existing parenthetical-stripping/list/range logic,
-  the same grammar `RE_CLAUSE`'s own top-level `nums` group already uses,
-  not a new parsing path) — measured corpus-wide before fixing (diffed the
-  old 30-char/single-digit lookahead against the new one across every `bob`
-  match in the whole corpus): exactly 4 rows change (41009; 41010/41012, a
-  second citation duplicated verbatim across two articles' own commentary;
-  and 25634, the pre-existing `gold_id` 148 `known_gap` from
-  2026-09-10/2026-09-28, now corrected to `correct` in place — see Backlog),
-  zero collateral change anywhere else in the corpus. 68/68 self-tests pass
-  (one new case added). `build_links.py` re-run: `link_edge` 9642 → 9646
-  (+4, matching 4 rows upgrading from one bare-chapter edge each to two
-  section edges each). The SAME batch also found and recorded a new
-  single-occurrence `known_gap` (`gold_id` 763, row 30003): a self-naming
-  "(... deb yuritiladi)" parenthetical creates a spurious second anchor
-  (the phrase "Fuqarolik kodeksi" recurs literally inside its own
-  "hereinafter referred to as" clause), whose own truncated window then
-  runs into a SECOND, chained publication-record parenthetical that
-  `RE_LEADING_PUB_PAREN`'s single-leading-paren design doesn't reach —
-  dropping article 327 entirely. Measured corpus-wide: exactly 8 rows share
-  the naming clause, only this one also chains a pub-paren before the real
-  citation, so the true in-scope footprint is 1 occurrence; not fixed,
-  recorded as a known_gap per this project's standing single-occurrence
-  precedent (see Backlog for the full trace and the two viable fix designs
-  for whoever picks it up next). Everything else in the batch (38/40
-  records before accounting for the known_gap and the fixed bug) was
-  hand-verified `correct` against the raw text and `citation_extractor.py`'s
-  documented rules — multi-qism attachment, self-reference range/list
-  expansion, Roman-numeral chapter lists, "kodeksi"/"Qonun(ining/ning)"
-  stop-word exclusions of sibling-code citations, and the per-anchor window
-  boundary cutting a real citation into a different anchor's bucket (rows
-  5291/18091/25971/30057/30344/30762/30789, the other 7 rows sharing row
-  30003's naming clause) — no further bugs found. **Next Extractor
-  rotation**: keep drawing batches from the widened signature's novel pool
-  (`python build_gold_sample_novel.py --n 40 --seed <next>`) — 346
-  windows / 35 distinct signatures remain as of this session's own
-  post-merge recompute; the pool is getting thin (down from 472/75 one
-  batch ago) — the post-exhaustion strategy options (Backlog) are worth
-  revisiting once it empties, likely within 1-2 more batches.
+- **Extractor rotation — current state: gold set at 805 records (batch 20),
+  precision 3264/3280 (99.5%), recall 3264/3301 (98.9%); the widened
+  (28-feature) novel-signature pool is now FULLY exhausted (0 windows / 0
+  distinct signatures remain). Last touched 2026-11-12.** Drew and
+  hand-verified batch 20 (40 windows, gold_id 765-804) from the same widened
+  pool batch 19 drew from. Found and FIXED a real bug: the 2026-09-04
+  "qism/band tail-window truncation" backlog item (then measured 7/640,
+  1.1%, deferred as not worth interrupting other work for) is a live bug,
+  not just a theoretical one — `extract()`'s qism/band tail lookup sliced
+  `window[m.end():m.end()+60]`, but `window` itself is already capped at
+  the anchor's own 260-char limit, so a modda match landing near that cap
+  (common in long self-reference comma-chains of fully-qualified citations)
+  got a silently-shortened tail even though the real qism text was well
+  within 60 *raw* chars and nowhere near the real next-anchor boundary.
+  Fixed per the backlog's own fix design (b): tail now slices from `text`
+  directly, bounded by a new `hard_limit` (the next anchor's start, never
+  `WINDOW`) rather than the already-truncated `window`. Measured
+  corpus-wide before shipping: exactly 8 sites across 8 rows change their
+  parsed qism (43296, 46637, 46659, 46662, 46668, 46669, 46795, 46925), zero
+  collateral change; the "bob" unit's parallel lookahead has the identical
+  shape in principle but 0 corpus-wide occurrences — left untouched. One of
+  the 8 (row 46795, `gold_id` 483) was a *stale* pre-existing gold record
+  from 2026-10-18 (annotated against the then-buggy extractor's output);
+  corrected in place, same precedent as `gold_id` 52/148/621. `link_edge`
+  9646 → 9647 (+1); `dst_qism` populated 769 → 778 (+9). All 40 of batch
+  20's own records hand-verified `correct` (including row 25971, which
+  correctly produces only a redundant bare `act` edge for THIS anchor — the
+  real article-327 citation lives in the row's *other*, spurious anchor's
+  bucket, exactly matching `gold_id` 754's own note for that row — see
+  Backlog's self-naming-parenthetical known_gap). See Log for the full
+  measurement trace. **Next Extractor rotation**: the novel-signature
+  sampler is genuinely empty now (727/727 signatures covered, re-confirmed
+  post-merge) — don't draw another batch from it as-is. Decision (reasoned,
+  not yet executed — see Log for the full argument): prefer sweeping the
+  now-9-item known_gap backlog (option 3) over a third signature-widening
+  (option 2) or uniform resampling (option 1), since the widened signature's
+  own yield fell sharply across its five batches and today's one real bug
+  was positional, not shape-driven (invisible to any per-window signature
+  by construction) — but this does NOT mean any individual known_gap's
+  single-occurrence scope has changed; re-verify each before touching it,
+  same discipline as every prior fix on this list.
 
 - **Data currency rotation — current state: `has_removed_or_voided_part`'s
   own standing scope question (below) is CLOSED — not by widening it to
@@ -288,12 +276,14 @@ paragraph here.
   2026-10-18, to 565 via batches 13-14 2026-10-24, to 605 via batch 15
   (widened signature) 2026-10-27, to 645 via batch 16 2026-10-30, to 685
   via batch 17 2026-11-02, to 725 via batch 18 2026-11-05, to 765 via batch
-  19 2026-11-09** — see Active threads and Log for the full detail.
-  `gold_citations.json` (765 hand-verified anchor occurrences, nineteen
-  batches — two uniform-random, seventeen signature-stratified) +
+  19 2026-11-09, to 805 via batch 20 2026-11-12 (the widened-signature novel
+  pool is now fully exhausted — 0/0 — as of this batch's post-merge
+  recompute; see Active threads)** — see Active threads and Log for the
+  full detail. `gold_citations.json` (805 hand-verified anchor occurrences,
+  twenty batches — two uniform-random, eighteen signature-stratified) +
   `score_gold.py` (the scorer) + `build_gold_sample.py`/
   `build_gold_sample_novel.py` (the two samplers) now exist; current score
-  **precision 3161/3177 (99.5%), recall 3161/3198 (98.8%)** — the
+  **precision 3264/3280 (99.5%), recall 3264/3301 (98.9%)** — the
   mismatches are the 2026-09-25 Roman-chapter+paragraf gap, the 2026-09-28
   "hamda" list-separator gap, the 2026-09-28 chapter+paragraph-list-with-
   parenthetical gap, the 2026-09-28/2026-10-10 "bare article number before
@@ -803,25 +793,33 @@ paragraph here.
   item above on 2026-10-18 (same dash-range sub-form — see that item for
   the current, precise 7-citation count and the fix sketch). Duplicate
   bullet removed 2026-10-19 rather than left to drift from the merged item.
-- **Qism/band tail-window truncation.** Found 2026-09-04 while building the
-  qism/band attachment check (see Log): the qism/band tail lookup inside
-  `extract()` is `window[m.end():m.end()+60]`, and `window` itself is
-  capped by the anchor's own limit (the next anchor's start, or `+WINDOW`)
-  — when a citation lands close to that limit, the available tail is
-  shorter than 60 chars and a qism/band clause just past it is never seen,
-  even though it would be well within a raw 60-char slice of the
-  underlying text. Measured: 10/667 residual misses (1.5%) when first
-  found; re-measured after later fixes, now **7/640 (1.1%)**, unchanged by
-  the 2026-10-18 list/range qism work (that fix touches which *ordinals*
-  attach to a match already found, not the tail-window's reach). Sampled 3
-  by hand: 2 had a confirmed 4-14 char window-slack shortfall vs. the 60
-  needed; the third's cause wasn't fully pinned down (ample 249-char slack
-  yet still missed). Not fixed — small enough (1.1%) to not be worth
-  interrupting other work for, but a real, precisely-measured bug, not a
-  vague note. If picked up: either widen the window when a modda-with-tail
-  match is the last thing found before the anchor's limit, or search the
-  raw text directly (bounded by the *next* anchor, not by `+60` past an
-  already-truncated window) instead of re-slicing a pre-cut window.
+- ~~**Qism/band tail-window truncation.**~~ **FIXED 2026-11-12.** Found
+  2026-09-04 while building the qism/band attachment check (see Log): the
+  qism/band tail lookup inside `extract()` is `window[m.end():m.end()+60]`,
+  and `window` itself is capped by the anchor's own limit (the next
+  anchor's start, or `+WINDOW`) — when a citation lands close to that
+  limit, the available tail is shorter than 60 chars and a qism/band clause
+  just past it is never seen, even though it would be well within a raw
+  60-char slice of the underlying text. Measured: 10/667 residual misses
+  (1.5%) when first found; re-measured after later fixes, 7/640 (1.1%),
+  unchanged by the 2026-10-18 list/range qism work. Deferred for over two
+  months as "small enough not to be worth interrupting other work for."
+  Re-surfaced 2026-11-12 via gold batch 20 (hand-verifying row 46668, a
+  live occurrence, not a re-measurement): fixed per the second fix design
+  already sketched here — the tail now slices from the raw `text`, bounded
+  by the next anchor's own start (`hard_limit`, computed once per anchor,
+  independent of `WINDOW`), instead of re-slicing the already-WINDOW-capped
+  `window` variable. Measured corpus-wide before shipping: exactly 8 sites
+  across 8 rows change their parsed qism result (43296, 46637, 46659,
+  46662, 46668, 46669, 46795, 46925 — close to, and consistent with, the
+  last-measured 7/640 estimate), zero collateral change anywhere else; one
+  of the 8 (row 46795) was already gold-recorded (`gold_id` 483) with a
+  stale `expected` from the same bug, corrected in place. The "bob" unit's
+  parallel section lookahead (`window[m.end():m.end()+150]`) has the
+  identical shape in principle but measured 0 corpus-wide occurrences —
+  deliberately left untouched, no bug to justify the change. `link_edge`
+  9646 → 9647 (+1); `dst_qism` populated 769 → 778 (+9). See Log,
+  2026-11-12, for the full measurement.
 - ~~**"boʻlim" (Part, the structural level above chapter) is never a
   recognized citation unit.**~~ **Built and closed 2026-10-02.** Found
   2026-09-17 while reading a gold sample (see Log): "Fuqarolik kodeksining
@@ -1556,6 +1554,129 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-12 — Extractor rotation: gold batch 20 (765->805), fixed the 2026-09-04 qism/band tail-window-truncation bug for real (8 corpus-wide occurrences), and the widened-signature novel pool is now TRULY exhausted (0/0)
+
+Drew gold batch 20 from the widened novel-signature sampler:
+`build_gold_sample_novel.py --n 40 --seed 20261112` (40 windows, 346 candidates /
+35 novel signatures available going in — matches last session's own forecast).
+Hand-verified all 40 against the raw parquet text and `citation_extractor.py`'s
+documented rules: multi-qism/qism-range comma-chains, dash-range article
+expansion, the self-naming-parenthetical known_gap's own "recovered by
+coincidence" row (25971 — confirmed this anchor's bucket correctly emits only
+the redundant bare `act` edge, the real article-327 citation living in the
+*other*, spurious anchor's bucket elsewhere in the row, exactly as gold_id
+754's note already predicted for this exact row), and several long
+comma-chains of fully-qualified `NNN-moddasining <ordinal> qismi` citations
+(self_reference anchor, doc -111189 — the Code's own cross-reference
+commentary, which carries unusually long citation chains).
+
+**Found and FIXED a real bug while hand-verifying gold_id 20 (row 46668):**
+the pre-fix extractor returned `qism=None` for article 580 in
+"...574-moddasining ikkinchi qismi, 580-moddasining uchinchi qismi,
+745-moddasining..." even though "uchinchi qismi" sits directly after
+"580-moddasining" in the raw text — a live instance of the 2026-09-04
+"Qism/band tail-window truncation" backlog item (then measured at 7/640,
+1.1%, and explicitly deferred as "small enough... not worth interrupting
+other work for," with two fix designs already sketched). Root cause,
+confirmed directly: `extract()`'s qism/band tail lookup was
+`tail = window[m.end(): m.end() + 60]`, but `window` itself is
+`text[a_end:limit]` where `limit = min(a_end + WINDOW, next_anchor_start)` —
+already truncated to at most 260 chars. When a modda match lands close to
+that 260-char cap (as 580's does here — the window is a long self-reference
+comma-chain of ten `NNN-moddasining <ordinal> qismi` citations), Python's
+own slicing silently returns fewer than 60 chars (or none), even though the
+real qism text is well within 60 *raw* chars of the match and nowhere near
+the actual next-anchor boundary that should govern scope. This is backlog's
+fix design (b): sliced the tail from `text` directly instead, bounded by a
+new `hard_limit` (the next anchor's own start, or `len(text)` — computed
+once per anchor, independent of `WINDOW`) rather than by the
+already-WINDOW-capped `window` variable. Measured corpus-wide BEFORE
+shipping (wrote a standalone script replaying every modda match's old vs.
+new tail through the exact same `_qism_list`/`_qism_range`/`RE_QISM`
+resolution `extract()` itself uses, diffing the two): 352 raw tail-slicing
+sites differ in *text* (mostly meaningless — gazette publication-record
+"№ 9, 165-modda" noise that was never going to parse as a qism either way),
+but exactly **8 sites across 8 rows** differ in the actual *parsed qism
+result* (43296, 46637, 46659, 46662, 46668, 46669, 46795, 46925) — zero
+collateral change anywhere else (confirmed by diffing `score_gold.py`'s full
+mismatch list before/after on the pre-existing 765 records: identical set of
+pre-existing known_gap/FP/FN entries, nothing newly broken). Checked the
+"bob" unit's own separate lookahead (`RE_SECTION_LIST.match(window[m.end():
+m.end()+150])`, same truncation shape in principle) the same way: 0
+corpus-wide differences — left untouched, no measured bug there to justify
+touching it. 68/68 extractor self-tests pass.
+
+One of the 8 — row 46795 — was already in the gold set (`gold_id` 483,
+annotated 2026-10-18 for a *different* reason, the multi-qism comma-list
+fix). Its own `expected` for article 564 was `qism: null`, matching the
+then-current (buggy) extractor's output — but the raw text actually reads
+"564-moddasi birinchi, ikkinchi qismlari" (parts ONE AND TWO, the identical
+shape to article 497 two items earlier in the very same record), truncated
+out of the displayed `window` field at the exact same 260-char edge. This
+was a **stale gold record**, not a new regression: corrected `gold_id` 483's
+`expected` in place (added the second 564/ikkinchi-qism entry, fixed the
+first to birinchi-qism), same precedent as `gold_id` 52/148/621. The other 7
+occurrences aren't yet individually gold-recorded; documented here with the
+corpus-wide count per this project's standing convention rather than adding
+7 synthetic records no sampler actually drew.
+
+**Rebuilt**: `build_links.py` — `link_edge` 9646 → 9647 (+1 edge: article
+564 splits from one bare-qism edge into two qism-bearing edges), `dst_qism`
+populated values 769 → 778 (+9: 8 sites gain a qism, one of them — 564 —
+contributing 2). `build_llc.py` re-run, no change (none of the 8 sites touch
+an LLC-relevant article). `score_gold.py`: precision 3161/3177 (99.5%,
+unchanged ratio) → with batch 20 merged, **3264/3280 (99.5%)**; recall
+3161/3198 (98.8%) → **3264/3301 (98.9%)** — the qism-tail fix's own +1 TP
+(gold_id 483) plus batch 20's 40 new correct records. All 40 of batch 20's
+own records merged with verdict `correct` (a real bug found and fixed via
+hand-reading, same shape as batch 16/17/19, not a "clean batch").
+
+**The widened novel-signature pool is now genuinely exhausted.** Re-ran the
+sampler after merging (`--seed 20261113`, next day's convention): **0
+candidate windows in never-covered signatures (0 distinct novel signatures,
+727/727 corpus-wide signatures now covered)** — the 2026-10-27 widening
+(22→28 features) that reopened 631 windows across 195 signatures is now
+fully consumed, five batches later (15 through 20, 605→805 gold records).
+Unlike the first exhaustion (2026-10-24), this is a clean, total zero, not
+a "thin but nonzero" state. Decision for **next Extractor rotation**:
+lean toward Backlog option 3 (spend the rotation sweeping the accumulated
+known_gap backlog) over option 2 (widen `signature()` a third time) or
+option 1 (uniform resampling) — not executed today, left as a decision with
+reasoning rather than another open-ended option list. Reasoning: the
+widened signature's own marginal yield fell sharply across its five
+batches — batch 16 found one shape-driven bug directly; batch 17 found one
+bug + one known_gap; batch 18 was fully clean; batch 19 found one bug + one
+known_gap; batch 20 (today) found one bug, but it was a window-size/position
+artifact, not a new *signature shape* the widened features were meant to
+catch (580's window and 497's window three items earlier have the IDENTICAL
+signature — multi-qism comma-chain — the bug is positional, invisible to any
+per-window signature by construction). A third widening would need a
+genuinely new structural feature (not just a finer bucket on an existing
+one) to have better odds than the first two, and none has presented itself
+from this session's reading. Meanwhile the known_gap backlog has grown to
+9 standing items since 2026-09-15, several of them (Roman-chapter+paragraf
+lookahead, "§" section-mark, chapter+paragraph space-separator,
+"moddsi"-typo tolerance) fully specified, mechanical, one-line regex
+additions that have simply never been bundled into one sweep — each was
+deferred alone at 1 occurrence under this project's single-occurrence
+precedent, and that precedent is NOT overridden here (none of their
+corpus-wide counts has changed since last measured, so none is fixed today),
+but re-verifying all of them together as one rotation's work, rather than
+opening a fourth new gold-sampling axis, is the more clearly-bounded next
+step. Left as a decision, not an action, for whoever picks up Extractor rotation next.
+
+Verified: `check_sql_bindings.py` 112/112, `check_fstring_interp.py` 55/55,
+`check_dead_views.py` 11/11 live (2 view-on-view edges, unchanged),
+`check_dead_columns.py` baseline unchanged, `check_code_clones.py` same 5
+pairs, `check_param_arity.py` clean (196 resolvable call sites, 0
+mismatches), `pyflakes`/`vulture --min-confidence 60`/`bandit` clean.
+`verify_transfer.py` green throughout (45+ checks, same General-Part
+coverage numbers: 372/386 cited, 285/386 below). Neither app touched —
+`dst_qism` is read generically by both (`app_hierarchy.py`'s `· part:
+{qism}` display, already schema-agnostic to the value), confirmed via grep
+rather than a live Playwright check since no column/table changed, only
+stored values for 8 specific rows.
 
 ### 2026-11-11 — Cleanup rotation: built an eleventh check, `check_param_arity.py` (SQL placeholder count vs. bound-value count), 0 live bugs but a real shared-infra fix shipped along the way (`ast_scope.py`'s `AnnAssign` blind spot)
 
