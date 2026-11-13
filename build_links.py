@@ -654,6 +654,23 @@ def main() -> int:
         nums, _listing = cx._expand(m.group("nums"))
         return nums
     re_any_date = re.compile(r"(\d{4})-yil\s+(\d{1,2})-([a-z]+)\w*", re.IGNORECASE)
+    # `re_amend_event`'s own `locator` group only ever captures text BEFORE the
+    # amending act's bibliographic citation ("<locator> Oʻzbekiston
+    # Respublikasi... Qonuni tahririda/toʻldirilgan" — the restated/
+    # supplemented grammar). A second, distinct source grammar puts the
+    # locator AFTER the citation instead: "...Qonuniga asosan <locator>ning
+    # oʻz kuchini yoʻqotish/chiqarilish sanasi — <date>" — used exclusively by
+    # removed/voided events (confirmed corpus-wide 2026-11-13, see
+    # DAILY_REVIEW.md: all 10 empty-locator events, every change_type, contain
+    # "asosan" and are removed/voided). `locator` ends up silently empty for
+    # this whole grammar today, even on the 3/10 that do name a real qism
+    # ("459-moddaning toʻrtinchi qismining", "852-modda birinchi qismi
+    # beshinchi xatboshisining", "1107-moddaning uchinchi qismining") — the
+    # other 7/10 genuinely have no finer locator than the bare article
+    # ("63-moddaning" alone), so those stay empty on purpose, same as today.
+    re_asosan_locator = re.compile(
+        r"asosan\s+(?P<loc>.+?)\s+(?:o\wz\s+kuchini\s+yo\wqot\w*|chiqaril\w*)\s+sanasi",
+        re.IGNORECASE | re.DOTALL)
     re_verb_map = [
         (re.compile(r"tahririda", re.IGNORECASE), "restated"),
         (re.compile(r"to\wldirilgan", re.IGNORECASE), "supplemented"),
@@ -855,6 +872,12 @@ def main() -> int:
                         break
                 ctype = classify_amend(m.group("verb") or "")
                 amend_type_counts[ctype] = amend_type_counts.get(ctype, 0) + 1
+                locator_text = (m.group("locator") or "").strip(" (")
+                if not locator_text:
+                    am = re_asosan_locator.search(c)
+                    if am and not re.fullmatch(r"\d+\s*-\s*modda(?:ning)?",
+                                                am.group("loc").strip(), re.IGNORECASE):
+                        locator_text = am.group("loc").strip()
                 amending_doc_id, method = None, "unresolved"
                 if amend_date:
                     civil_cands = [d_id for d_id, nt_d in by_date.get(amend_date, [])
@@ -895,7 +918,7 @@ def main() -> int:
                     aid += 1
                     amend_rows.append([
                         aid, doc_id, host_art, target_art, norm_id,
-                        (m.group("locator") or "").strip(" ("),
+                        locator_text,
                         ctype, amend_date, act_number, eff_date,
                         amending_doc_id, method, c,
                     ])
@@ -1034,8 +1057,13 @@ def main() -> int:
     # Reuses citation_extractor's own ordinal grammar/canon (cx.ORDINALS,
     # cx._ordinal_index) on both sides so "oltinchi qism" and "6-qism" compare
     # equal, instead of re-deriving the Uzbek ordinal list a second time.
+    # `qismi$` is the "tahririda" grammar's nominative form ("48-moddaning
+    # uchinchi qismi"); the "asosan ... sanasi" grammar (see re_asosan_locator
+    # above) produces the genitive "qismining" instead ("459-moddaning
+    # toʻrtinchi qismining") — same locator, different sentence case, so
+    # accepted as an alternate ending rather than normalized at storage time.
     re_qism_locator = re.compile(
-        r"^(?P<art>\d+)-moddaning\s+(?P<ord>" + "|".join(cx.ORDINALS) + r")\s+qismi$",
+        r"^(?P<art>\d+)-moddaning\s+(?P<ord>" + "|".join(cx.ORDINALS) + r")\s+qismi(?:ning)?$",
         re.IGNORECASE)
     re_qism_unit = re.compile(r"^(\d+)\s*-?\s*(?:qism|band)$|^(.+?)\s+(?:qism|band)$",
                                re.IGNORECASE)

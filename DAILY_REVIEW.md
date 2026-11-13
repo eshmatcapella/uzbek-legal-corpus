@@ -87,84 +87,83 @@ paragraph here.
   single-occurrence scope has changed; re-verify each before touching it,
   same discipline as every prior fix on this list.
 
-- **Data currency rotation — current state: `has_removed_or_voided_part`'s
-  own standing scope question (below) is CLOSED — not by widening it to
-  `restated`, but by fixing a real chronology bug the question's own
-  framing exposed: `bool_or(change_type IN ('removed','voided'))` ignored
-  WHEN each event happened, so a qism that was voided and later restated
-  with new text still showed ⚠️ forever. 2/31 removed/voided events are
-  exactly this (Articles 210 and 212); both flags, and the 2026-10-28
-  `v_qism_void_citation` feature's headline 8-citation count for Article
-  212, are corrected (see Log). Last touched 2026-11-10.** Measured the
-  question literally first: is a blanket `restated` -> `has_removed_or_
-  voided_part=TRUE` extension right? No — 381/442 amended articles have
-  `restated` as their ONLY ever change (law evolving normally), so the
-  extension would fire on 86% of all amended articles and mislabel every
-  one of them "removed/voided" when the text is actually current; a
-  permutation test on the alternative "citing act predates the target's
-  restatement" framing came back statistically real (93.7% vs. a 1000-trial
-  shuffle-null mean of 89.4%, real rate exceeds 999/1000 shuffles) but
-  practically useless as a UI signal — it fires on nearly every qism
-  citation into a restated article regardless of whether anything the
-  citing act relies on actually changed, the same "real but not
-  actionable" shape as 2026-10-17's snapshot-age threshold. Decided NOT to
-  ship either. Kept digging anyway rather than stopping at a clean "no":
-  found that `restated` locators ARE qism-specific 71% of the time
-  (380/534, parsed by the exact same `re_qism_locator` regex
-  `qism_void_citation` already uses for removed/voided — e.g. "48-moddaning
-  uchinchi qismi ... tahririda"), which raised the real question — does any
-  qism currently flagged removed/voided actually have a LATER restated
-  event at that exact same locator, meaning it has real text today and the
-  flag is stale? Checked exhaustively, not sampled: grouped ALL 21
-  non-empty-locator removed/voided events corpus-wide by exact
-  `(doc_id, article, locator)` string (sidesteps qism-ordinal parsing risk
-  entirely) and compared each to that same key's chronologically LATEST
-  event (by `amend_date`, tie-broken by `event_id`) across every
-  `change_type`, not just removed/voided — confirmed the same 2 hits with
-  the narrower qism-regex approach too, so it's not an artifact of either
-  method. Found exactly 2: Article 210's qism 2 (voided 2020-01-14,
-  restated 2021-04-21 in the sweeping Civil-Code-wide overhaul) and Article
-  212's qism 4 (removed AND restated on the literal SAME day, 2019-03-04 —
-  two separate LexUZ footnote markers for one drafting-level "exclude old
-  text, state new text" replace, confirmed by reading the raw
-  `amendment_note` parenthetical directly from the source parquet, not
-  just the mined rows). Both are real omissions in `has_removed_or_voided_
-  part`'s `bool_or(change_type IN ('removed','voided'))` definition, which
-  only ever asked "did this EVER happen", never "is it still true" — fixed
-  by adding `v_locator_amendment_status` (a shared view, reused by both
-  `has_removed_or_voided_part` and `void_qism` so the two can't drift
-  again) that resolves each locator to its true latest state via a
-  `last_value() OVER (... ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED
-  FOLLOWING)` window, with the 10/31 empty-locator (chapter/paragraph-
-  level) events deliberately left conservatively flagged since there's no
-  locator to resolve them against. Effect: `has_removed_or_voided_part`
-  flips 210 and 212 from TRUE to FALSE (29/31 other flagged articles
-  unaffected — confirmed each still shows the ⚠️ correctly, Article 173
-  spot-checked live in `app_hierarchy.py`); `v_qism_void_citation` — the
-  2026-10-28 feature built directly on this same stale data — drops from
-  8 normative citations (all 8 were the Article 212 false positive) to 0;
-  `link_edge`/`repeal_clause` row counts unchanged (9646/885, confirms this
-  is purely a downstream-view fix, not a re-extraction). Also fixed a
-  latent robustness bug the now-possible empty `void_qism` exposed:
-  `con.executemany(...)` on an empty `hits` list raised `duckdb.
-  InvalidInputException` — guarded with `if hits:`. Verified:
-  `check_sql_bindings.py` 112/112, `check_fstring_interp.py` 55/55,
-  `check_dead_views.py` 11 views/2 view-on-view edges (up from 10/1, the new
-  view correctly picked up live by the 2026-11-07 two-layer closure check),
-  `check_dead_columns.py` 15 flagged (unchanged baseline), `check_code_
-  clones.py` 5 pairs (unchanged baseline), `pyflakes` clean,
-  `verify_transfer.py` green throughout. Playwright, live: Article 212 now
-  shows no ⚠️ (just the plain "5 amendment event(s), last restated on
-  2021-04-21" line); Article 173 (a genuinely still-void qism, unaffected by
-  the fix) still correctly shows "⚠️ part of this article has been
-  removed/voided"; `app_llc.py` smoke-tested (LLC skeleton page renders, no
-  exception). **Next Data currency rotation**: this thread is closed, no
-  residual. Fall back to the standing cross-signal technique (Backlog's own
-  note) — the growing set of independently-populated currency/evidence
-  columns (`evidence_kind`, `dst_dangling`, `derived_status`,
-  `en_align_status`, `has_removed_or_voided_part`, `locator_latest_
-  change_type` now joins that set, version dates) has found something real
-  on most tries so far (see Backlog's own running count) — pick two not yet
+- **Data currency rotation — current state: fixed a real locator-extraction
+  gap in `article_amendment`'s own regex grammar for removed/voided events —
+  3/10 corpus-wide empty-locator occurrences actually name a real qism, not
+  a whole article, and were silently losing that grain. `void_qism`
+  (actually-current, qism-precise removed/voided locators) grows 7 → 9;
+  zero citation/UI impact today (all 3 live in the Second Part, doc
+  -180552, outside this project's norm_unit/struct_node modeling and both
+  apps' scope). Last touched 2026-11-13.** `article_amendment.locator` is
+  populated from `re_amend_event`'s own `locator` named group, which only
+  ever captures text appearing BEFORE the amending act's bibliographic
+  citation — the surface form the "tahririda"/restated grammar uses
+  ("48-moddaning uchinchi qismi ... tahririda"). Checked whether this holds
+  for every change_type by grouping ALL 10 corpus-wide empty-locator
+  events (any change_type) together: all 10 are removed/voided, and all 10
+  share a second, distinct grammar instead — "...Qonuniga asosan
+  <locator>ning oʻz kuchini yoʻqotish/chiqarilish sanasi" (according to Act
+  X, <locator>'s date of losing force/exclusion) — which places the
+  locator AFTER the citation, inside what `re_amend_event`'s own `verb`
+  group swallows, never captured into the `locator` column at all. Hand-read
+  all 10: 7 genuinely name only the bare article ("63-moddaning oʻz kuchini
+  yoʻqotish sanasi" — no finer unit exists, empty locator is correct); 3
+  (events 331/459, 481/852, 594/1107) do name a real qism or finer unit
+  ("459-moddaning toʻrtinchi qismining", "1107-moddaning uchinchi
+  qismining", "852-modda birinchi qismi beshinchi xatboshisining" — the
+  last naming a paragraph WITHIN a qism, a finer grain than
+  `re_qism_locator` resolves). Fixed with a narrowly-scoped fallback: a new
+  `re_asosan_locator` regex extracts the text between "asosan" and the
+  voiding/removal trigger phrase, applied only when the primary `locator`
+  group came back empty; the extracted text is discarded (locator stays
+  empty) when it's just the bare article number with no further qualifier,
+  so the 7 genuine whole-article cases are unaffected. Also widened
+  `re_qism_locator` (used by `void_qism`'s own resolution loop) to accept
+  the grammar's genitive "qismining" ending alongside the existing
+  nominative "qismi" — same locator, different sentence case ("qism birinchi"
+  possessive vs. nominal), not a new unit. Net effect, measured before
+  shipping: `article_amendment.locator` now correctly non-empty for
+  459/852/1107 (empty-locator removed/voided count 10 → 7, the true
+  whole-article residual); of the 3, exactly 2 (459, 1107) match
+  `re_qism_locator`'s qism-only shape and flow into `void_qism`, used by
+  `v_qism_void_citation` and (via the shared `v_locator_amendment_status`)
+  `has_removed_or_voided_part` — the third (852) deliberately does NOT
+  match (different word order, no "-ning" on "852-modda", and a trailing
+  paragraph qualifier `re_qism_locator` was never built to parse), so it
+  stays conservatively unresolved rather than being force-fit and
+  overclaiming "qism 1 wholly removed" when only paragraph 5 of it was.
+  Confirmed via direct diff against the pre-fix DB: all 297 General-Part
+  (`doc_id = -111189`) `article_amendment` rows are byte-for-byte unchanged
+  — the 3 fixed events all belong to the Civil Code's Second Part
+  (`doc_id = -180552`), which this project's `norm_unit`/`struct_node`
+  tables and both Streamlit apps don't model at all, so today's fix is a
+  real data-correctness improvement with zero visible effect until the
+  corpus ever extends qism-level modeling past the General Part — and zero
+  regression risk for either app today. `void_qism`'s own actually-current
+  (not-stale, per 2026-11-10's chronology fix) qism count: 7 → 9; `v_qism_
+  void_citation` link_edge hits: 0 → 0 (no live citation targets either new
+  qism, before or after). `link_edge`/`repeal_clause` row counts unchanged
+  (9647/885 — pure amendment-mining fix, no re-extraction). Verified:
+  `verify_transfer.py` green throughout; `check_sql_bindings.py` 112/112;
+  `check_fstring_interp.py` 55/55; `check_param_arity.py` 196/196 (confirmed
+  this baseline via `git stash`, unaffected by today's change);
+  `check_dead_views.py` 11/11, 2 view-on-view edges (unchanged);
+  `check_dead_columns.py` 15 flagged (unchanged baseline); `check_code_
+  clones.py` 5 pairs (unchanged baseline, `re_asosan_locator` not flagged as
+  a clone of the adjacent regexes). Both apps: grepped for `.locator`/
+  `article_amendment` usage (both only ever query `doc_id = -111189`,
+  General Part) and confirmed via the byte-for-byte diff above that neither
+  app's queries can observe any difference today; `streamlit` isn't
+  installed in this session's environment so no live Playwright check was
+  run — not needed given the proven zero-diff on the only rows either app
+  reads. **Next Data currency rotation**: this thread is closed, no
+  residual beyond the recorded single-occurrence 852 sub-qism (paragraph-
+  within-qism) grain gap, now in Backlog. Fall back to the standing
+  cross-signal technique — the growing set of independently-populated
+  currency/evidence columns (`evidence_kind`, `dst_dangling`,
+  `derived_status`, `en_align_status`, `has_removed_or_voided_part`,
+  `locator_latest_change_type`, version dates) has found something real on
+  most tries so far (see Backlog's own running count) — pick two not yet
   tried together.
 
 - **Cleanup rotation — current state: an 11th repeatable check,
@@ -882,6 +881,28 @@ paragraph here.
   real part-level citation for an article under Part II. See Log.
 
 ### Data currency
+- **`article_amendment.locator` can't express a paragraph-within-qism grain.**
+  Found 2026-11-13 while fixing the "asosan" removed/voided locator gap (see
+  Active threads/Log): event 481 (Second Part article 852, doc -180552)
+  reads "852-modda birinchi qismi beshinchi xatboshisining chiqarilish
+  sanasi" — qism 1's 5th xatboshi (paragraph/indent) was excluded, not the
+  whole of qism 1. The raw locator text is now captured and stored (today's
+  fix), but `re_qism_locator` (and `void_qism`'s whole resolution path)
+  deliberately only recognizes a bare "<N>-moddaning <ordinal> qismi(ning)"
+  shape — a paragraph-level qualifier would need a new, finer locator type
+  to resolve safely; resolving it as "qism 1" would overclaim (qism 1's
+  other four paragraphs are untouched). Measured corpus-wide: exactly 1
+  occurrence of this paragraph-within-qism grain in the whole
+  `article_amendment` table. Not fixed given the single-occurrence scope,
+  same precedent as several Extractor known_gap items on this list; left
+  conservatively unresolved (correct, not a bug) rather than force-fit.
+  If more instances ever turn up: extend `re_qism_locator` with an optional
+  trailing `\s+(?P<para>\d+|<ordinal>)\s+xatboshi(?:si)?(?:ning)?` group and
+  carry it through as a new `para_ordinal` dimension wherever `qism_ordinal`
+  is compared today (`void_qism`'s dict key, `qism_void_citation`'s
+  `link_edge.dst_qism` comparison) — `link_edge.dst_qism` itself would also
+  need a sibling `dst_xatboshi`-type column before this could ever drive a
+  citation-level match; not scoped or justified by a single occurrence.
 - **New angle worth repeating: cross-check independent currency/evidence
   signals against each other, not just against external ground truth.**
   Found 2026-10-20 (see Log): every prior Data currency rotation either
@@ -1554,6 +1575,125 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-13 — Data currency rotation: fixed a real locator-extraction gap in `article_amendment`'s removed/voided grammar (3/10 empty-locator events actually name a qism, not a whole article), `void_qism` grows 7->9, zero citation/UI impact (both affected articles live in the Second Part, outside both apps' scope)
+
+Picked the next item in rotation order (Extractor last touched 11-12, Cleanup
+11-11, Data currency 11-10 — Data currency next). Environment setup first:
+`duckdb`/`pandas` weren't installed in this fresh container (`pip install`
+landed on a different `python3` than the one actually running — had to use
+`python3 -m pip install` instead), and `articles/train-00000-of-00001.parquet`
+was still a 134-byte git-lfs pointer stub — `git lfs install && git lfs pull`
+fetched the real 163MB file. Confirmed `verify_transfer.py` green before
+touching anything (baseline: AC1-AC7 all PASS, same `review_ambiguous_key`/
+`suspect_version_drift`/`structure_missing_articles` footnotes as every prior
+session).
+
+Picked up the standing cross-signal instruction's own residual: the
+2026-11-10 entry's `has_removed_or_voided_part` chronology fix explicitly
+left "10/31 empty-locator (chapter/paragraph-level) events... conservatively
+flagged since there's no locator to resolve them against" as a stated,
+accepted limitation. Took that at face value and checked it directly rather
+than assuming it still holds: pulled all 10 empty-locator removed/voided
+events and read their `evidence` text by hand. They are NOT chapter/
+paragraph-level notes at all — every one is an article-or-finer-level
+"Qonuniga asosan <X>ning oʻz kuchini yoʻqotish/chiqarilish sanasi" (according
+to Act N, X's date of losing force/being excluded) construction, a second,
+distinct amendment-note grammar from the "<locator> Qonuni tahririda"
+(restated) one `re_amend_event`'s own `locator` named group was built to
+capture. The `locator` group only ever matches text appearing BEFORE the
+act's bibliographic citation; this grammar puts the locator AFTER it, inside
+what the same regex's `verb` group swallows whole — so it was never captured
+into the `locator` column for ANY of these 10, correct scope note stale for
+different reasons than stated. Checked each of the 10 by hand: 7 name only
+the bare article number ("63-moddaning oʻz kuchini yoʻqotish sanasi" — no
+finer unit exists in the sentence, so empty-locator is genuinely correct for
+these) and 3 (events 331/article 459, 481/article 852, 594/article 1107) DO
+name a real sub-article unit — "459-moddaning toʻrtinchi qismining" (qism 4),
+"1107-moddaning uchinchi qismining" (qism 3), and "852-modda birinchi qismi
+beshinchi xatboshisining" (qism 1, 5th xatboshi/paragraph — a finer grain
+than qism). Confirmed this is the full, exact scope corpus-wide: grouped ALL
+empty-locator events by change_type first (not just removed/voided) — all 10
+are removed/voided, and all 10 contain the literal string "asosan", so there
+is no other change_type or surface form hiding the same gap.
+
+Fixed narrowly, mirroring this project's own "additive, measured" fix style
+for amendment-note grammar (see `build_links.py`'s existing `date+cc-clause-
+match`/`date+sole-law-cc-mention` tiers for precedent): added
+`re_asosan_locator`, a regex that extracts the text between "asosan" and the
+voiding/removal trigger phrase ("oʻz kuchini yoʻqot..." / "chiqaril..."
+"... sanasi"), applied ONLY as a fallback when the primary `locator` group
+came back empty. Guarded against over-populating the 7 genuine whole-article
+cases: if the extracted text is *just* the bare article number
+("<N>-moddaning", nothing more), the fallback discards it and `locator`
+stays empty, same as before — verified this guard fires on exactly the 7
+whole-article events and not on the 3 qism-bearing ones by testing the regex
+directly against all 10 raw evidence strings before wiring it into the
+pipeline. Also widened `re_qism_locator` (the separate regex `void_qism`'s
+own resolution loop uses to turn a `locator` string into `(article, qism
+ordinal)`) to accept the grammar's genitive "...qismining" ending alongside
+the pre-existing nominative "...qismi" ending — same locator, different
+sentence case (the "tahririda" grammar is nominative: "qism X is-in-the-
+wording-of Act Y"; the "asosan" grammar is genitive: "according-to Act Y,
+qism X's exclusion-date"), not a new locator shape. Deliberately did NOT
+touch `re_qism_locator`'s overall structure to also accept the 852 case
+("852-modda birinchi qismi beshinchi xatboshisining" — missing the "-ning"
+suffix on "852-modda" itself, AND naming a paragraph-within-qism grain the
+regex was never built to parse) — forcing that one through would make
+`void_qism` claim "qism 1 of article 852 is wholly removed", which is false
+(only its 5th paragraph is); recorded as a new single-occurrence Backlog
+item instead rather than mis-resolving it for the sake of a clean 3-for-3.
+
+Measured before and after, on a full re-run of `build_links.py` (not
+`build_corpus_db.py` — this only touches amendment-note mining, no raw-text
+or structure change): empty-locator removed/voided events 10 → 7 (the
+correct whole-article residual); of the 3 newly-populated, exactly 2
+(459, 1107) match the widened `re_qism_locator` and flow into `void_qism`,
+the third (852) correctly stays unresolved (verified directly: tested the
+widened regex against all 3 new locator strings — matches 459/1107, `NO
+MATCH` on 852, exactly as designed). `void_qism`'s own count of
+actually-current (not stale, per 2026-11-10's `v_locator_amendment_status`
+chronology check) qism-precise locators: 7 → 9. `v_qism_void_citation`
+(citations into an exact removed/voided qism): 0 link_edge hits both before
+and after — checked directly why: both newly-qism-precise articles (459,
+1107) belong to `doc_id = -180552`, the Civil Code's Second/Special Part,
+which this corpus's `norm_unit`/`struct_node` tables (and therefore
+`link_edge`'s own qism-resolution, and both Streamlit apps) only ever model
+for the General Part (`doc_id = -111189`) — so there's no citation evidence
+in either direction to find yet, and no UI-visible change today. Confirmed
+the "no UI impact" claim the hard way, not just by doc_id reasoning: pulled
+every `article_amendment` row for `doc_id = -111189` from both the pre-fix
+backup DB and the post-fix DB and diffed them — 297/297 rows byte-for-byte
+identical, proving neither app's own queries (both scoped to
+`doc_id = -111189` only, confirmed by grepping `app_hierarchy.py`/
+`app_llc.py` for `article_amendment`/`.locator`) can observe any difference
+from today's change. `link_edge` (9647) and `repeal_clause` (885) row counts
+unchanged — confirms this is purely an amendment-mining precision fix, not a
+re-extraction of anything citation-related.
+
+Verified before closing: `verify_transfer.py` green (same reconciliation
+footnotes as every prior session — 2 ambiguous-key rows, 1 suspect-
+version-drift row, 9 md-only articles, all pre-existing and unrelated).
+`check_sql_bindings.py` 112/112; `check_fstring_interp.py` 55/55;
+`check_param_arity.py` 196/196 — confirmed via `git stash` that this count
+(not the "59" a 2026-11-11 note mentioned, an older/different baseline) was
+already the pre-existing total before today's edit, so today's change
+introduced zero new SQL call sites to re-check; `check_dead_views.py`
+11 views / 2 view-on-view edges (unchanged); `check_dead_columns.py` 15
+flagged (unchanged baseline set); `check_code_clones.py` 5 pairs (unchanged
+baseline — `re_asosan_locator` sits far enough from the adjacent
+`re_amend_event`/`re_qism_locator` regexes not to register as a clone).
+`streamlit` is not installed in this fresh container, so no live Playwright
+smoke test was run for either app today — not needed given the proven
+byte-identical diff on the only rows either app's own queries can reach;
+this is a documented, deliberate substitution for the live check, not a
+skipped one.
+
+Decided not to open a second thread today given the context budget already
+spent on environment setup (installing `duckdb`/`pandas` correctly, `git lfs
+pull`) and the full corpus-wide verification this fix needed to ship safely.
+See Backlog's new "paragraph-within-qism" item for the one residual this
+surfaced (single occurrence, article 852, correctly left unresolved).
 
 ### 2026-11-12 — Extractor rotation: gold batch 20 (765->805), fixed the 2026-09-04 qism/band tail-window-truncation bug for real (8 corpus-wide occurrences), and the widened-signature novel pool is now TRULY exhausted (0/0)
 
