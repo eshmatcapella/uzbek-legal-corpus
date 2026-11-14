@@ -64,6 +64,14 @@ def excerpt(text: str, around: str, pad: int = 400) -> str:
     return ("…" if i > pad else "") + text[max(0, i - pad): i + pad] + "…"
 
 
+def highlight(text: str, start: int | None, end: int | None) -> str:
+    """Bold the exact cited span within displayed evidence, when known
+    (link_edge.ev_clean_start/ev_clean_end -- see DAILY_REVIEW.md 2026-11-14)."""
+    if start is None or end is None or not (0 <= start < end <= len(text)):
+        return text
+    return text[:start] + "**" + text[start:end] + "**" + text[end:]
+
+
 # See app_hierarchy.py's own copy for the full rationale: `act.version_date`
 # (LexUZ's scrape date) is the one honest currency signal left once
 # `derived_status` is silent -- 33/43 LLC implementing acts >3y stale carry no
@@ -213,6 +221,7 @@ def page_norm() -> None:
     rows = q("""
         SELECT DISTINCT src_doc_id, src_doc_title, src_tier, doc_date, src_version_date,
                source_url, evidence_kind, confidence, evidence_clean,
+               ev_clean_start, ev_clean_end,
                src_prov_number, src_prov_title, src_prov_text, is_whole_act_blob,
                derived_status, repealed_by_title
         FROM v_llc_realization WHERE cc_article = ?
@@ -226,13 +235,13 @@ def page_norm() -> None:
     c1, c2, c3 = st.columns(3)
     c1.metric("Implementing acts", len({r[0] for r in rows}))
     c2.metric("Normative citations", sum(1 for r in rows if r[6] == "normative"))
-    c3.metric("Superseded acts", len({r[0] for r in rows if r[13] == "superseded"}))
+    c3.metric("Superseded acts", len({r[0] for r in rows if r[15] == "superseded"}))
 
     hide_dead = st.toggle("Hide superseded acts", value=True)
     only_norm = st.toggle("Only the act's own words (hide editorial pointers)", value=False)
 
     shown = [r for r in rows
-             if not (hide_dead and r[13] == "superseded")
+             if not (hide_dead and r[15] == "superseded")
              and not (only_norm and r[6] != "normative")]
     if not shown:
         st.warning("Every citation to this article was filtered out — "
@@ -243,7 +252,7 @@ def page_norm() -> None:
         st.markdown(f"### Tier {tier} — {TIER_LABEL.get(tier, '?')}")
         for r in [x for x in shown if x[2] == tier]:
             (doc_id, title, _, doc_date, version_date, url, kind, conf, ev,
-             p_no, p_title, p_text, is_blob, derived, rep_by) = r
+             cs, ce, p_no, p_title, p_text, is_blob, derived, rep_by) = r
             badge, why = KIND_BADGE.get(kind, ("", ""))
             dead = " 🔴" if derived == "superseded" else ""
             head = f"{badge} {title[:95]} · {doc_date or 'no date'}{dead}"
@@ -270,7 +279,7 @@ def page_norm() -> None:
                     st.caption("No provision text stored for this citation.")
 
                 st.markdown("**Citation as found**")
-                st.caption(f"…{ev}…")
+                st.caption(f"…{highlight(ev, cs, ce)}…")
 
 
 # ---------------------------------------------------------------------------

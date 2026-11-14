@@ -94,6 +94,89 @@ def clean_evidence(text: str) -> str:
     return re.sub(r"\s{2,}", " ", RE_APPARATUS.sub(" ", text)).strip(" .;,")
 
 
+def _sub_map(pattern: re.Pattern, repl: str, s: str) -> tuple[str, list[int]]:
+    """pattern.sub(repl, s) (repl a plain literal, no backreferences), plus
+    idx_map: idx_map[i] for i in 0..len(s) is where original index i lands in
+    the new string. An index inside a matched span maps to the start of that
+    match's own replacement -- the one convention every caller below needs,
+    since the offsets we ever remap through this (a citation's own start/end)
+    never fall inside an apparatus phrase or a whitespace run, only beside one.
+    """
+    idx_map = [0] * (len(s) + 1)
+    out: list[str] = []
+    pos = out_len = 0
+    for m in pattern.finditer(s):
+        ms, me = m.span()
+        if ms < pos:
+            continue  # defensive: overlapping match, shouldn't occur for our patterns
+        seg = s[pos:ms]
+        out.append(seg)
+        for k in range(pos, ms):
+            idx_map[k] = out_len + (k - pos)
+        out_len += len(seg)
+        out.append(repl)
+        for k in range(ms, me):
+            idx_map[k] = out_len
+        out_len += len(repl)
+        pos = me
+    seg = s[pos:]
+    out.append(seg)
+    for k in range(pos, len(s)):
+        idx_map[k] = out_len + (k - pos)
+    out_len += len(seg)
+    idx_map[len(s)] = out_len
+    return "".join(out), idx_map
+
+
+_RE_WS = re.compile(r"\s+")
+_RE_WS2 = re.compile(r"\s{2,}")
+_STRIP_CHARS = " .;,"
+
+
+def locate_clean_span(text: str, start: int, end: int, pad: int = 90
+                       ) -> tuple[str, str, int | None, int | None]:
+    """Re-derive, from the raw field `text` and a citation's own [start, end)
+    span within it, the same span's offsets inside `clean_evidence(_evidence(
+    text, start, end))` -- i.e. into the exact string both apps display --
+    by mirroring each of the two lossy transforms (pad-crop+whitespace-
+    collapse, then apparatus-stripping) step for step and carrying the
+    span's two endpoints through each one. Returns (evidence, evidence_clean,
+    clean_start, clean_end); the last two are None if the span collapses to
+    empty (e.g. it was entirely inside stripped apparatus text -- not expected
+    for a real citation span, but degrade rather than guess).
+    """
+    crop_start = max(0, start - pad)
+    crop = text[crop_start: end + pad]
+    evidence0, map_b = _sub_map(_RE_WS, " ", crop)
+    lstrip_amt = len(evidence0) - len(evidence0.lstrip())
+    evidence = evidence0.strip()
+    ev_len = len(evidence)
+
+    def to_evidence(p: int) -> int:
+        return max(0, min(ev_len, map_b[p] - lstrip_amt))
+
+    s1, e1 = to_evidence(start - crop_start), to_evidence(end - crop_start)
+
+    apparatus_stripped, map_d = _sub_map(RE_APPARATUS, " ", evidence)
+    collapsed2, map_e = _sub_map(_RE_WS2, " ", apparatus_stripped)
+    l2 = 0
+    while l2 < len(collapsed2) and collapsed2[l2] in _STRIP_CHARS:
+        l2 += 1
+    r2 = len(collapsed2)
+    while r2 > l2 and collapsed2[r2 - 1] in _STRIP_CHARS:
+        r2 -= 1
+    evidence_clean = collapsed2[l2:r2]
+    clean_len = len(evidence_clean)
+
+    def to_clean(p: int) -> int:
+        return max(0, min(clean_len, map_e[map_d[p]] - l2))
+
+    cs, ce = to_clean(s1), to_clean(e1)
+    if cs is None or ce is None or cs >= ce:
+        return evidence, evidence_clean, None, None
+    return evidence, evidence_clean, cs, ce
+
+
 def log(msg: str = "") -> None:
     print(msg, flush=True)
 
@@ -135,6 +218,8 @@ def main() -> int:
             evidence_clean     VARCHAR,   -- LexUZ apparatus stripped, for display
             ev_start           INTEGER,
             ev_end             INTEGER,
+            ev_clean_start     INTEGER,   -- same span, offset into evidence_clean
+            ev_clean_end       INTEGER,   -- (for exact-span highlighting in the UI)
             validated_by       VARCHAR,
             validated_at       TIMESTAMPTZ
         );
@@ -281,19 +366,34 @@ def main() -> int:
                     if dangling:
                         conf = min(conf, 0.88 if field == "article_text" else 0.70)
 
+                    # The evidence/evidence_clean stored below are untouched --
+                    # same two calls as always. The new clean-text span is
+                    # computed independently via locate_clean_span() and only
+                    # trusted if its own evidence_clean output matches the
+                    # stored one byte-for-byte; a mismatch (unexpected, but
+                    # cheap to guard) degrades to NULL rather than risking a
+                    # wrong highlight. See DAILY_REVIEW.md 2026-11-14.
+                    ev_clean = clean_evidence(c.evidence)
+                    _, check_clean, cs, ce = locate_clean_span(text, c.start, c.end)
+                    if check_clean != ev_clean:
+                        cs = ce = None
+
                     edge_id += 1
                     edges.append([
                         edge_id, run_id, row_id, doc_id, doc_type, src_tier, art_no,
                         stored_kind, dst_doc, dst_art, dst_norm, dst_struct, c.qism, ambiguous, dangling,
                         hrel, rel, c.anchor, c.listing, field, EVIDENCE_KIND[field],
                         f"explicit_citation_uz/{c.anchor}", round(conf, 3),
-                        c.evidence, clean_evidence(c.evidence), c.start, c.end, None, None,
+                        c.evidence, ev_clean, c.start, c.end, cs, ce, None, None,
                     ])
         if scanned % 5000 < BATCH:
             log(f"  {scanned}/{total} rows -> {len(edges)} edges")
 
+    n_clean_span = sum(1 for e in edges if e[27] is not None)
+    log(f"  ev_clean_start/end resolved for {n_clean_span}/{len(edges)} edges")
+
     con.executemany(
-        "INSERT INTO link_edge VALUES (" + ",".join("?" * 29) + ")", edges
+        "INSERT INTO link_edge VALUES (" + ",".join("?" * 31) + ")", edges
     )
     con.commit()
     log(f"\nlink_edge: {len(edges)} edges written")
@@ -355,6 +455,7 @@ def main() -> int:
             e.src_article_number, e.dst_qism,
             e.relation, e.hierarchy_rel, e.source_field, e.evidence_kind,
             e.confidence, e.evidence, e.evidence_clean,
+            e.ev_clean_start, e.ev_clean_end,
             -- the realizing norm itself, so the reader sees a rule not a pointer
             v.article_number AS src_prov_number,
             v.article_title  AS src_prov_title,

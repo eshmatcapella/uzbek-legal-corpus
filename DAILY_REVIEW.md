@@ -166,84 +166,60 @@ paragraph here.
   most tries so far (see Backlog's own running count) — pick two not yet
   tried together.
 
-- **Cleanup rotation — current state: an 11th repeatable check,
-  `check_param_arity.py`, now closes the one class of bug none of the other
-  ten (schema-name validation, dead code, dead columns/views, f-string
-  safety, cross-file clones) could see — a `?` placeholder count that
-  doesn't match the number of values actually bound at that call site.
-  59/59 parameterized call sites in the codebase resolve and check clean
-  (0 live bugs), and building it surfaced and fixed a real blind spot in
-  the shared `ast_scope.py` module two existing checks also depend on.
-  Last touched 2026-11-11.** Re-ran the ten existing checks as a baseline
-  first — all clean/unchanged (`pyflakes`/`vulture` clean; `bandit` 57
-  `B608`/3 `B311`/1 `B110`, same as 2026-11-07; `check_sql_bindings.py`
-  112/112; `check_fstring_interp.py` 55/55; `check_code_clones.py` 5 pairs,
-  same set; `check_dead_columns.py` 15 flagged, same set; `check_dead_views.py`
-  11/11 live, 2 view-on-view edges). Then asked what none of the ten
-  actually validate: `check_sql_bindings.py` proves every table/column name
-  in a query resolves via `PREPARE`, but deliberately never calls `EXECUTE`
-  with real values — confirmed directly that `PREPARE` alone does NOT catch
-  an arity mismatch (`PREPARE t AS SELECT ... WHERE a=? AND b=?` then
-  `EXECUTE t(1)` raises "Values were not provided for parameter 2" — an
-  error only `EXECUTE`, never `PREPARE`, produces), so a `con.executemany()`
-  row one element short of its own `INSERT`'s column list, or a Streamlit
-  page's `q(sql, params)` call with the wrong number of bound values, is
-  invisible to every existing check until that exact unexercised code path
-  actually runs — the same shape `check_sql_bindings.py`/
-  `check_fstring_interp.py` were each built to close one level up. Built
-  `check_param_arity.py`: AST-resolves every `q()`/`qdf()`/`execute()`/
-  `executemany()` call's SQL text (reusing and extending `check_sql_bindings.py`'s
-  literal-string resolver with `str*int` and `str.join()` support, needed
-  for the 4 real call sites — `link_edge`/29, `article_amendment`/13,
-  `llc_norm`/11, `repeal_clause`/10 placeholders — that build their column
-  list via `",".join("?" * n)` rather than typing it out) and counts `?`
-  outside quoted SQL string literals; separately resolves the bound
-  row/params shape by *structure only* (element count, never values) —
-  direct list/tuple literals, a `ListComp`'s `elt` shape, or an
-  empty-list-then-`.append(<literal tuple>)` accumulator pattern, the same
-  conservative "any unresolvable branch = skip, never guess" precedent
-  every AST-based check here follows. Unscoped deliberately wider than
-  `check_sql_bindings.py`: placeholder-count checking needs no live DB
-  connection and has nothing to do with `CREATE TABLE`/temp-table ordering,
-  so it covers all 23 `*.py` files, including the `build_*.py` pipeline
-  scripts `check_sql_bindings.py` excludes on schema grounds. First pass:
-  52/59 call sites with >=1 placeholder resolved clean, 7 unresolved — all
-  seven were `name: list[list] = []` (annotated) accumulators in
-  `build_corpus_db.py`/`build_links.py`/`build_llc.py`
-  (`assignments`/`updates`/`report`/`edges`/`clauses`/`amend_rows`/`rows`).
-  Root cause: `ast_scope.py::assigns_by_name()` — shared by this check AND
-  `check_sql_bindings.py`/`check_fstring_interp.py` — only ever matched
-  plain `ast.Assign`, never `ast.AnnAssign` (a distinct AST node, one bare
-  `.target` not a `.targets` list), so every type-annotated initializer
-  resolved as "no assignment found" rather than "resolves to an empty
-  list", silently treating a real, later-populated accumulator the same as
-  an unassigned name. Fixed in the shared module (not a local workaround)
-  since the other two checks import the same helper and would hit the
-  identical gap the moment their own scope grew one; confirmed zero
-  regression (`check_sql_bindings.py` still 112/112, `check_fstring_interp.py`
-  still 55/55, byte-identical results) and `check_param_arity.py` now
-  resolves all 59/59, still 0 mismatches. Proved the check with two mutation
-  tests in scratch copies: dropped one element from `build_okoz.py`'s
-  `okoz_node` listcomp row (6 placeholders, 5-element row) — caught,
-  correct line/diagnosis; dropped one element from `build_links.py`'s
-  `edges.append([...])` row (the 29-placeholder `",".join("?"*29)` site) —
-  caught too, proving the `str.join()` placeholder-count resolution and the
-  `.append()`-row-shape tracer work together, not just separately.
-  `verify_transfer.py` green throughout (`corpus.duckdb` untouched — pure
-  maintainer-tooling change); `check_code_clones.py` re-run after adding the
-  new file: still the same 5 pairs, `check_param_arity.py` itself not
-  flagged as a clone of `check_sql_bindings.py` despite the shared lineage
-  of its string resolver (extended enough — `Mult`/`join` support, the
-  separate arity-tracing half — to fall under the 0.55 similarity floor).
-  Both apps untouched and unreferenced by either touched file; no
-  Playwright re-check needed (no schema/table/column change). **Next
-  Cleanup rotation**: re-run all eleven as a baseline; no open residual
-  from this thread. The one deliberately-out-of-scope case: `check_param_arity.py`
-  only resolves `.append()` calls whose own argument is a literal-shaped
-  tuple/list — a row built by a helper function call or concatenated from
-  two partial tuples would stay unresolved (skipped, not flagged), same
-  single-occurrence-style precedent as this project's other static checks;
-  zero call sites in the codebase hit that shape today.
+- **Cleanup rotation — current state: shipped the evidence-span
+  highlighting feature `check_dead_columns.py` had flagged as "real future
+  potential" back on 2026-10-22 — `link_edge.ev_clean_start`/`ev_clean_end`
+  re-derive a citation's own character span through both of the apps'
+  lossy display transforms (pad-crop+whitespace-collapse, then LexUZ-
+  apparatus-stripping), landing it in `evidence_clean`'s own coordinates so
+  both apps can bold the exact cited phrase. 9647/9647 edges resolved (0
+  unresolved), zero regression on every pre-existing `link_edge` column
+  (byte-identical before/after), live-verified in both running apps via
+  Playwright screenshots. All eleven existing Cleanup checks + `verify_
+  transfer.py` re-run clean/unchanged first, as always. Last touched
+  2026-11-14.** This was an *invented* angle, not a Backlog pickup in the
+  literal sense (no bullet said "do this next") — Backlog's `check_dead_
+  columns.py` entry had explicitly scoped the offset-remapping fix as
+  "real but nontrivial, not attempted" rather than queuing it, and
+  Extractor/Data currency's own rotations don't touch this surface either.
+  Picked it because it was the one piece of real, concrete, user-visible
+  product surface sitting unbuilt in this project's own notes, rather than
+  inventing an unrelated twelfth check with no comparable payoff. Built
+  `locate_clean_span()` in `build_links.py`: a small generic regex-
+  substitution offset-mapper (`_sub_map()`) applied three times (the pad-
+  crop's whitespace collapse, the apparatus strip, the apparatus strip's
+  own whitespace collapse), composed through the two `.strip()`/
+  `.strip(charset)` calls on each side. Safety design: the existing
+  `evidence`/`evidence_clean` columns are computed exactly as before (same
+  two function calls, unchanged) and the new span is only trusted when
+  `locate_clean_span()`'s own `evidence_clean` output matches that stored
+  value byte-for-byte — any mismatch degrades to `NULL` (an un-highlighted
+  caption) rather than risking a wrong bold-face; measured 0 mismatches
+  across all 9647 edges. Added a permanent `verify_transfer.py` AC7 check
+  (every resolved span is a valid, non-empty, in-range slice of
+  `evidence_clean`) so a future regression here fails the build, not just
+  today's manual spot-check. Wired into `v_realization` (`build_links.py`)
+  and `v_llc_realization` (`build_llc.py`); `app_hierarchy.py`/`app_llc.py`
+  each got an identical small `highlight()` helper (bold via markdown,
+  degrades to plain text when the span is `None`) — duplicated across the
+  two files rather than extracted into a shared module, same deliberate
+  precedent as `excerpt()`/`snapshot_age_note()` (each app is meant to
+  stay a single deployable Streamlit file); `check_code_clones.py` flags
+  the new pair as expected, not a defect. Spent real effort getting a
+  genuine live-app check rather than settling for a SQL-level one: found
+  and fixed an environment issue first (`pip` and `python3` resolved to
+  different interpreters in this container, so installed packages
+  silently vanished from `python3`'s view — fixed by always using
+  `python3 -m pip install`), then drove both running apps with Node's
+  pre-installed Playwright and screenshotted real "cited as"/"Citation as
+  found" captions showing the correct phrase bolded, apparatus text
+  correctly excluded. **Next Cleanup rotation**: re-run all eleven checks
+  as a baseline per usual; no open residual from this thread. The `llc_
+  implementing_act` summary table's own `max(e.evidence_clean)` aggregate
+  (one representative snippet per implementing-act group, `build_llc.py`)
+  was deliberately left unwired to the new columns — it has no single
+  `edge_id` to key an aggregate offset off, and it already doesn't do
+  per-citation display; not a gap, a different kind of table.
 
 ---
 
@@ -1532,14 +1508,19 @@ paragraph here.
   siblings `en_align_status`/`en_align_note` *are* surfaced (`app_hierarchy.py`'s
   review page, `verify_transfer.py`), so this looks like a deliberate partial
   surfacing rather than an oversight, just never finished. The two with real
-  future potential are `link_edge.ev_start`/`ev_end` (9634/9634, genuine
+  future potential were `link_edge.ev_start`/`ev_end` (9634/9634, genuine
   character offsets into the citation's position within its row) — not
   usable as stored (they're relative to the raw, pre-cleanup row text; the
   apps display `evidence_clean`, which has gone through two lossy
   transforms since — pad-crop+whitespace-collapse, then LexUZ-apparatus
   stripping — so highlighting the exact cited span in the UI would need
   re-deriving the offsets through both transforms, a real but nontrivial
-  fix, not attempted today). Proved the checker catches a real newly-dead
+  fix, not attempted that day). ~~Picked up 2026-11-14~~ **built**:
+  `link_edge.ev_clean_start`/`ev_clean_end` re-derive that same span through
+  both transforms (9647/9647 resolved, 0 unresolved, zero regression on
+  every pre-existing column — see that date's Log entry), and both apps now
+  bold the exact cited phrase inside "cited as"/"Citation as found" using
+  them. Proved the checker catches a real newly-dead
   column with a mutation test (removed the sole read-site of
   `link_edge.src_article_number`, confirmed it was flagged immediately,
   reverted). See Log for the full trace. Now a ninth repeatable Cleanup
@@ -1575,6 +1556,145 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-14 — Cleanup rotation: built evidence-span highlighting — `link_edge.ev_clean_start`/`ev_clean_end` re-derive the cited span through both of the apps' lossy display transforms, both Streamlit apps now bold the exact cited phrase, live-verified with Playwright screenshots
+
+Rotation order: Cleanup was last touched 2026-11-11 (Extractor 11-12, Data
+currency 11-13), so Cleanup was next. Re-ran the full existing baseline
+first, unchanged: `pyflakes`/`vulture` clean; `bandit` 57 `B608`/3 `B311`/1
+`B110` (61 total, matches `bandit -f json` test-id counts exactly);
+`check_sql_bindings.py` 112/112; `check_fstring_interp.py` 55/55;
+`check_code_clones.py` 5 pairs, same set; `check_dead_columns.py` 15
+flagged, same set; `check_dead_views.py` 11/11; `check_param_arity.py`
+196/196. `verify_transfer.py` green (same reconciliation residuals as
+every recent day — db_only art 168, md_only 63/65/66/70/71/72/176/177/179,
+the Article 26¹/261 ambiguous-key pair, the known EN/UZ version-drift
+note).
+
+Rather than draw a 12th static check with no clear payoff, picked up the
+one piece of real product surface this project's own notes had already
+scoped and left unbuilt: `check_dead_columns.py`'s 2026-10-22 docstring
+(and the matching Backlog entry) named `link_edge.ev_start`/`ev_end` as
+"the two columns with real future potential" — genuine character offsets
+into each citation's position within its row, captured on every edge
+since the extractor's first version, but useless as stored because both
+apps display `evidence_clean`, which has been through two lossy
+transforms since those offsets were computed: `_evidence()`'s pad-crop +
+whitespace-collapse (`citation_extractor.py`), then `clean_evidence()`'s
+LexUZ-apparatus-stripping + a second whitespace-collapse (`build_links.py`).
+Scoped then as "a real but nontrivial fix, not attempted" rather than
+queued as next-up — today's rotation did it.
+
+**The fix.** Added `locate_clean_span()` to `build_links.py`: a small
+generic regex-substitution offset-mapper, `_sub_map(pattern, repl, s)`,
+that applies `pattern.sub(repl, s)` once and returns both the new string
+and an index map from every original position to its position in the
+output (a position inside a matched span maps to the start of its own
+replacement — the one convention every caller needs, since the offsets
+ever threaded through this are a citation's own start/end, which by
+construction never land inside an apparatus phrase or a whitespace run,
+only beside one). Composed three times — the pad-crop's whitespace
+collapse, the apparatus strip, the apparatus strip's own whitespace
+collapse — chained through the two `.strip()`/`.strip(" .;,")` calls on
+each side (tracked as a simple left/right trim-and-clamp, since neither
+`str.strip()` variant is a regex substitution). Verified against four
+synthetic cases by hand first (a plain list, an apparatus-phrase-prefixed
+single citation, a long-pad crop, and a multi-separator list) before
+touching the real pipeline — each case's `locate_clean_span()` output was
+checked byte-for-byte against the *real* `citation_extractor._evidence()`
++ `build_links.clean_evidence()` pipeline, and each recovered span sliced
+back to exactly the original cited text.
+
+**Safety design, not just a hope.** The existing `evidence`/
+`evidence_clean` columns are computed with the exact same two calls as
+before (`c.evidence`, `clean_evidence(c.evidence)`) — completely
+unchanged. The new span is computed independently via
+`locate_clean_span()` and is only trusted when *that* function's own
+`evidence_clean` output matches the production value byte-for-byte; any
+mismatch (not expected, but cheap to guard against) silently degrades
+`ev_clean_start`/`ev_clean_end` to `NULL` rather than ever risking a
+wrong highlight. Re-ran `build_links.py`: 9647/9647 edges got a resolved,
+non-degenerate span — 0 mismatches, 0 `NULL`s. Diffed every pre-existing
+`link_edge` column (`evidence`, `evidence_clean`, `ev_start`, `ev_end`,
+and everything else) between the pre- and post-change database directly:
+byte-for-byte identical, confirming the new columns are purely additive.
+Hand-sampled 12 random resolved spans across both `normative` and
+`editorial` evidence_kind rows and read every one: each correctly wraps
+just the cited clause ("202, 203 va 204-moddalari", "9-bobida",
+"Fuqarolik kodeksi" for an act-level citation) and correctly *excludes*
+LexUZ apparatus phrases from the span even when they sit directly
+adjacent ("Oldingi tahrirga qarang. Fuqarolik kodeksining 264 — 289-
+moddalari" → only "264 — 289-moddalari" highighted).
+
+**Wired end to end.** `link_edge` gained two `INTEGER` columns
+(`ev_clean_start`, `ev_clean_end`) right after `ev_end`; the `edges.append()`
+row grew from 29 to 31 elements and the `INSERT`'s own `"?" * 29` grew to
+31 to match (caught by nothing going wrong, but also re-confirmed clean
+by `check_param_arity.py`'s re-run above). `v_realization` (`build_links.py`)
+and `v_llc_realization` (`build_llc.py`) both now select the two new
+columns through; re-ran `build_llc.py` after `build_links.py` since its
+view depends on the updated one. `app_hierarchy.py` and `app_llc.py` each
+got an identical small `highlight(text, start, end)` helper (returns
+`text` unchanged if the span is `None`/out-of-range, else wraps it in
+markdown `**bold**`) placed beside each file's existing `excerpt()` —
+duplicated rather than extracted into a shared module, same deliberate,
+already-established precedent as `excerpt()`/`snapshot_age_note()` being
+identical-but-undeduplicated across the two apps (each Streamlit app is
+meant to stay a single deployable file); `check_code_clones.py`'s re-run
+flags the new `highlight()`/`highlight()` pair exactly as expected, 6
+pairs total now, not a defect. Both apps' "cited as:"/"Citation as found"
+captions now call `highlight(ev, cs, ce)` instead of showing `ev` bare;
+`app_llc.py`'s tuple-unpacking and two positional filters (`r[6]`,
+`r[15]` — shifted from `r[13]` by the two new columns inserted before
+`src_prov_number`) were updated to match the new column order.
+
+**Added a permanent regression check, not just today's manual proof.**
+`verify_transfer.py`'s AC7 gained: every non-`NULL` `ev_clean_start`/
+`ev_clean_end` pair must be a valid, non-empty, in-range slice of its own
+row's `evidence_clean` (`0 <= start < end <= length(evidence_clean)`) —
+a build-time regression here now fails the pipeline instead of silently
+mis-highlighting. Re-ran `verify_transfer.py`: new check `[PASS]`,
+everything else unchanged, `VERIFICATION PASSED`.
+
+**Live-verified in both running apps, not just via SQL.** Hit and fixed a
+real environment issue first: `pip` and `python3` were resolving to
+different Python installations in this container (`pip install X`
+reported success but `python3 -c "import X"` kept failing — traced to
+`pip`'s own dependency-resolution output naming `python3.13`/`python3.11`
+site-packages inconsistently across runs), fixed by always invoking
+`python3 -m pip install` so pip targets the same interpreter `python3`
+actually runs. Installed `streamlit`, launched both `app_hierarchy.py`
+and `app_llc.py` headless, and drove each with Node's pre-installed
+Playwright (this environment ships the JS Playwright, not a Python one)
+to a page showing a real citation. Screenshotted both: `app_hierarchy.py`
+showed "cited as: …ik yurituvchi subyektning mansabdor shaxsi
+O'zbekiston Respublikasi Fuqarolik kodeksining **45 va 48-moddalariga**
+muvofiq…" (article 48's own page, correctly bolding both cited article
+numbers); `app_llc.py` showed "Citation as found: …O'zbekiston
+Respublikasi Fuqarolik kodeksining **39-moddasi**. O'zbekiston
+Respublikasi Fuqarolik kodeksi…" and a second row correctly excluding a
+"LexUZ sharhi"/"Qo'shimcha ma'lumot uchun" apparatus prefix from the
+bolded span. Both apps' full static check (grep for `link_edge`/
+`evidence_clean`/`ev_clean_start`/`ev_clean_end` across both files) also
+confirms no other reference needed updating.
+
+Also updated `check_dead_columns.py`'s own 2026-10-22 docstring note to
+stop describing this as unbuilt, and clarified that `ev_start`/`ev_end`
+themselves correctly remain on the flagged-dead list (the new columns
+are derived from the in-memory `Citation.start`/`.end` at build time, not
+by reading the `ev_start`/`ev_end` *columns* back — the grep-based checker
+is right to still call them write-only; they're deliberately kept anyway,
+as real provenance, same precedent as `repeal_clause.clause_id`/`item_no`).
+
+**What changed**: `build_links.py` (`locate_clean_span()`/`_sub_map()`,
+new `link_edge` columns, `v_realization` column addition),
+`build_llc.py` (`v_llc_realization` column addition), `app_hierarchy.py`/
+`app_llc.py` (`highlight()` helper, query/unpacking updates, caption
+rendering), `verify_transfer.py` (new AC7 check), `check_dead_columns.py`
+(docstring only), `corpus.duckdb` (two new `link_edge` columns + two
+views recreated; every pre-existing column/row byte-for-byte unchanged,
+confirmed by direct diff), `DAILY_REVIEW.md` (this entry, Active threads,
+Backlog).
 
 ### 2026-11-13 — Data currency rotation: fixed a real locator-extraction gap in `article_amendment`'s removed/voided grammar (3/10 empty-locator events actually name a qism, not a whole article), `void_qism` grows 7->9, zero citation/UI impact (both affected articles live in the Second Part, outside both apps' scope)
 

@@ -67,6 +67,14 @@ def excerpt(text: str, around: str, pad: int = 400) -> str:
     return ("…" if i > pad else "") + text[max(0, i - pad): i + pad] + "…"
 
 
+def highlight(text: str, start: int | None, end: int | None) -> str:
+    """Bold the exact cited span within displayed evidence, when known
+    (link_edge.ev_clean_start/ev_clean_end -- see DAILY_REVIEW.md 2026-11-14)."""
+    if start is None or end is None or not (0 <= start < end <= len(text)):
+        return text
+    return text[:start] + "**" + text[start:end] + "**" + text[end:]
+
+
 # `act.version_date` is LexUZ's own per-act scrape date -- carried since the
 # first build but, until the 2026-10-11 Data currency measurement, never read
 # by either app. `status` can't substitute (it's 'in-force' for all 24,267
@@ -346,9 +354,10 @@ def page_article() -> None:
                     st.caption(note)
                 if url:
                     st.caption(f"[source]({url})  ·  {REL_LABEL.get(rel, rel)}")
-                for (ev, qism, conf, kind, amb, p_no, p_title,
+                for (ev, cs, ce, qism, conf, kind, amb, p_no, p_title,
                      p_text, p_blob) in q("""
-                    SELECT evidence_clean, dst_qism, confidence, evidence_kind,
+                    SELECT evidence_clean, ev_clean_start, ev_clean_end, dst_qism,
+                           confidence, evidence_kind,
                            dst_ambiguous, src_prov_number, src_prov_title,
                            src_prov_text, src_prov_is_blob
                     FROM v_realization
@@ -368,7 +377,7 @@ def page_article() -> None:
                                  else "Implementing provision (excerpt)")
                         with st.expander(label):
                             st.write(p_text if not p_blob else excerpt(p_text, ev))
-                    st.caption(f"cited as: …{ev}…")
+                    st.caption(f"cited as: …{highlight(ev, cs, ce)}…")
 
     # citations that pin the chapter/section rather than the article
     chain = q("""

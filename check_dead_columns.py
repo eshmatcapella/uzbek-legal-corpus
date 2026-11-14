@@ -41,11 +41,22 @@ Every flagged column as of 2026-10-22 was hand-verified against
 corpus.duckdb directly (non-null population rate + sample values) before
 being recorded -- see DAILY_REVIEW.md for the full trace. All 15 are real,
 populated, write-only columns; none is a live bug today (nothing downstream
-is silently wrong), but they are real unused surface -- two inventoried in
-Backlog as a possible future pickup (link_edge.ev_start/ev_end -- genuine
-character offsets that could drive an evidence-highlighting feature, but
-unusable as stored since they're relative to raw row text, not the
-whitespace-collapsed/apparatus-stripped text the apps actually display).
+is silently wrong), but they are real unused surface.
+
+link_edge.ev_start/ev_end stay on this list as of 2026-11-14 -- still
+genuinely write-only in Python-source terms (nothing SELECTs the DB columns
+back; the offset arithmetic that consumes them at build time operates on
+the in-memory Citation.start/end, a same-named but distinct symbol this
+grep-based check can't and shouldn't conflate with a SQL column read) --
+but they are no longer *purely* dead surface: 2026-11-14's rotation added
+link_edge.ev_clean_start/ev_clean_end, the same span re-derived through
+both of the apps' own lossy display transforms (whitespace-collapse, then
+apparatus-stripping) into evidence_clean's own coordinates, and wired both
+apps to bold the exact cited span using them -- see DAILY_REVIEW.md. Those
+two new columns are genuinely read (both apps' SELECTs, both realization
+views) and do not appear on this list; ev_start/ev_end remain exactly what
+they were -- a real, intentionally-kept provenance pair (the offsets the
+new columns are themselves derived from at build time), not a dead end.
 """
 from __future__ import annotations
 

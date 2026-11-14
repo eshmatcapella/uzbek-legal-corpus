@@ -274,6 +274,7 @@ def main() -> int:
             e.src_doc_id, a.doc_title AS src_doc_title, e.src_tier, a.doc_date,
             a.version_date AS src_version_date,
             a.source_url, e.evidence_kind, e.confidence, e.evidence_clean,
+            e.ev_clean_start, e.ev_clean_end,
             p.article_number AS src_prov_number, p.article_title AS src_prov_title,
             p.article_text   AS src_prov_text, p.is_whole_act_blob,
             c.derived_status, c.repealed_by_title, e.edge_id

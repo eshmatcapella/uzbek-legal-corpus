@@ -404,6 +404,27 @@ def main() -> int:
                      OR evidence_clean ILIKE '%LexUZ sharhi%'
               """).fetchone()[0] == 0,
               "displayed evidence is free of LexUZ editorial apparatus")
+        # ev_clean_start/ev_clean_end (2026-11-14) locate the cited span inside
+        # evidence_clean for UI highlighting, re-derived from ev_start/ev_end
+        # through both of evidence_clean's own lossy transforms. A bad span
+        # would silently mis-highlight rather than crash, so this is the only
+        # thing standing between a build-time regression and a quietly wrong
+        # bold-face in both apps.
+        bad_span, unresolved = con.execute("""
+            SELECT count(*) FILTER (WHERE ev_clean_start IS NOT NULL AND NOT (
+                       ev_clean_start >= 0 AND ev_clean_start < ev_clean_end
+                       AND ev_clean_end <= length(evidence_clean))),
+                   count(*) FILTER (WHERE ev_clean_start IS NULL)
+            FROM link_edge
+        """).fetchone()
+        check(bad_span == 0,
+              "every resolved citation-highlight span is a valid, non-empty "
+              "range into evidence_clean",
+              f"{bad_span} out-of-range span(s)" if bad_span else "")
+        if unresolved:
+            log(f"  [INFO] {unresolved} link_edge row(s) have no highlight span "
+                "(evidence/evidence_clean cross-check didn't match; degrades to "
+                "an un-highlighted caption rather than guessing)")
         prov_missing = con.execute("""
             SELECT count(*) FROM link_edge e
             LEFT JOIN src_provision p ON p.row_id = e.src_row_id
