@@ -4151,8 +4151,8 @@
           "qism": null
         }
       ],
-      "verdict": "known_gap",
-      "notes": "2026-09-25: Roman-numeral chapter citations never get the paragraf/section lookahead the Arabic-numeral 'bob' branch has -- 'Fuqarolik kodeksi IV bobining 2 paragrafi' should produce target_kind=section (struct 4, section 2) the same way '37-bobining 3-paragrafi' does, but the Roman-chapter fallback branch in extract() only ever emits target_kind=chapter, silently losing the section grain -- dst_kind is a real link_edge column (same class of gap as gold_id 52's 'paragrif' misspelling), so this is recorded honestly as a miss rather than silently marked correct. Measured corpus-wide: exactly 1 occurrence (row 15441) -- same single-occurrence-scope precedent as gold_id 52 and several Backlog items, so not fixed today. See DAILY_REVIEW.md and Backlog.",
+      "verdict": "correct",
+      "notes": "2026-09-25: Roman-numeral chapter citations never got the paragraf/section lookahead the Arabic-numeral 'bob' branch has -- 'Fuqarolik kodeksi IV bobining 2 paragrafi' fell through to a bare target_kind=chapter, losing the section grain. Measured corpus-wide then: exactly 1 occurrence (this row); deferred over six weeks at that scope. FIXED 2026-11-15 (Extractor rotation, sweeping the known_gap backlog alongside gold_id 324/341/618/140): ported the same RE_SECTION_LIST/RE_SECTION_MARK lookahead the 'bob' branch already used into the Roman-chapter fallback branch, gated to a single roman numeral (no list) since no corpus occurrence pairs a roman-chapter LIST with a section lookahead. Re-measured corpus-wide before shipping: exactly this 1 row changes, zero collateral. See DAILY_REVIEW.md 2026-11-15.",
       "gold_id": 123
     },
     {
@@ -4719,8 +4719,8 @@
           "qism": null
         }
       ],
-      "verdict": "known_gap",
-      "notes": "LexUZ writes “11-12 hamda 14 moddalari” -- \"hamda\" (\"as well as\") isn't a recognized list separator in _expand's top-level split (only \",\"/\"va\" are), so the whole clause fails to match at the \"11-12\" position (no unit word immediately follows \"11-12\"; \"hamda 14\" sits between) and RE_CLAUSE only re-matches starting at the bare \"14\" that IS immediately followed by \"moddalari\" -- articles 11 and 12 are silently dropped, not just mis-grained. This is the exact case already measured and left unfixed in the 2026-09-22 gold session and DAILY_REVIEW.md's \"hamda\" backlog item (corpus-wide: 3 raw occurrences, 2 inside Fuqarolik protsessual kodeksi text already correctly excluded by RE_STOP_ABBR, exactly 1 in-scope -- this row). Not fixed again today, same single-occurrence precedent; formalized here as a permanent known_gap regression record instead of a bare backlog line."
+      "verdict": "correct",
+      "notes": "LexUZ writes “11-12 hamda 14 moddalari” -- \"hamda\" (\"as well as\") wasn't a recognized list separator in either RE_CLAUSE's own `nums` group or _expand's top-level split (only \",\"/\"va\" were), so articles 11 and 12 were silently dropped, not just mis-grained. Measured corpus-wide 2026-09-22: 3 raw occurrences, 2 inside Fuqarolik protsessual kodeksi text already excluded by RE_STOP_ABBR, exactly 1 in scope (this row). FIXED 2026-11-15 (Extractor rotation, sweeping the known_gap backlog alongside gold_id 123/324/341/618): added \"hamda\" as a third list conjunction alongside comma/va in both RE_CLAUSE's `nums` group and _expand()'s split regex. Re-measured corpus-wide before shipping: exactly this 1 row changes (articles 11 and 12 recovered, both now listing='list' alongside the already-correct 14), zero collateral. See DAILY_REVIEW.md 2026-11-15."
     },
     {
       "gold_id": 141,
@@ -15158,8 +15158,8 @@
           "qism": null
         }
       ],
-      "verdict": "known_gap",
-      "notes": "LexUZ writes this chapter+section citation as \"9-bobi § 2\" -- a \"§ N\" section-mark notation instead of the word \"paragraf\"/\"paragrafi\" that RE_CLAUSE's chapter+section lookahead (citation_extractor.py, the `sec = re.match(...)` after the bob match) requires literally. The citation resolves as a bare chapter-9 citation, losing the section-2 grain, dst_kind reads 'chapter' instead of 'section' in link_edge -- same failure class as the 2026-09-22 'paragrif' misspelling gap and the 2026-09-25 Roman-numeral-chapter lookahead gap (both also recorded as known_gap here). Measured corpus-wide 2026-10-04 (regex `bob\\w*\\s*§\\s*\\d+` over every anchor-window candidate row): exactly 2 raw occurrences, only 1 in scope -- row 35993's \"ushbu Qoidalarning XXI bobiga § 84\" is a different document's own internal Rules, not a Civil Code citation at all, never inside any Civil Code anchor window. So the real footprint is exactly 1 occurrence corpus-wide (this row). Not fixed given the single-occurrence scope, same precedent as the 'paragrif' and Roman-chapter lookahead gaps -- recorded here so it's an honest regression data point rather than silently inflating the score. If ever picked up: accept `§\\s*(\\d+)` as an alternate spelling alongside `\\d+\\s*-\\s*paragraf` in the chapter+section lookahead."
+      "verdict": "correct",
+      "notes": "LexUZ writes this chapter+section citation as \"9-bobi § 2\" -- a \"§ N\" section-mark notation instead of the word \"paragraf\". Measured corpus-wide 2026-10-04: exactly 1 occurrence in scope (row 35993's '§ 84' belongs to a different document's own internal Rules, never inside a Civil Code anchor window). Deferred at that single-occurrence scope for six weeks. FIXED 2026-11-15 (Extractor rotation, sweeping the known_gap backlog alongside gold_id 123/341/618/140): added a dedicated RE_SECTION_MARK regex (`\\s*,?\\s*§\\s*(\\d+)`), tried as a fallback only when RE_SECTION_LIST's word form doesn't match, in both the 'bob' branch and (via the gold_id 123 fix) the Roman-chapter branch. Re-measured corpus-wide before shipping: exactly this 1 row changes, zero collateral. See DAILY_REVIEW.md 2026-11-15."
     },
     {
       "gold_id": 325,
@@ -17349,8 +17349,8 @@
           "qism": null
         }
       ],
-      "verdict": "known_gap",
-      "notes": "LexUZ writes \"Fuqarolik kodeksi 22-bobining 2 paragrafi\" -- space, not hyphen, before \"paragrafi\". This is the exact row (42566) already found and left unfixed in the 2026-09-15 session (\"Chapter+paragraph's own space-separator gap\" in the Backlog) but never formalized as a gold record -- the chapter+section lookahead's own regex (`\\s*,?\\s*(\\d+)\\s*-\\s*paragraf`) requires a hyphen, so this falls back to a bare chapter-22 citation, losing the section-2 grain (same dst_kind-affecting failure class as the 'paragrif' and section-mark known_gaps). Re-confirmed corpus-wide today: still exactly 1 occurrence. Not fixed again given the single-occurrence scope -- formalized here as the permanent regression record the 2026-09-15 backlog note never got."
+      "verdict": "correct",
+      "notes": "LexUZ writes \"Fuqarolik kodeksi 22-bobining 2 paragrafi\" -- space, not hyphen, before \"paragrafi\", a gap RE_SECTION_LIST's own separator never got the space-vs-hyphen tolerance RE_CLAUSE's main unit separator already had since 2026-09-15. Re-confirmed corpus-wide 2026-11-15 (just before fixing): still exactly 1 occurrence. FIXED 2026-11-15 (Extractor rotation, sweeping the known_gap backlog alongside gold_id 123/324/618/140): RE_SECTION_LIST's separator changed from `\\s*-\\s*paragr[ai]f` to `(?:\\s*-\\s*|\\s+)paragr[ai]f`, same hyphen-or-space tolerance as RE_CLAUSE. Re-measured corpus-wide before shipping: exactly this 1 row changes (both its own two occurrences of the shape, same row), zero collateral. See DAILY_REVIEW.md 2026-11-15."
     },
     {
       "gold_id": 342,
@@ -31173,8 +31173,8 @@
           "qism": null
         }
       ],
-      "verdict": "known_gap",
-      "notes": "New finding, 2026-10-30: \"Fuqarolik kodeksining 40-boʻlimi (“Transport ekspeditsiyasi”)\" uses the word \"boʻlim\" to mean chapter 40 (confirmed via struct_node: C40 = 'Freight Forwarding' = Transport ekspeditsiyasi), not the roman-numeral structural Part RE_ROMAN_PART already handles -- a digit-form \"boʻlim\" terminology collision this extractor has no branch for. Measured corpus-wide: exactly 1 occurrence. Not fixed given the single-occurrence scope, same precedent as several other single-occurrence known_gap records on this list."
+      "verdict": "correct",
+      "notes": "New finding, 2026-10-30: \"Fuqarolik kodeksining 40-boʻlimi (“Transport ekspeditsiyasi”)\" uses the word \"boʻlim\" to mean chapter 40 (confirmed via struct_node: C40 = 'Freight Forwarding' = Transport ekspeditsiyasi), not the roman-numeral structural Part RE_ROMAN_PART already handles. Measured corpus-wide then: exactly 1 occurrence. FIXED 2026-11-15 (Extractor rotation, sweeping the known_gap backlog alongside gold_id 123/324/341/140): added RE_ARABIC_BOLIM (`(?<!\\d)(?P<num>\\d+)(?:\\s*-\\s*|\\s+)bo[ʻʼ']?lim\\w*`), scanned independently like RE_ROMAN_PART, resolving to target_kind='chapter' (never 'part' -- the Code's 6 real Parts are only ever written with a roman numeral in this corpus). Re-measured against every real anchor window corpus-wide (not a blind text-wide grep -- 'boʻlim' is an ordinary word outside citation context) before shipping: exactly this 1 row changes, zero collateral. See DAILY_REVIEW.md 2026-11-15."
     },
     {
       "gold_id": 619,

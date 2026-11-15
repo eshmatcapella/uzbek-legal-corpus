@@ -137,8 +137,20 @@ RE_ANCHOR_SELF = re.compile(r"(?:ushbu|shu|mazkur)\s+Kodeks[^\W0-9]*", re.IGNORE
 # before splitting on comma/va, since a title can contain the literal word
 # "va" ("Majburiyat tushunchasi va taraflari") which would otherwise be
 # misread as a second list separator.
+#
+# "hamda" ("as well as") is accepted as a third list conjunction alongside
+# comma/va: found 2026-09-15 (row 24219, "11-12 hamda 14-moddalari"), measured
+# at exactly 1 genuine in-scope occurrence corpus-wide (2 more raw matches
+# are inside Fuqarolik protsessual kodeksi text, already excluded by
+# RE_STOP_ABBR before the anchor ever fires), recorded as known_gap gold_id
+# 140 and deferred at that single-occurrence scope for two months. Swept
+# 2026-11-15 alongside the other known_gap items: "hamda" only ever sits
+# between two numbers inside an already-anchored `nums` clause (same as "va"
+# above), so this can't collide with the word's far more common standalone
+# use elsewhere in the corpus (e.g. plain "...hamda shuningdek..." prose,
+# nowhere near a digit).
 RE_CLAUSE = re.compile(
-    r"(?P<nums>\d+(?:\s*\([^()]{0,100}\))?(?:\s*(?:,|va|[-–—]+)\s*\d+(?:\s*\([^()]{0,100}\))?)*)"
+    r"(?P<nums>\d+(?:\s*\([^()]{0,100}\))?(?:\s*(?:,|va|hamda|[-–—]+)\s*\d+(?:\s*\([^()]{0,100}\))?)*)"
     r"(?:\s*[-–—]\s*|\s+)(?P<unit>modda|bob|paragraf)(?P<suffix>\w*)",
     re.IGNORECASE,
 )
@@ -260,6 +272,23 @@ RE_ROMAN_CHAPTER = re.compile(
 RE_ROMAN_PART = re.compile(
     r"(?<![A-Za-z])(?P<r1>[IVXL]{1,6})(?:\s*-\s*|\s+)bo[ʻʼ']?lim\w*", re.IGNORECASE
 )
+# An Arabic-DIGIT "boʻlim" is a different unit from the roman-numeral Part
+# above: the Code's own 6 structural Parts (PI..PVI) are only ever written
+# with a roman numeral in this corpus (see RE_ROMAN_PART's own comment), so a
+# bare digit before "boʻlim" can't be naming one of them -- it's LexUZ using
+# "boʻlim" as a loose synonym for "bob" (chapter) instead. Found 2026-10-30
+# (gold_id 618, row 32903): "Fuqarolik kodeksining 40-boʻlimi ("Transport
+# ekspeditsiyasi")" names Chapter 40 (confirmed via struct_node: C40 =
+# "Transport ekspeditsiyasi"), not a 40th Part (the Code has only 6).
+# Deferred over two weeks at its then-measured single-occurrence scope, swept
+# 2026-11-15 alongside the other known_gap items: re-measured against every
+# real Civil-Code/FK/self-reference anchor window corpus-wide (not a blind
+# text-wide regex grep -- "boʻlim" is an ordinary word, "department/unit",
+# that appears far more often outside any citation context) and confirmed
+# the in-window footprint is still exactly 1 occurrence, zero collateral.
+# Scanned independently, same convention as RE_ROMAN_PART, so it can't be
+# silently skipped by an earlier modda/bob clause already setting `produced`.
+RE_ARABIC_BOLIM = re.compile(r"(?<!\d)(?P<num>\d+)(?:\s*-\s*|\s+)bo[ʻʼ']?lim\w*", re.IGNORECASE)
 ROMAN_VALUES = {"I": 1, "V": 5, "X": 10, "L": 50}
 RE_QISM = re.compile(
     r"(?P<num>\d+|" + "|".join(ORDINALS) + r")\s*-?\s*(?P<unit>qism|band)", re.IGNORECASE
@@ -418,11 +447,32 @@ RE_LEADING_PUB_PAREN = re.compile(
 # actual list/range parsing (strips the parenthetical, splits on comma/va,
 # expands a dash range) -- the exact same proven logic RE_CLAUSE's own `nums`
 # group already relies on, not a new parsing path.
+#
+# The separator before "paragraf"/"paragrif" accepts a bare space, not just a
+# hyphen, same space-vs-hyphen tolerance RE_CLAUSE's own unit separator has
+# had since 2026-09-15 -- this lookahead was never updated to match. Found
+# 2026-09-15 (row 42566, "22-bobining 2 paragrafi"), left as a known_gap for
+# over two months (single-occurrence scope) and swept 2026-11-15: still
+# exactly 1 corpus-wide occurrence (gold_id 341), fixed alongside the other
+# known_gap items below since all are the same class of additive separator/
+# notation tolerance with no shared code path to collide on.
 RE_SECTION_LIST = re.compile(
     r"\s*,?\s*(?P<nums>\d+(?:\s*\([^()]{0,100}\))?"
     r"(?:\s*(?:,|va)\s*\d+(?:\s*\([^()]{0,100}\))?)*)"
-    r"\s*-\s*paragr[ai]f"
+    r"(?:\s*-\s*|\s+)paragr[ai]f"
 )
+# "9-bobi § 2" -- a "§ N" section-mark notation, semantically identical to
+# "9-bobining 2-paragrafi" but naming the section with the symbol instead of
+# the word "paragraf" entirely, so RE_SECTION_LIST's own literal match never
+# fires. Found 2026-10-04 (row 41858), recorded as known_gap gold_id 324 at a
+# measured single in-scope occurrence (one other raw "§" match, row 35993,
+# belongs to a different document's own internal Rules, never inside a Civil
+# Code anchor window). Swept 2026-11-15 as its own narrow regex rather than
+# folded into RE_SECTION_LIST: the surface grammar has no list/parenthetical
+# form in the corpus today (unlike the word form), so a single bare digit
+# after "§" is all that's needed -- deliberately not sharing RE_SECTION_LIST's
+# richer list grammar until a real "§ N va M" occurrence is ever found.
+RE_SECTION_MARK = re.compile(r"\s*,?\s*§\s*(?P<num>\d+)")
 
 
 @dataclass
@@ -479,7 +529,9 @@ def _expand(nums: str) -> tuple[list[str], str]:
     fixed unit separator couldn't even be reached).
     """
     nums_bare = re.sub(r"\s*\([^()]{0,100}\)", "", nums)
-    top_items = [p for p in re.split(r"\s*(?:,|va)\s*", nums_bare) if p.strip()]
+    # "hamda" splits the same as "va"/"," -- see RE_CLAUSE's own comment on
+    # the "hamda" conjunction above (gold_id 140).
+    top_items = [p for p in re.split(r"\s*(?:,|va|hamda)\s*", nums_bare) if p.strip()]
     values: list[str] = []
     single_range = False
     for item in top_items:
@@ -617,6 +669,11 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
                 # (row 25664) cites a Nizom, not the Code or itself, so it's
                 # outside any anchor's scan window regardless.
                 sec = RE_SECTION_LIST.match(window[m.end(): m.end() + 150])
+                # The "§ N" notation (see RE_SECTION_MARK above) is tried only
+                # when the word form didn't match -- the two surface forms
+                # never co-occur on the same citation, so this is a pure
+                # fallback, not a competing match.
+                mark = None if sec else RE_SECTION_MARK.match(window[m.end(): m.end() + 150])
                 # When the paragraf lookahead itself is a list/range ("1 va
                 # 2-paragraflari"), the resulting citations' own `listing`
                 # must describe THAT list, not the (usually single) chapter
@@ -625,10 +682,15 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
                 # "single". Only overridden when sec actually matched; the
                 # bare-chapter fallback keeps the chapter-level `listing`
                 # exactly as before.
-                secs, sec_listing = _expand(sec.group("nums")) if sec else ([None], listing)
+                if sec:
+                    secs, sec_listing = _expand(sec.group("nums"))
+                elif mark:
+                    secs, sec_listing = [mark.group("num")], listing
+                else:
+                    secs, sec_listing = [None], listing
                 for n in nums:
                     for s in secs:
-                        out.append(Citation("section" if sec else "chapter", None, int(n),
+                        out.append(Citation("section" if (sec or mark) else "chapter", None, int(n),
                                             int(s) if s is not None else None, None,
                                             kind, sec_listing, abs_start, abs_end,
                                             _evidence(text, abs_start, abs_end)))
@@ -658,6 +720,19 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
                                     abs_start, abs_end, _evidence(text, abs_start, abs_end)))
                 produced = True
 
+        # Arabic-digit "boʻlim" (see RE_ARABIC_BOLIM above) -- a chapter, not
+        # a Part, despite sharing the unit word with RE_ROMAN_PART just
+        # above. Same unconditional-scan convention as that loop, for the
+        # same reason (a chapter citation can sit on either side of an
+        # already-matched clause in the same window).
+        for m in RE_ARABIC_BOLIM.finditer(window):
+            if RE_STOP.search(window[:m.start()]) or RE_STOP_ABBR.search(window[:m.start()]):
+                break
+            abs_start, abs_end = a_end + m.start(), a_end + m.end()
+            out.append(Citation("chapter", None, int(m.group("num")), None, None, kind, "single",
+                                abs_start, abs_end, _evidence(text, abs_start, abs_end)))
+            produced = True
+
         if not found_arabic:
             # Chapters cited in Roman numerals; only worth trying when no Arabic
             # clause was found, so "30-bobi" never re-enters here.
@@ -665,12 +740,39 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
                 if RE_STOP.search(window[:m.start()]) or RE_STOP_ABBR.search(window[:m.start()]):
                     break
                 abs_start, abs_end = a_end + m.start(), a_end + m.end()
+                # Roman-numeral chapters never got the paragraf/section
+                # lookahead the Arabic "bob" branch above has had all along
+                # (gold_id 123, "Fuqarolik kodeksi IV bobining 2 paragrafi" --
+                # found 2026-09-25, swept 2026-11-15, same 1-occurrence scope
+                # as the other items swept alongside it). Only tried for a
+                # single roman numeral (no `r2`): a section lookahead after a
+                # TWO-chapter roman list has no measured corpus occurrence to
+                # confirm which chapter the section would even belong to, so
+                # the list form is left exactly as before.
+                sec = mark = None
+                if not m.group("r2"):
+                    sec = RE_SECTION_LIST.match(window[m.end(): m.end() + 150])
+                    if not sec:
+                        mark = RE_SECTION_MARK.match(window[m.end(): m.end() + 150])
+                if sec:
+                    secs, sec_listing = _expand(sec.group("nums"))
+                elif mark:
+                    secs, sec_listing = [mark.group("num")], "single"
+                else:
+                    secs = None
                 for g in ("r1", "r2"):
                     if (num := _roman(m.group(g) or "")) is not None:
-                        out.append(Citation("chapter", None, num, None, None, kind,
-                                            "list" if m.group("r2") else "single",
-                                            abs_start, abs_end,
-                                            _evidence(text, abs_start, abs_end)))
+                        if secs is not None and g == "r1":
+                            for s in secs:
+                                out.append(Citation("section", None, num,
+                                                    int(s) if s is not None else None, None,
+                                                    kind, sec_listing, abs_start, abs_end,
+                                                    _evidence(text, abs_start, abs_end)))
+                        else:
+                            out.append(Citation("chapter", None, num, None, None, kind,
+                                                "list" if m.group("r2") else "single",
+                                                abs_start, abs_end,
+                                                _evidence(text, abs_start, abs_end)))
                         produced = True
 
         if not produced and kind == "fuqarolik_kodeksi":
@@ -770,8 +872,12 @@ def _selftest() -> int:
         # a plain space instead of a hyphen before modda/bob/paragraf, real
         # corpus phrasings (2026-09-15)
         ("Fuqarolik kodeksining 49 moddasi.", {}, [("article", "49", "single")]),
+        # "hamda" ("as well as") is a recognized list conjunction alongside
+        # comma/va, same class as the space-vs-hyphen separator above (gold_id
+        # 140, found 2026-09-15, fixed 2026-11-15 -- see DAILY_REVIEW.md): all
+        # three articles must survive, not just the one touching "moddalari".
         ("Fuqarolik kodeksining 11-12 hamda 14 moddalari.", {},
-         [("article", "14", "single")]),  # "hamda" isn't a recognized list separator
+         [("article", n, "list") for n in ("11", "12", "14")]),
         ("Oʻzbekiston Respublikasi Fuqarolik kodeksi 40 bobi.", {},
          [("chapter", None, "single")]),
         # an ASCII-hyphen sub-range packed into a list, real corpus phrasing
@@ -886,10 +992,15 @@ def _selftest() -> int:
         # owns its own roman-numeral "boʻlim" — must not be misattributed to
         # the Code as a part-level citation (real corpus phrasing, row 42566,
         # found 2026-10-02 while building part-level support; see
-        # DAILY_REVIEW.md)
+        # DAILY_REVIEW.md). The "22-bobining 5 paragrafi" clause itself is
+        # the exact space-separator shape gold_id 341 recorded as a known_gap
+        # (found 2026-09-15, the real row 42566 text reads "...2 paragrafi",
+        # not "5" — this case predates that discovery and never got updated
+        # to use the real number) and swept 2026-11-15: now correctly
+        # resolves to chapter 22 section 5, not a bare chapter.
         ("Fuqarolik kodeksi 22-bobining 5 paragrafi va “Bojxona toʻlovlarini "
          "toʻlash muddatlarini uzaytirish”ning yoʻriqnomaning IV boʻlimi.", {},
-         [("chapter", None, "single")]),
+         [("section", None, "single")]),
     ]
     for text, kwargs, expected in stop_cases:
         got = [(c.target_kind, c.article, c.listing) for c in extract(text, **kwargs)]
@@ -979,8 +1090,73 @@ def _selftest() -> int:
             failures += 1
             print(f"FAIL(paragrif) {text[:64]!r}\n     got  {got}\n     want {expected}")
 
+    # "§ N" section-mark notation (real corpus phrasing, row 41858, found
+    # 2026-10-04, known_gap gold_id 324, swept 2026-11-15): semantically the
+    # same as "9-bobining 2-paragrafi" but naming the section with the
+    # symbol, not the word.
+    section_mark_cases: list[tuple[str, dict, list[tuple]]] = [
+        ("Fuqarolik kodeksining 9-bobi § 2", {}, [(9, 2)]),
+    ]
+    for text, kwargs, expected in section_mark_cases:
+        got = [(c.struct_number, c.section_number) for c in extract(text, **kwargs)
+               if c.target_kind in ("chapter", "section")]
+        if got != expected:
+            failures += 1
+            print(f"FAIL(section_mark) {text[:64]!r}\n     got  {got}\n     want {expected}")
+
+    # A Roman-numeral chapter never got the same paragraf/section lookahead
+    # the Arabic "bob" branch has always had (real corpus phrasing, row
+    # 15441, found 2026-09-25, known_gap gold_id 123, swept 2026-11-15).
+    roman_section_cases: list[tuple[str, dict, list[tuple]]] = [
+        ("Fuqarolik kodeksi IV bobining 2 paragrafi", {}, [("section", 4, 2)]),
+        # a roman-numeral chapter LIST ("IV va V bobi") has no measured
+        # corpus occurrence paired with a section lookahead -- must still
+        # resolve as a bare chapter list, not attempt the lookahead at all.
+        ("Fuqarolik kodeksi IV va V bobi", {}, [("chapter", 4, None), ("chapter", 5, None)]),
+    ]
+    for text, kwargs, expected in roman_section_cases:
+        got = [(c.target_kind, c.struct_number, c.section_number) for c in extract(text, **kwargs)
+               if c.target_kind in ("chapter", "section")]
+        if got != expected:
+            failures += 1
+            print(f"FAIL(roman_section) {text[:64]!r}\n     got  {got}\n     want {expected}")
+
+    # Arabic-digit "boʻlim" names a CHAPTER, not a roman-numeral Part (real
+    # corpus phrasing, row 32903, found 2026-10-30, known_gap gold_id 618,
+    # swept 2026-11-15).
+    arabic_bolim_cases: list[tuple[str, dict, list[tuple]]] = [
+        ("Fuqarolik kodeksining 40-boʻlimi (“Transport ekspeditsiyasi”)", {},
+         [("chapter", 40)]),
+        # the roman-numeral Part form must still resolve as 'part', not be
+        # swallowed by the new digit-only regex.
+        ("Fuqarolik kodeksining V-boʻlimi.", {}, [("part", 5)]),
+    ]
+    for text, kwargs, expected in arabic_bolim_cases:
+        got = [(c.target_kind, c.struct_number) for c in extract(text, **kwargs)
+               if c.target_kind in ("chapter", "part")]
+        if got != expected:
+            failures += 1
+            print(f"FAIL(arabic_bolim) {text[:64]!r}\n     got  {got}\n     want {expected}")
+
+    # "hamda" with NOTHING before it already covered by the main `cases` list
+    # above (row 24219 shape) -- this is the OTHER shape the 2026-09-15 note
+    # originally worried about hypothetically ("hamda"-joined, nothing after
+    # the second number but the unit word itself), confirmed fixed the same
+    # way (gold_id 140, swept 2026-11-15).
+    hamda_cases: list[tuple[str, dict, list[tuple]]] = [
+        ("Fuqarolik kodeksining 14 hamda 20-moddasi", {},
+         [("article", "14", "list"), ("article", "20", "list")]),
+    ]
+    for text, kwargs, expected in hamda_cases:
+        got = [(c.target_kind, c.article, c.listing) for c in extract(text, **kwargs)
+               if c.target_kind == "article"]
+        if got != expected:
+            failures += 1
+            print(f"FAIL(hamda) {text[:64]!r}\n     got  {got}\n     want {expected}")
+
     total = (len(cases) + len(qism_cases) + len(stop_cases) + len(pub_paren_cases) + len(docid_cases)
-             + len(section_comma_cases) + len(paragrif_cases))
+             + len(section_comma_cases) + len(paragrif_cases) + len(section_mark_cases)
+             + len(roman_section_cases) + len(arabic_bolim_cases) + len(hamda_cases))
     print(f"{total - failures}/{total} extractor self-tests passed")
     return 1 if failures else 0
 

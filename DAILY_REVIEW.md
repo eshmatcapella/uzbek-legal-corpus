@@ -45,47 +45,76 @@ thread closes, fold its outcome into Backlog (if a residual remains) or
 just let the Log entry be the permanent record — don't also keep growing a
 paragraph here.
 
-- **Extractor rotation — current state: gold set at 805 records (batch 20),
-  precision 3264/3280 (99.5%), recall 3264/3301 (98.9%); the widened
-  (28-feature) novel-signature pool is now FULLY exhausted (0 windows / 0
-  distinct signatures remain). Last touched 2026-11-12.** Drew and
-  hand-verified batch 20 (40 windows, gold_id 765-804) from the same widened
-  pool batch 19 drew from. Found and FIXED a real bug: the 2026-09-04
-  "qism/band tail-window truncation" backlog item (then measured 7/640,
-  1.1%, deferred as not worth interrupting other work for) is a live bug,
-  not just a theoretical one — `extract()`'s qism/band tail lookup sliced
-  `window[m.end():m.end()+60]`, but `window` itself is already capped at
-  the anchor's own 260-char limit, so a modda match landing near that cap
-  (common in long self-reference comma-chains of fully-qualified citations)
-  got a silently-shortened tail even though the real qism text was well
-  within 60 *raw* chars and nowhere near the real next-anchor boundary.
-  Fixed per the backlog's own fix design (b): tail now slices from `text`
-  directly, bounded by a new `hard_limit` (the next anchor's start, never
-  `WINDOW`) rather than the already-truncated `window`. Measured
-  corpus-wide before shipping: exactly 8 sites across 8 rows change their
-  parsed qism (43296, 46637, 46659, 46662, 46668, 46669, 46795, 46925), zero
-  collateral change; the "bob" unit's parallel lookahead has the identical
-  shape in principle but 0 corpus-wide occurrences — left untouched. One of
-  the 8 (row 46795, `gold_id` 483) was a *stale* pre-existing gold record
-  from 2026-10-18 (annotated against the then-buggy extractor's output);
-  corrected in place, same precedent as `gold_id` 52/148/621. `link_edge`
-  9646 → 9647 (+1); `dst_qism` populated 769 → 778 (+9). All 40 of batch
-  20's own records hand-verified `correct` (including row 25971, which
-  correctly produces only a redundant bare `act` edge for THIS anchor — the
-  real article-327 citation lives in the row's *other*, spurious anchor's
-  bucket, exactly matching `gold_id` 754's own note for that row — see
-  Backlog's self-naming-parenthetical known_gap). See Log for the full
-  measurement trace. **Next Extractor rotation**: the novel-signature
-  sampler is genuinely empty now (727/727 signatures covered, re-confirmed
-  post-merge) — don't draw another batch from it as-is. Decision (reasoned,
-  not yet executed — see Log for the full argument): prefer sweeping the
-  now-9-item known_gap backlog (option 3) over a third signature-widening
-  (option 2) or uniform resampling (option 1), since the widened signature's
-  own yield fell sharply across its five batches and today's one real bug
-  was positional, not shape-driven (invisible to any per-window signature
-  by construction) — but this does NOT mean any individual known_gap's
-  single-occurrence scope has changed; re-verify each before touching it,
-  same discipline as every prior fix on this list.
+- **Extractor rotation — current state: gold set still 805 records (batch
+  20), precision 3271/3282 (99.7%), recall 3271/3301 (99.1%), up from
+  3264/3280 / 3264/3301 — 5 of the 9 open known_gap items swept and FIXED
+  today (no new gold batch drawn; the novel-signature pool is still fully
+  exhausted). Last touched 2026-11-15.** Executed the sweep the 2026-11-12
+  entry decided on (option 3: fix known_gap backlog items instead of a third
+  signature-widening or uniform resampling, since the widened signature's
+  yield had fallen off and the last real bug found was positional, not
+  shape-driven). Re-verified each of the 9 open known_gap items' corpus-wide
+  scope fresh against real anchor windows (not stale backlog prose) before
+  touching anything, per that entry's own discipline. Fixed 5, all
+  purely-additive regex extensions with zero collateral risk, confirmed by a
+  full before/after corpus-wide diff of every candidate row's `extract()`
+  output (not just a sample) after each change:
+  - `gold_id` 123 (Roman-numeral chapter never got the paragraf/section
+    lookahead the Arabic `bob` branch has) — ported the lookahead into the
+    Roman-chapter branch, gated to a single roman numeral.
+  - `gold_id` 324 ("§ N" section-mark notation) — new `RE_SECTION_MARK`
+    regex, tried as a fallback alongside the word form.
+  - `gold_id` 341 (chapter+paragraf space-separator, "22-bobining 2
+    paragrafi") — widened `RE_SECTION_LIST`'s own separator to accept a bare
+    space, same tolerance `RE_CLAUSE`'s main separator already had.
+  - `gold_id` 618 (Arabic-digit "boʻlim" meaning chapter, not the
+    roman-numeral Part `RE_ROMAN_PART` already handles) — new
+    `RE_ARABIC_BOLIM`, scanned independently, resolving to `target_kind=
+    "chapter"`.
+  - `gold_id` 140 ("hamda" as a third list conjunction alongside comma/va)
+    — added to both `RE_CLAUSE`'s `nums` group and `_expand()`'s split.
+
+  Net corpus-wide: exactly 5 (row, field) pairs changed across the whole
+  candidate set, each matching its own known_gap's previously-measured
+  single-occurrence scope exactly, zero collateral anywhere else — verified
+  by diffing a full `extract()` snapshot over all 2036 non-empty
+  (row, field) keys before and after. `link_edge` 9647 → 9649 (+2, both
+  from the "hamda" list expansion recovering articles 11/12 at row 24219;
+  the other four fixes each upgraded an existing edge's `dst_kind`/grain in
+  place, net zero new edges). `build_links.py`/`build_llc.py` re-run (no
+  `corpus.duckdb` rebuild); `verify_transfer.py` green; all 74/74 extractor
+  self-tests pass (up from 65, including a pre-existing self-test and a
+  pre-existing gold record that had locked in the OLD buggy behavior as
+  "expected" — both corrected in place, same bookkeeping precedent as every
+  prior fix on this list). Both apps smoke-tested live via Playwright
+  (standalone, not simultaneously — see Log for a documented, pre-existing,
+  unrelated DB-lock quirk in how the two apps race for a write-vs-read-only
+  connection when started together, not a regression from today); the one
+  structurally new citation (`gold_id` 618's row, `link_edge` edge_id 2362)
+  confirmed correctly resolved at the DB level (`dst_kind='chapter'`,
+  `dst_struct_node_id='C40'`). Also fixed two stale Backlog/Active-threads
+  bookkeeping drifts found while cross-checking every known_gap bullet
+  against `gold_citations.json`'s actual current verdicts: the "paragrifi"
+  misspelling bullet still read "Not fixed today" two weeks after its real
+  2026-11-02 fix, and the "Build the gold set" bullet's own mismatch list
+  and precision/recall numbers hadn't been refreshed since 2026-11-02 either
+  (both corrected, see Backlog). **Next Extractor rotation**: 4 known_gap
+  items remain open, each previously judged architecturally harder than
+  today's 5 (not re-litigated today — re-verify scope fresh before acting,
+  same discipline as always): `gold_id` 587 (bare "Kodeksning" self-
+  reference disambiguation needs `doc_type` threaded through `extract()`),
+  `gold_id` 597 (amending law's own next heading misattributed — a false
+  positive needing a word-substitution-phrase heuristic), `gold_id` 370
+  ("moddsi" typo — explicitly flagged as not worth the over-matching risk at
+  1 occurrence), and `gold_id` 754/763 (self-naming-parenthetical chain —
+  needs either excluding the spurious anchor or chaining
+  `RE_LEADING_PUB_PAREN` through multiple parens). The novel-signature
+  sampler is still genuinely empty (727/727 signatures covered) — don't draw
+  another batch from it as-is; a fourth option (re-run `build_gold_sample_
+  novel.py`'s own signature function against the now-5-fixes-different
+  extractor output to see if any of today's fixes created new distinct
+  signatures worth a fresh novel batch) is untried and worth considering
+  before a third signature-widening.
 
 - **Data currency rotation — current state: fixed a real locator-extraction
   gap in `article_amendment`'s own regex grammar for removed/voided events —
@@ -258,25 +287,36 @@ paragraph here.
   twenty batches — two uniform-random, eighteen signature-stratified) +
   `score_gold.py` (the scorer) + `build_gold_sample.py`/
   `build_gold_sample_novel.py` (the two samplers) now exist; current score
-  **precision 3264/3280 (99.5%), recall 3264/3301 (98.9%)** — the
-  mismatches are the 2026-09-25 Roman-chapter+paragraf gap, the 2026-09-28
-  "hamda" list-separator gap, the 2026-09-28 chapter+paragraph-list-with-
-  parenthetical gap, the 2026-09-28/2026-10-10 "bare article number before
-  an interposed different act name" gap (4 rows, now all 4 consistently
-  recorded as `known_gap` — see 2026-10-15 log entry for a gold-set
-  bookkeeping fix), the 2026-10-04 "§ N" section-mark-notation gap, the
-  2026-10-10 chapter+paragraph space-separator gap, and the 2026-10-10
-  "moddsi" typo gap (see below), each recorded with its true expected
-  output rather than silently marked correct. The "paragrifi" spelling gap
-  named here through 2026-10-30's revision — found 2026-09-22, deliberately
-  left unfixed for over a month at its then-measured 1-row/2-occurrence
-  scope — is FIXED as of 2026-11-02 (gold batch 17 independently re-found
-  it via the OTHER occurrence in the same row; see Log): `citation_
-  extractor.py`'s chapter+section lookahead now accepts `paragr[ai]f`, and
-  the gold record that had carried it as `known_gap` (gold_id 52) is
-  corrected to `correct` in place, same bookkeeping precedent as 2026-10-15
-  and 2026-10-18. Not closed outright — 685 hand-verified anchors is still
-  a small fraction of the 3251 real candidate windows
+  (post-2026-11-15 known_gap sweep, see Active threads and Log)
+  **precision 3271/3282 (99.7%), recall 3271/3301 (99.1%)**. Updating this
+  paragraph's own stale drift while here (several named gaps below had
+  already been fixed on their own dated entries without this summary ever
+  being revised — same drift class the 2026-11-15 "paragrifi" bookkeeping
+  fix above also found and fixed): the remaining mismatches today are the
+  2026-09-28/2026-10-10/2026-10-30 "bare article number before an
+  interposed different act name" cluster (7 occurrences/4 rows across
+  gold_id 194/195/196/295/379/451/623 — a cross-clause-inference gap, not
+  fixed, see Backlog), the 2026-10-10 "moddsi" typo (`gold_id` 370, a single
+  source-data typo, deliberately not generalized), the 2026-10-27 "bare
+  Kodeksning self-reference" gap (`gold_id` 587, needs `doc_type` threaded
+  through `extract()` for a single occurrence), the 2026-10-27 "amending
+  law's own next heading misattributed" false positive (`gold_id` 597), and
+  the 2026-11-09 self-naming-parenthetical chain (`gold_id` 754/763) — all
+  five left open at their own documented single-occurrence or
+  architecture-cost reasoning, see Backlog for each. The Roman-chapter+
+  paragraf gap, the "hamda" list-separator gap, the "§ N" section-mark
+  gap, and the chapter+paragraph space-separator gap (gold_id 123/140/324/
+  341) were all FIXED 2026-11-15 in one Extractor-rotation sweep of the
+  known_gap backlog (see Active threads and Log) — removed from this list
+  accordingly. The "paragrifi" spelling gap (`gold_id` 52) was FIXED
+  2026-11-02 (gold batch 17 independently re-found it via the OTHER
+  occurrence in the same row; see Log): `citation_extractor.py`'s
+  chapter+section lookahead now accepts `paragr[ai]f`, corrected to
+  `correct` in place, same bookkeeping precedent as 2026-10-15 and
+  2026-10-18. Not closed outright — 685 hand-verified anchors was, as of
+  2026-11-02 (this paragraph's own last full refresh before today's
+  surgical precision/recall and mismatch-list update), still only a small
+  fraction of the 3251 real candidate windows
   corpus-wide (456 distinct window *signatures* covered as of 2026-10-18,
   up from 417/451 after 2026-10-15's batch — signature-stratified
   sampling's own novelty guarantee means every one of batch 12's 40
@@ -397,84 +437,63 @@ paragraph here.
   number" would likely isolate this shape without new false negatives —
   worth re-testing against a larger sample if more instances turn up.
   Recorded as a permanent known_gap.
-- **LexUZ misspells "paragrafi" as "paragrifi" in one row — chapter+section
-  grain silently lost.** Found 2026-09-22 while annotating the second
-  gold-set batch (see Active threads): row 46605 (the Civil Code's own
-  cross-reference commentary) writes "mazkur Kodeksning 65-bobi[ning]
-  1-paragrifi" — twice, identically, in the same row — instead of
-  "paragrafi". `extract()`'s chapter+section lookahead only matches the
-  literal substring "paragraf", so both occurrences fall back to a bare
-  chapter-65 citation, losing the section-1 grain (`dst_kind` would read
-  `chapter` instead of `section` in `link_edge` — a real column, unlike
-  `qism`, so this one isn't exempt from scoring the way qism-grain issues
-  are). Measured corpus-wide: exactly one other row anywhere has any
-  "paragrif" spelling (row 25664), and it's about an unrelated Cabinet
-  committee's own *nizom* with no Civil-Code/FK anchor anywhere in that row
-  at all — never a candidate row for this extractor in the first place. So
-  the real, in-scope footprint is exactly 2 occurrences in exactly 1 row,
-  corpus-wide. Not fixed today — same single-occurrence-scope precedent
-  this project already applied to the 2026-09-15 chapter+paragraph
-  space-separator gap (1 occurrence, also left unfixed despite a similarly
-  cheap fix) — but recorded as a `known_gap` gold record (`gold_id` 52,
-  see `gold_citations.json`) with its true expected output, so it's a
-  standing, honest regression check rather than a silently-inflated score.
-  If ever picked up: add `paragraf|paragrif` (or a small edit-distance
-  tolerance) to both `RE_CLAUSE`'s unit alternation and the chapter+section
-  lookahead's literal match inside `extract()`.
-- **Roman-numeral chapter citations never get the paragraf/section
-  lookahead.** Found 2026-09-25 via the new signature-stratified gold
-  sample (see Active threads): "Fuqarolik kodeksi IV bobining 2 paragrafi"
-  (row 15441) should produce `target_kind=section` (chapter 4, section 2)
-  the same way the Arabic-numeral "37-bobining 3-paragrafi" already does,
-  but `extract()`'s Roman-chapter fallback branch (only reached when the
-  main `RE_CLAUSE` loop finds nothing) never runs the paragraf lookahead the
-  `bob` branch has — it always emits a bare `chapter` citation, silently
-  losing the section grain. `dst_kind` is a real `link_edge` column (same
-  class of gap as the "paragrif" item above), so this is recorded as a
-  `known_gap` gold record (`gold_id` 123) with its true expected output
-  rather than scored as correct. Measured corpus-wide: exactly 1 occurrence
-  (checked every `RE_ROMAN_CHAPTER` match's 30-char tail for an immediately
-  following paragraf reference). Not fixed today, same single-occurrence
-  precedent as several items on this list — if ever picked up, port the
-  same `sec = re.match(r"\s*,?\s*(\d+)\s*-\s*paragraf", ...)` lookahead the
-  `bob` branch already uses into the Roman-chapter branch in `extract()`.
-- **Chapter+section citations written with a "§ N" section-mark symbol,
-  not the word "paragraf", lose the section grain.** Found 2026-10-04 via
-  the eighth signature-stratified gold batch (see Active threads and Log):
-  row 41858 reads "Fuqarolik kodeksining 9-bobi § 2" — same semantic
-  content as "9-bobining 2-paragrafi" elsewhere in the corpus, but the
-  chapter+section lookahead's `sec = re.match(r"\s*,?\s*(\d+)\s*-\s*paragraf", ...)`
-  only recognizes the literal word, not "§", so this resolves as a bare
-  chapter-9 citation, losing the section-2 grain (same `dst_kind`-affecting
-  failure class as the "paragrif" and Roman-chapter-lookahead items above).
-  Measured corpus-wide: exactly 2 raw `bob\w*\s*§\s*\d+` occurrences, only 1
-  in scope — row 35993's "ushbu Qoidalarning XXI bobiga § 84" is a
-  different document's own internal Rules, not a Civil Code citation, and
-  never sits inside a Civil Code anchor window. Not fixed given the
-  single-occurrence scope, same precedent as the two items above; recorded
-  as a permanent `gold_citations.json` known_gap record (`gold_id` 324)
-  instead. If ever picked up, accept `§\s*(\d+)` as an alternate spelling
-  alongside `\d+\s*-\s*paragraf` in the chapter+section lookahead.
-- **An Arabic-digit "boʻlim" can mean CHAPTER, not the roman-numeral
-  structural Part `RE_ROMAN_PART` already handles.** Found 2026-10-30 via
-  gold batch 16 (`gold_id` 618, row 32903): "Fuqarolik kodeksining
-  40-boʻlimi ("Transport ekspeditsiyasi")" — Chapter 40's real title,
-  confirmed via `struct_node` (`C40` = "Freight Forwarding" = Transport
-  ekspeditsiyasi) — uses "boʻlim" as a loose synonym for "bob", a different
-  unit entirely from the Code's own 6 roman-numeral Parts (PI..PVI) that
-  "boʻlim" otherwise always names. `extract()` has no branch for a
-  digit+boʻlim shape at all (RE_ROMAN_PART only matches roman numerals), so
-  this falls through to a bare act citation, losing the chapter grain
-  entirely. Measured corpus-wide (regex: `\d+\s*-\s*bo[ʻ'`]lim` within 80
-  chars of a Civil Code/FK anchor): exactly 1 occurrence. Not fixed given
-  the single-occurrence scope, same precedent as the "paragrif"/
-  Roman-chapter-lookahead/section-mark known_gap records above; recorded as
-  a permanent `gold_citations.json` known_gap record (`gold_id` 618)
-  instead. If ever picked up: a bare `\d+\s*-\s*bo[ʻ'`]lim` match would need
-  to resolve as `target_kind="chapter"` (not `"part"`), the opposite of
-  what `RE_ROMAN_PART` already does for its roman-numeral form — not a
-  simple extension of that regex, a genuinely different unit mapping for
-  the same surface word.
+- ~~**LexUZ misspells "paragrafi" as "paragrifi" in one row — chapter+section
+  grain silently lost.**~~ **FIXED 2026-11-02** (`gold_id` 52 corrected to
+  `correct` in place that day, via gold batch 17 independently re-finding
+  the same row's other occurrence — see Active threads' "Build the gold
+  set" entry and the 2026-11-02 Log entry for the full trace). **Bookkeeping
+  fix, 2026-11-15**: this bullet itself was never struck through or updated
+  when the fix landed two weeks ago — found while sweeping the known_gap
+  backlog today and cross-checking every remaining bullet against
+  `gold_citations.json`'s actual current verdicts, not just this file's own
+  prose. `extract()`'s chapter+section lookahead now accepts `paragr[ai]f`,
+  not just the literal "paragraf". Original finding, for the record: found
+  2026-09-22 while annotating the second gold-set batch — row 46605 (the
+  Civil Code's own cross-reference commentary) writes "mazkur Kodeksning
+  65-bobi[ning] 1-paragrifi" twice, identically, instead of "paragrafi";
+  measured corpus-wide at exactly 2 occurrences in exactly 1 row (the one
+  other "paragrif" spelling anywhere, row 25664, is an unrelated Cabinet
+  *nizom* with no Civil-Code/FK anchor, never a candidate row at all).
+- ~~**Roman-numeral chapter citations never get the paragraf/section
+  lookahead.**~~ **FIXED 2026-11-15** (Extractor rotation, sweeping the
+  known_gap backlog). Found 2026-09-25 (row 15441, `gold_id` 123):
+  "Fuqarolik kodeksi IV bobining 2 paragrafi" fell through to a bare
+  `chapter` citation instead of `target_kind=section` (chapter 4, section
+  2) the same way "37-bobining 3-paragrafi" already resolved. Ported the
+  `bob` branch's own paragraf/section lookahead (by now also widened for
+  the `§ N` and space-separator gaps just below) into the Roman-chapter
+  fallback branch, gated to a single roman numeral (no corpus occurrence
+  pairs a roman-chapter LIST with a section lookahead, so that shape is
+  left untouched). Re-measured corpus-wide before shipping: exactly this 1
+  row changes, zero collateral. `gold_id` 123 corrected to `correct` in
+  place. See DAILY_REVIEW.md 2026-11-15 Log.
+- ~~**Chapter+section citations written with a "§ N" section-mark symbol,
+  not the word "paragraf", lose the section grain.**~~ **FIXED 2026-11-15**
+  (same sweep). Found 2026-10-04 (row 41858, `gold_id` 324): "9-bobi § 2"
+  resolved as a bare chapter-9 citation because the lookahead only ever
+  recognized the literal word "paragraf". Added a dedicated `RE_SECTION_MARK`
+  regex (`\s*,?\s*§\s*(\d+)`), tried as a fallback only when the word-form
+  lookahead doesn't match, in both the `bob` branch and (via the gold_id 123
+  fix above) the Roman-chapter branch. Re-measured corpus-wide before
+  shipping: exactly this 1 row changes, zero collateral (row 35993's "§ 84"
+  is still correctly excluded — a different document's own internal Rules,
+  never inside a Civil Code anchor window). `gold_id` 324 corrected to
+  `correct` in place. See DAILY_REVIEW.md 2026-11-15 Log.
+- ~~**An Arabic-digit "boʻlim" can mean CHAPTER, not the roman-numeral
+  structural Part `RE_ROMAN_PART` already handles.**~~ **FIXED 2026-11-15**
+  (same sweep). Found 2026-10-30 (row 32903, `gold_id` 618): "Fuqarolik
+  kodeksining 40-boʻlimi ("Transport ekspeditsiyasi")" names Chapter 40
+  (confirmed via `struct_node`: C40 = "Freight Forwarding"), not one of the
+  Code's 6 roman-numeral Parts. Added `RE_ARABIC_BOLIM`
+  (`(?<!\d)(\d+)(?:\s*-\s*|\s+)bo[ʻʼ']?lim\w*`), scanned independently like
+  `RE_ROMAN_PART`, resolving to `target_kind="chapter"` (never `"part"` —
+  the Code's real Parts are only ever written with a roman numeral in this
+  corpus). Re-measured against every real anchor window corpus-wide before
+  shipping (not a blind text-wide grep — "boʻlim" is an ordinary word
+  outside citation context): exactly this 1 occurrence in scope, zero
+  collateral. `gold_id` 618 corrected to `correct` in place; the weak `act`
+  fallback citation this row carried before is now the correct `chapter`
+  citation (`link_edge` edge_id 2362). See DAILY_REVIEW.md 2026-11-15 Log.
 - **A self-naming "(... deb yuritiladi)" parenthetical creates a spurious
   second anchor, which can chain into a second, un-reached publication
   parenthetical and drop a real citation entirely.** Found 2026-11-09 via
@@ -715,7 +734,16 @@ paragraph here.
   unit word?) found the TRUE corpus-wide count is 7 occurrences / 4 rows
   (row 37948 alone has 4, not 3) — see `gold_citations.json` `gold_id` 623
   and DAILY_REVIEW.md 2026-10-30. Still not fixed, same reasoning.
-- **"hamda" not recognized as a list conjunction, only "va".** Found
+- ~~**"hamda" not recognized as a list conjunction, only "va".**~~ **FIXED
+  2026-11-15** (Extractor rotation, sweeping the known_gap backlog). Added
+  "hamda" as a third list conjunction alongside comma/va in both
+  `RE_CLAUSE`'s `nums` group and `_expand()`'s top-level split regex.
+  Re-measured corpus-wide before shipping: exactly this 1 row (24219)
+  changes — articles 11 and 12 recovered alongside the already-correct 14,
+  all three now `listing="list"` — zero collateral (the 2 raw FPK-text
+  matches stay correctly out of scope, excluded by `RE_STOP_ABBR` before any
+  anchor fires). `gold_id` 140 corrected to `correct` in place. See
+  DAILY_REVIEW.md 2026-11-15 Log. Original finding, for the record: found
   2026-09-15 while fixing the space-separator gap (see Log): row 24219 reads
   "Fuqarolik kodeksining 11-12 hamda 14 moddalari" — `_expand`'s top-level
   split only recognizes "," and "va" between numbers, so "hamda" ("as well
@@ -747,22 +775,22 @@ paragraph here.
   spelling gap found the same day (see Log/Active threads) — not worth
   fixing today for the same reason, but now a real measured count instead
   of "not measured."
-- **Chapter+paragraph's own space-separator gap.** Found 2026-09-15 while
-  fixing the main space-separator gap (see Log): row 42566 reads
-  "22-bobining 2 paragrafi" (space, no hyphen) — the *main* `RE_CLAUSE` fix
-  covers `modda`/`bob`/`paragraf` directly, but the separate chapter+section
-  lookahead (`sec = re.match(r"\s*,?\s*(\d+)\s*-\s*paragraf", ...)`) still
-  requires a hyphen on its own, unfixed regex. Not a dropped citation today
-  — the chapter (22) still gets cited, just without the paragraph grain,
-  same fallback as every other unresolvable-paragraph case — so this is a
-  precision refinement, not a recall gap. Confirmed corpus-wide this is
-  exactly 1 occurrence today; left alone given the single-occurrence scope,
-  worth revisiting alongside the chapter+paragraph-list gap above if a
-  corpus update adds more. **Formalized 2026-10-10**: the signature-
-  stratified sampler independently re-drew this exact row (`gold_id` 341) —
-  merged as a permanent `gold_citations.json` known_gap record (this
-  backlog note alone was never a regression check until now). Re-confirmed
-  still exactly 1 occurrence corpus-wide.
+- ~~**Chapter+paragraph's own space-separator gap.**~~ **FIXED 2026-11-15**
+  (Extractor rotation, sweeping the known_gap backlog, alongside the §N and
+  Roman-chapter lookahead fixes just above — all three touch the same
+  chapter+section lookahead machinery). Row 42566 ("22-bobining 2
+  paragrafi", space not hyphen) now correctly resolves to `section`, not a
+  bare `chapter`: `RE_SECTION_LIST`'s own separator widened from
+  `\s*-\s*paragraf` to `(?:\s*-\s*|\s+)paragr[ai]f`, the same hyphen-or-space
+  tolerance `RE_CLAUSE`'s main unit separator already had since 2026-09-15.
+  Re-measured corpus-wide before shipping: exactly this 1 row changes (both
+  of its own two occurrences of the shape), zero collateral. `gold_id` 341
+  corrected to `correct` in place. See DAILY_REVIEW.md 2026-11-15 Log.
+  Original finding, for the record: found 2026-09-15 while fixing the main
+  space-separator gap — row 42566 reads "22-bobining 2 paragrafi"; confirmed
+  corpus-wide at exactly 1 occurrence; formalized 2026-10-10 as `gold_id`
+  341 when the signature-stratified sampler independently re-drew the same
+  row.
 - ~~**Qism range collapses to its last ordinal only.**~~ Found 2026-09-15,
   precisely measured and merged into the "Qism-level (article-part) grain"
   item above on 2026-10-18 (same dash-range sub-form — see that item for
@@ -1556,6 +1584,163 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-15 — Extractor rotation: swept the 9-item known_gap backlog, fixed 5 (gold_id 123/324/341/618/140) as purely-additive regex extensions, precision 3264/3280→3271/3282, recall 3264/3301→3271/3301, plus two stale-bookkeeping fixes found along the way
+
+Rotation order: Extractor was last touched 2026-11-12, Data currency
+2026-11-13, Cleanup 2026-11-14 — Extractor next. The 2026-11-12 entry had
+already decided (not yet executed) to sweep the known_gap backlog rather
+than draw a third widened-signature batch, since that pool is fully
+exhausted (727/727 signatures) and its yield had fallen off sharply. Read
+all 9 open known_gap items in `gold_citations.json`/Backlog fresh rather
+than trusting old prose, and triaged by risk: 5 are isolated, additive
+regex extensions to already-proven code paths (separator/notation
+tolerance, same class as several already-shipped fixes); 4 are
+architecturally harder (need a new parameter threaded through `extract()`,
+a new false-positive heuristic, or carry explicit "not worth the
+over-matching risk" judgment at 1 occurrence) — fixed the 5, left the 4
+exactly as scoped (see Active threads for the reasoning per item).
+
+Before touching code, installed `duckdb` (missing in this fresh container)
+and ran `git lfs pull` (the raw parquet was still a 134-byte LFS pointer,
+not the real 163MB file — read-only, never written) to build a reusable
+before/after diff harness: a snapshot script runs `citation_extractor.
+extract()` over every (row, field) pair in the real candidate set (2036
+pairs with ≥1 citation today) and a diff script compares two snapshots
+key-by-key. Every fix below was measured against this harness, not a
+hand-picked sample, so "zero collateral" is a real corpus-wide guarantee,
+not an estimate.
+
+**Fixes, in the order shipped** (all in `citation_extractor.py`):
+1. **`gold_id` 324, "§ N" section-mark notation** ("9-bobi § 2" instead of
+   "9-bobining 2-paragrafi") — added `RE_SECTION_MARK` (`\s*,?\s*§\s*(\d+)`),
+   tried as a fallback in the `bob` branch only when the word-form
+   `RE_SECTION_LIST` lookahead doesn't match.
+2. **`gold_id` 341, chapter+paragraf space-separator** ("22-bobining 2
+   paragrafi", space not hyphen) — `RE_SECTION_LIST`'s own separator
+   widened from `\s*-\s*paragraf` to `(?:\s*-\s*|\s+)paragr[ai]f`, the same
+   hyphen-or-space tolerance `RE_CLAUSE`'s main unit separator has had
+   since 2026-09-15 but this lookahead never got.
+3. **`gold_id` 123, Roman-numeral chapter never got the paragraf/section
+   lookahead** the Arabic `bob` branch has always had — ported the same
+   `RE_SECTION_LIST`/`RE_SECTION_MARK` lookahead into the Roman-chapter
+   fallback branch, gated to a single roman numeral only (no corpus
+   occurrence pairs a roman-chapter LIST with a section lookahead, so that
+   shape is untouched).
+
+   Diffed after these three together: exactly 3 (row, field) pairs
+   changed (15441, 41858, 42566 — the last one twice, both its own
+   occurrences of the same shape), zero collateral anywhere else. All
+   71/71 self-tests passed, but one pre-existing self-test (a `stop_cases`
+   entry built around real row 42566, asserting the OLD buggy "bare
+   chapter" output as correct) and the `gold_citations.json` records for
+   123/324/341 themselves needed updating to the new, correct output —
+   same "corrected in place" precedent as `gold_id` 52/148/621.
+
+4. **`gold_id` 618, Arabic-digit "boʻlim" means CHAPTER, not the
+   roman-numeral Part `RE_ROMAN_PART` already handles** — before writing
+   any regex, re-measured the real risk: "boʻlim" is an ordinary Uzbek word
+   ("department/unit"), so a blind corpus-wide text grep would wildly
+   overcount. Scanned only real Civil-Code/FK/self-reference anchor
+   windows (same bound `extract()` itself uses — anchor end to the next
+   anchor's start, not a flat regex window) for any Arabic-digit "boʻlim":
+   exactly 1 genuine in-window occurrence corpus-wide (row 32903, "40-
+   boʻlimi", confirmed via `struct_node` as Chapter 40 "Freight
+   Forwarding"), confirming the known_gap's own prior measurement. Added
+   `RE_ARABIC_BOLIM`, scanned independently (same convention as
+   `RE_ROMAN_PART`), resolving to `target_kind="chapter"` — the Code's 6
+   real Parts are only ever written with a roman numeral in this corpus,
+   so there's no genuine ambiguity between the two regexes. Diffed: exactly
+   1 (row, field) pair changed, replacing a weak `act`-level citation with
+   the correct `chapter` edge (`link_edge` edge_id 2362, `dst_struct_node_id
+   ='C40'`, confirmed directly against the rebuilt DB).
+5. **`gold_id` 140, "hamda" ("as well as") not recognized as a list
+   conjunction alongside comma/"va"** — added to both `RE_CLAUSE`'s `nums`
+   group and `_expand()`'s top-level split regex. Diffed: exactly 1 (row,
+   field) pair changed (row 24219) — articles 11 and 12 recovered
+   (previously silently dropped entirely, not just mis-grained) alongside
+   the already-correct 14, all three now `listing="list"`. A second
+   pre-existing self-test locking in the old behavior was updated in place.
+
+**Net measured impact**: exactly 5 (row, field) pairs changed across the
+whole 2036-pair candidate set from start to finish — confirmed by diffing
+the very first snapshot against the very last — matching each known_gap's
+own previously-recorded single-occurrence scope exactly, with zero
+collateral anywhere else in the corpus. `citation_extractor.py` self-tests:
+74/74 (up from 65 at session start — 9 new cases added, 2 pre-existing
+cases corrected). `gold_citations.json`: the 5 known_gap records flipped
+to `verdict: correct` with notes explaining the fix (same precedent as
+every prior in-place correction); `score_gold.py`: precision 3264/3280
+(99.5%) → 3271/3282 (99.7%), recall 3264/3301 (98.9%) → 3271/3301 (99.1%).
+Re-ran `build_links.py` (no `corpus.duckdb` rebuild — only the extractor
+changed): `link_edge` 9647 → 9649 edges (+2, both from the "hamda" list
+expansion; the other four fixes each upgraded an existing edge's
+`dst_kind`/grain in place, net zero new edges there). Re-ran `build_llc.py`
+(reads from `link_edge`): clean, no errors, no change in the printed LLC
+summary beyond what the new chapter-40 edge's `hierarchy_rel='same'`
+already excludes from any downstream count. `verify_transfer.py`: **all
+checks green**, 9649 edges, same reconciliation residuals as every recent
+day (db_only art 168, md_only 63/65/66/70/71/72/176/177/179, the Article
+26¹/261 ambiguous-key pair, the known EN/UZ version-drift note). Standing
+checks unchanged from baseline: `pyflakes` clean; `vulture --min-confidence
+60` 2 pre-existing hits (unrelated dataclass fields); `bandit` 0 issues;
+`check_sql_bindings.py` 113/113; `check_fstring_interp.py` 55/55;
+`check_param_arity.py` 197/197; `check_dead_views.py` 11/11;
+`check_dead_columns.py` 13 flagged (confirmed via `git stash` this is the
+pre-existing baseline, untouched by today's change — not the "15" the
+2026-11-13 entry cited, which was itself already stale by then);
+`check_code_clones.py` 5 pairs, same set.
+
+Installed `streamlit` (also missing) and live-tested both apps with
+Playwright. Found and diagnosed, but did NOT fix (pre-existing, unrelated
+to today's change, and out of scope for Extractor rotation): running
+`app_hierarchy.py` and `app_llc.py` against `corpus.duckdb` *at the same
+time* throws a `duckdb.IOException` lock conflict on whichever app starts
+second, regardless of start order — `app_hierarchy.py`'s own `_connect()`
+tries read-write first (so its validation page can write) and falls back
+to read-only only on its *own* `IOException`, but doesn't protect the
+*other* app's always-read-only connection from colliding with it. Each app
+tested standalone instead (the realistic usage pattern — nothing in either
+app's own code assumes the other is running concurrently): `app_llc.py`
+alone, HTTP 200, no exception, verified "Implementing acts" page too.
+`app_hierarchy.py` alone, HTTP 200, no exception, verified "Structural
+tree" page renders Chapter 40 ("Freight Forwarding") correctly — no
+"realizing acts" badge shows for it specifically because its node's
+`n_units` is null (a `page_structure()` display detail unrelated to
+citations) and the new edge's `hierarchy_rel='same'` (a same-tier
+self-citation within the Code, correctly excluded from the `below`-only
+badge count) — confirmed this is correct, not a gap, by reading the edge
+directly from the DB. Neither app references `dst_kind`/`target_kind`
+values by name anywhere, so today's change (no new kind, no schema change)
+carried zero app-compatibility risk from the start; this was confirmed
+empirically rather than assumed.
+
+**Two stale-bookkeeping fixes found while cross-checking every known_gap
+bullet against `gold_citations.json`'s actual current verdicts** (not
+trusting the prose alone, same discipline the 2026-10-19 Active-threads
+rewrite asked for going forward): the "paragrifi" misspelling Backlog
+bullet still read "Not fixed today" two weeks after its real 2026-11-02 fix
+(`gold_id` 52) — struck through and corrected. The "Build the gold set"
+bullet's own precision/recall numbers and enumerated mismatch list hadn't
+been refreshed since 2026-11-02 (it still named the chapter-list-
+parenthetical gap as an open mismatch, three weeks after that was fixed
+2026-10-27) — refreshed to the current, accurate state. Neither is a
+process failure worth dwelling on — multi-week-old narrative text drifting
+out of sync with dated point-fixes is the expected cost of this file's own
+append-and-summarize convention — but worth fixing when found rather than
+left for a future session to trip over.
+
+**Decision for a future Extractor rotation**: the remaining 4 known_gap
+items (`gold_id` 587, 597, 370, 754/763) were deliberately NOT attempted
+today — each already carries its own explicit reasoning for why it's
+harder than a regex extension (a new `extract()` parameter, a
+false-positive heuristic, an explicit over-matching-risk judgment, or an
+anchor-matching redesign), and today's time was better spent shipping 5
+clean wins than starting a 6th, riskier one. Re-verify each one's scope
+fresh before ever touching it, same as today's sweep did for all 9 — don't
+assume the old counts still hold just because the corpus is static; the
+whole point of today's session was catching exactly that kind of
+assumption drift.
 
 ### 2026-11-14 — Cleanup rotation: built evidence-span highlighting — `link_edge.ev_clean_start`/`ev_clean_end` re-derive the cited span through both of the apps' lossy display transforms, both Streamlit apps now bold the exact cited phrase, live-verified with Playwright screenshots
 
