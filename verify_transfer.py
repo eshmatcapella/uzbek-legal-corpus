@@ -453,6 +453,32 @@ def main() -> int:
                   WHERE d.doc_date > s.doc_date
               """).fetchone()[0] == 0,
               "no act repeals something enacted after it")
+        # v_article_currency (build_links.py) and both apps' own currency
+        # lookups GROUP BY / key on (doc_id, article_number) TEXT, not norm_id.
+        # The corpus has exactly one article_number text shared by two distinct
+        # norm_ids today ("261" -> a261#1/a261#2, see review_ambiguous_key
+        # above); as long as article_amendment events for that text key resolve
+        # to only one of the two, v_article_currency's GROUP BY and the apps'
+        # (doc_id, article_number)-keyed `WHERE` clause are safe. If a future
+        # amendment ever targets the OTHER norm_id under the same text key, this
+        # join would silently merge both norm_ids' amendment histories into one
+        # row and the apps would show one norm_id's currency badge on the
+        # other's article page, with no error. Guards that latent failure mode
+        # rather than just documenting it.
+        conflated = con.execute("""
+            SELECT count(*) FROM (
+                SELECT doc_id,
+                       coalesce(target_article_number, host_article_number) AS article_number
+                FROM article_amendment
+                GROUP BY 1, 2
+                HAVING count(DISTINCT norm_id) > 1
+            )
+        """).fetchone()[0]
+        check(conflated == 0,
+              "v_article_currency never merges two distinct norm_ids under one "
+              "(doc_id, article_number) key",
+              f"{conflated} article_number key(s) would be conflated" if conflated else "")
+
         sup = con.execute(
             "SELECT count(DISTINCT doc_id) FROM v_act_currency WHERE derived_status='superseded'"
         ).fetchone()[0]

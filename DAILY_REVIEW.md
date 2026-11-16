@@ -116,84 +116,69 @@ paragraph here.
   signatures worth a fresh novel batch) is untried and worth considering
   before a third signature-widening.
 
-- **Data currency rotation — current state: fixed a real locator-extraction
-  gap in `article_amendment`'s own regex grammar for removed/voided events —
-  3/10 corpus-wide empty-locator occurrences actually name a real qism, not
-  a whole article, and were silently losing that grain. `void_qism`
-  (actually-current, qism-precise removed/voided locators) grows 7 → 9;
-  zero citation/UI impact today (all 3 live in the Second Part, doc
-  -180552, outside this project's norm_unit/struct_node modeling and both
-  apps' scope). Last touched 2026-11-13.** `article_amendment.locator` is
-  populated from `re_amend_event`'s own `locator` named group, which only
-  ever captures text appearing BEFORE the amending act's bibliographic
-  citation — the surface form the "tahririda"/restated grammar uses
-  ("48-moddaning uchinchi qismi ... tahririda"). Checked whether this holds
-  for every change_type by grouping ALL 10 corpus-wide empty-locator
-  events (any change_type) together: all 10 are removed/voided, and all 10
-  share a second, distinct grammar instead — "...Qonuniga asosan
-  <locator>ning oʻz kuchini yoʻqotish/chiqarilish sanasi" (according to Act
-  X, <locator>'s date of losing force/exclusion) — which places the
-  locator AFTER the citation, inside what `re_amend_event`'s own `verb`
-  group swallows, never captured into the `locator` column at all. Hand-read
-  all 10: 7 genuinely name only the bare article ("63-moddaning oʻz kuchini
-  yoʻqotish sanasi" — no finer unit exists, empty locator is correct); 3
-  (events 331/459, 481/852, 594/1107) do name a real qism or finer unit
-  ("459-moddaning toʻrtinchi qismining", "1107-moddaning uchinchi
-  qismining", "852-modda birinchi qismi beshinchi xatboshisining" — the
-  last naming a paragraph WITHIN a qism, a finer grain than
-  `re_qism_locator` resolves). Fixed with a narrowly-scoped fallback: a new
-  `re_asosan_locator` regex extracts the text between "asosan" and the
-  voiding/removal trigger phrase, applied only when the primary `locator`
-  group came back empty; the extracted text is discarded (locator stays
-  empty) when it's just the bare article number with no further qualifier,
-  so the 7 genuine whole-article cases are unaffected. Also widened
-  `re_qism_locator` (used by `void_qism`'s own resolution loop) to accept
-  the grammar's genitive "qismining" ending alongside the existing
-  nominative "qismi" — same locator, different sentence case ("qism birinchi"
-  possessive vs. nominal), not a new unit. Net effect, measured before
-  shipping: `article_amendment.locator` now correctly non-empty for
-  459/852/1107 (empty-locator removed/voided count 10 → 7, the true
-  whole-article residual); of the 3, exactly 2 (459, 1107) match
-  `re_qism_locator`'s qism-only shape and flow into `void_qism`, used by
-  `v_qism_void_citation` and (via the shared `v_locator_amendment_status`)
-  `has_removed_or_voided_part` — the third (852) deliberately does NOT
-  match (different word order, no "-ning" on "852-modda", and a trailing
-  paragraph qualifier `re_qism_locator` was never built to parse), so it
-  stays conservatively unresolved rather than being force-fit and
-  overclaiming "qism 1 wholly removed" when only paragraph 5 of it was.
-  Confirmed via direct diff against the pre-fix DB: all 297 General-Part
-  (`doc_id = -111189`) `article_amendment` rows are byte-for-byte unchanged
-  — the 3 fixed events all belong to the Civil Code's Second Part
-  (`doc_id = -180552`), which this project's `norm_unit`/`struct_node`
-  tables and both Streamlit apps don't model at all, so today's fix is a
-  real data-correctness improvement with zero visible effect until the
-  corpus ever extends qism-level modeling past the General Part — and zero
-  regression risk for either app today. `void_qism`'s own actually-current
-  (not-stale, per 2026-11-10's chronology fix) qism count: 7 → 9; `v_qism_
-  void_citation` link_edge hits: 0 → 0 (no live citation targets either new
-  qism, before or after). `link_edge`/`repeal_clause` row counts unchanged
-  (9647/885 — pure amendment-mining fix, no re-extraction). Verified:
-  `verify_transfer.py` green throughout; `check_sql_bindings.py` 112/112;
-  `check_fstring_interp.py` 55/55; `check_param_arity.py` 196/196 (confirmed
-  this baseline via `git stash`, unaffected by today's change);
-  `check_dead_views.py` 11/11, 2 view-on-view edges (unchanged);
-  `check_dead_columns.py` 15 flagged (unchanged baseline); `check_code_
-  clones.py` 5 pairs (unchanged baseline, `re_asosan_locator` not flagged as
-  a clone of the adjacent regexes). Both apps: grepped for `.locator`/
-  `article_amendment` usage (both only ever query `doc_id = -111189`,
-  General Part) and confirmed via the byte-for-byte diff above that neither
-  app's queries can observe any difference today; `streamlit` isn't
-  installed in this session's environment so no live Playwright check was
-  run — not needed given the proven zero-diff on the only rows either app
-  reads. **Next Data currency rotation**: this thread is closed, no
-  residual beyond the recorded single-occurrence 852 sub-qism (paragraph-
-  within-qism) grain gap, now in Backlog. Fall back to the standing
-  cross-signal technique — the growing set of independently-populated
-  currency/evidence columns (`evidence_kind`, `dst_dangling`,
-  `derived_status`, `en_align_status`, `has_removed_or_voided_part`,
-  `locator_latest_change_type`, version dates) has found something real on
-  most tries so far (see Backlog's own running count) — pick two not yet
-  tried together.
+- **Data currency rotation — current state: closed a latent, currently-0-
+  occurrence but structurally real correctness risk in how `v_article_
+  currency` and BOTH apps key their currency lookups — shipped a permanent
+  `verify_transfer.py` guard rather than just documenting it. Zero live
+  impact; zero residual. Last touched 2026-11-16.** A new variant of the
+  standing cross-signal technique: instead of cross-checking two signals'
+  *values* against each other, checked the safety of the *join key* a
+  signal is attached back to a `norm_id` through. `v_article_currency`
+  (`build_links.py`) is `GROUP BY doc_id, coalesce(target_article_number,
+  host_article_number)` — a TEXT key — with `norm_id` picked via
+  `max(norm_id)`; both `app_hierarchy.py` (`page_article()`) and
+  `app_llc.py` (`page_article()`, and the LLC foundation-articles table)
+  independently look the view back up by `WHERE doc_id = ? AND
+  article_number = ?`, the same text key, never `norm_id`. The corpus has
+  exactly one `article_number` text shared by two distinct `norm_id`s
+  today (`"261"` → `a261#1`/`a261#2`, the pre-existing `review_ambiguous_
+  key` case, fixed at the event-resolution level 2026-11-03). Checked
+  whether that fix also makes the VIEW's own text-keyed GROUP BY safe, not
+  just the event-level resolution: confirmed corpus-wide only one
+  `article_amendment` event ever targets article_number `"261"` (resolves
+  cleanly to `a261#1`) and, more generally, zero `(doc_id, article_number)`
+  keys anywhere in `article_amendment` ever span 2+ distinct `norm_id`s —
+  so today both the view's `GROUP BY` and both apps' lookups are safe. But
+  if a FUTURE amendment ever targets `a261#2` specifically (or any new
+  article-renumbering ever creates a second ambiguous key), this join would
+  silently merge two unrelated norm_ids' amendment histories into one row,
+  and both apps would show one norm_id's currency badge/history on the
+  OTHER norm_id's article page — a wrong legal-currency claim with no error
+  or warning. Mutation-tested the failure mode directly (synthetic
+  in-memory DuckDB table with two norm_ids sharing one article_number key →
+  the new check's query correctly returns 1, confirming it would fire) before
+  shipping. Added a permanent `verify_transfer.py` AC7 check (`v_article_
+  currency never merges two distinct norm_ids under one (doc_id,
+  article_number) key`) so this can never regress silently — passes 0/0
+  today, and would FAIL the build the moment it ever stops being true,
+  turning a silent future display bug into a loud build failure instead.
+  Also tried, while in this area, two cheap genuinely-untried pairings
+  from the standing technique's own list: `v_en_amendment_staleness.
+  en_text_stale` (17 articles) vs. `v_article_currency.has_removed_or_
+  voided_part` (29 articles, 28 with `norm_id IS NULL` because the article
+  no longer exists in `norm_unit` at all — correct, not a bug, there's no
+  live page to badge) — zero overlap, confirming the two signals describe
+  disjoint failure modes (English-translation lag vs. in-force partial
+  removal) rather than double-counting the same risk; and the lone
+  `en_align_status='suspect_version_drift'` article (26¹) against the same
+  `has_removed_or_voided_part` — also false (26¹'s only amendment event is
+  `inserted`, not removed/voided). Both ruled out cleanly, no new backlog
+  item from either. `verify_transfer.py` green throughout (new check
+  included); `check_sql_bindings.py`/`check_fstring_interp.py`/`check_
+  param_arity.py`/`check_dead_views.py`/`check_dead_columns.py`/`check_code_
+  clones.py` all re-run, no regressions (counts shift only from the new
+  check's own query, not from any behavior change). No `corpus.duckdb`
+  rebuild needed — pure verification-layer addition, zero rows touched.
+  **Next Data currency rotation**: no residual from this thread. Fall back
+  to the standing cross-signal technique — the growing set of
+  independently-populated currency/evidence columns (`evidence_kind`,
+  `dst_dangling`, `derived_status`, `en_align_status`, `has_removed_or_
+  voided_part`, `locator_latest_change_type`, version dates) has found
+  something real on most tries so far (see Backlog's own running count) —
+  pick two not yet tried together; today's two new attempts (`en_text_
+  stale`×`has_removed_or_voided_part`, `suspect_version_drift`×`has_
+  removed_or_voided_part`) are now exhausted, don't re-try them without a
+  new angle.
 
 - **Cleanup rotation — current state: shipped the evidence-span
   highlighting feature `check_dead_columns.py` had flagged as "real future
@@ -1001,7 +986,19 @@ paragraph here.
   articles from this entry's own 2026-10-23 finding above, and
   `version_date` added nothing since both sides were scraped well after
   the voiding — closed, not left open, so don't re-try that specific pair
-  without a new angle.
+  without a new angle. **2026-11-16: eighth hit, a new KIND of check, not a
+  new value pairing** — rather than cross-checking two signals' values,
+  checked the safety of the join KEY (`doc_id, article_number` text) that
+  `v_article_currency` and both apps use to attach a signal back to a
+  `norm_id`, given the corpus's one known ambiguous text key (`"261"`).
+  Zero live occurrences (today's `article_amendment` never assigns 2+
+  distinct `norm_id`s to one text key), but the failure mode was real and
+  silent if it ever happened — shipped as a permanent `verify_transfer.py`
+  guard rather than left as a documented risk. See Active threads and Log,
+  2026-11-16, for the full trace. The same day also closed two cheap value
+  pairings as exhausted (zero overlap, not worth re-trying): `en_text_
+  stale` × `has_removed_or_voided_part`, and `suspect_version_drift` ×
+  `has_removed_or_voided_part`.
 - ~~**Does `v_article_currency.has_removed_or_voided_part` (drives the ⚠️
   "part of this article has been removed/voided" badge in both apps'
   Legislative history caption) under-warn for a fully `restated`
@@ -1584,6 +1581,16 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-16 — Data currency rotation: closed a latent (0-occurrence today) correctness risk in how `v_article_currency` and both apps key currency lookups by `article_number` text instead of `norm_id`, shipped a permanent `verify_transfer.py` guard; also recovered a dropped day-end push and installed missing pipeline deps in this fresh container
+
+**Housekeeping first, before any R&D work.** Found `HEAD` detached at `b22f302` on session start, one commit ahead of local `main`/`origin/main` (which were still at `be842d1`, 2026-11-14's tip) — looked like 2026-11-15's three rotation commits had been stranded off-branch at day-end. Re-fetched `origin/main` directly rather than trusting the stale cached ref: it turned out already at `b22f302` — the commits HAD reached GitHub; only this container's local `main` branch pointer was stale (a checkpoint/restart artifact, not a lost-work incident). Fixed with `git checkout -B main b22f302` (clean fast-forward, confirmed via `git merge-base`) so today's work builds on the right tip; `git push` correctly reported "Everything up-to-date". Separately, this fresh container had three setup gaps `verify_transfer.py` caught immediately: (1) `duckdb`/`streamlit` not installed — and specifically, `pip`/`pip3` resolved to a *different* Python (3.13, system dist-packages) than the `python`/`python3` that actually runs the pipeline (3.11) — same exact trap 2026-11-14's entry already named ("always use `python3 -m pip install`"), now independently re-confirmed by hitting it fresh in a brand-new container, not fixed by that day's note alone; fixed with `python3 -m pip install duckdb streamlit`. (2) `articles/train-00000-of-00001.parquet` was a 134-byte git-lfs pointer stub, not the real 163MB file — fixed with `git lfs install && git lfs pull`. Neither gap is a code or data bug; recording both since a future session hitting the same fresh-container state would otherwise re-diagnose from scratch.
+
+**Today's R&D.** Rotation order: Extractor 2026-11-15, Cleanup 2026-11-14, Data currency 2026-11-13 (least recently touched) → picked Data currency. Re-read the full Backlog entry for the standing "cross-check independent currency signals against each other" technique (seven prior hits across different signal *value* pairings) and looked for a pairing genuinely not yet tried. Quick dead-end first: checked whether the empty-`locator` grammar gap fixed 2026-11-13 for `change_type IN ('voided')` also affects other change_types — `SELECT change_type, count(*), sum(locator empty)` grouped: `restated` 534/0, `supplemented` 29/0, `removed` 22/0, `inserted` 17/0, `voided` 9/7, `replaced` 1/0 — only `voided` ever has empty locators, and that's the exact 7 residual the 2026-11-13 fix already left open and documented; nothing new, ruled out in under a minute.
+
+**The real find**: instead of cross-checking two signals' *values*, checked the safety of the *join key* `v_article_currency` is built on. `build_links.py`'s view is `GROUP BY doc_id, coalesce(target_article_number, host_article_number)` (TEXT) with `norm_id` picked via `max(norm_id)`; `app_hierarchy.py::page_article()` and `app_llc.py` (`page_article()` and the LLC foundation-articles table) both look it back up by `WHERE doc_id = ? AND article_number = ?` — the same text key, never `norm_id`. The corpus has exactly one article_number text shared by two distinct `norm_id`s (`"261"` → `a261#1`/`a261#2`; confirmed via `SELECT doc_id, article_number, count(*) FROM norm_unit GROUP BY 1,2 HAVING count(*)>1` — exactly one row, corpus-wide). The 2026-11-03 fix made *event-level* resolution for this key correct (`article_amendment.norm_id` now correctly resolves event_id 24 to `a261#1`), but nobody had checked whether the VIEW's own aggregate GROUP BY was *also* safe — it would not be if `a261#2` ever picked up its own amendment event: `max(norm_id)` would pick one arbitrarily, and the apps' text-keyed lookup would then show ONE norm_id's amendment badge/history on the OTHER norm_id's article page, for both articles, with no error. Measured corpus-wide: `SELECT doc_id, coalesce(target_article_number,host_article_number), count(DISTINCT norm_id) FROM article_amendment GROUP BY 1,2 HAVING count(DISTINCT norm_id)>1` returns zero rows today — safe, but only by the current absence of a second event on the ambiguous key, not by any structural guarantee. Mutation-tested the detection logic in an in-memory DuckDB table (two synthetic rows, same article_number key, different norm_id) before shipping — the query correctly returns 1. Shipped as a new permanent `verify_transfer.py` AC7 check (`v_article_currency never merges two distinct norm_ids under one (doc_id, article_number) key`) — passes 0/0 against the real corpus, and would fail the build the instant this ever stops being true, converting a silent future UI misattribution into a loud build failure. Also tried two cheap, genuinely-untried pairings from the standing technique's list while in this area: `v_en_amendment_staleness.en_text_stale` (17 articles) vs. `v_article_currency.has_removed_or_voided_part` (29 articles, 28 with `norm_id IS NULL` — correct, since those articles no longer exist in `norm_unit` at all, there's no live page to badge) — zero overlap by direct join; and the one `en_align_status='suspect_version_drift'` article (26¹, `a261#1`) against the same `has_removed_or_voided_part` — also false (its only amendment event is `inserted`, dated 2024-02-21, not removed/voided). Both cleanly ruled out, no new bug, no new backlog item.
+
+Verification: `verify_transfer.py` green throughout, including the new check (`[PASS] v_article_currency never merges two distinct norm_ids under one (doc_id, article_number) key`). Re-ran all six Cleanup checks as a baseline: `check_sql_bindings.py` 114/114 (113 pre-existing + today's new static query); `check_fstring_interp.py` 55/55 (unaffected, no f-string in the new code); `check_param_arity.py` 198/198 (unaffected, the new query has zero placeholders); `check_dead_views.py` 11/11, 2 view-on-view edges (unaffected); `check_dead_columns.py` 13 flagged (unaffected by today's change; confirmed via `git stash` that this number, not the stale "15" the 2026-11-13 entry recorded, is the actual current baseline going forward — the drop reflects 2026-11-14's `ev_clean_start`/`ev_clean_end` work making columns readable that were previously flagged, not anything from today); `check_code_clones.py` 6 pairs (also confirmed via `git stash` to be the pre-existing baseline, not caused by today's change — the "5 pairs" figure the 2026-11-13 and 2026-11-15 entries both carried forward was itself stale, one pair behind since 2026-11-14 shipped the new `highlight()` duplicate; corrected here since it would otherwise keep propagating). No `corpus.duckdb` rebuild, no `build_links.py`/`build_okoz.py`/`build_llc.py` re-run needed — pure verification-layer addition, zero data rows touched, zero regression risk for either app. Committed and pushed to `main`.
 
 ### 2026-11-15 — Extractor rotation: swept the 9-item known_gap backlog, fixed 5 (gold_id 123/324/341/618/140) as purely-additive regex extensions, precision 3264/3280→3271/3282, recall 3264/3301→3271/3301, plus two stale-bookkeeping fixes found along the way
 
