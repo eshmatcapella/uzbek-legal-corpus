@@ -180,60 +180,50 @@ paragraph here.
   removed_or_voided_part`) are now exhausted, don't re-try them without a
   new angle.
 
-- **Cleanup rotation — current state: shipped the evidence-span
-  highlighting feature `check_dead_columns.py` had flagged as "real future
-  potential" back on 2026-10-22 — `link_edge.ev_clean_start`/`ev_clean_end`
-  re-derive a citation's own character span through both of the apps'
-  lossy display transforms (pad-crop+whitespace-collapse, then LexUZ-
-  apparatus-stripping), landing it in `evidence_clean`'s own coordinates so
-  both apps can bold the exact cited phrase. 9647/9647 edges resolved (0
-  unresolved), zero regression on every pre-existing `link_edge` column
-  (byte-identical before/after), live-verified in both running apps via
-  Playwright screenshots. All eleven existing Cleanup checks + `verify_
-  transfer.py` re-run clean/unchanged first, as always. Last touched
-  2026-11-14.** This was an *invented* angle, not a Backlog pickup in the
-  literal sense (no bullet said "do this next") — Backlog's `check_dead_
-  columns.py` entry had explicitly scoped the offset-remapping fix as
-  "real but nontrivial, not attempted" rather than queuing it, and
-  Extractor/Data currency's own rotations don't touch this surface either.
-  Picked it because it was the one piece of real, concrete, user-visible
-  product surface sitting unbuilt in this project's own notes, rather than
-  inventing an unrelated twelfth check with no comparable payoff. Built
-  `locate_clean_span()` in `build_links.py`: a small generic regex-
-  substitution offset-mapper (`_sub_map()`) applied three times (the pad-
-  crop's whitespace collapse, the apparatus strip, the apparatus strip's
-  own whitespace collapse), composed through the two `.strip()`/
-  `.strip(charset)` calls on each side. Safety design: the existing
-  `evidence`/`evidence_clean` columns are computed exactly as before (same
-  two function calls, unchanged) and the new span is only trusted when
-  `locate_clean_span()`'s own `evidence_clean` output matches that stored
-  value byte-for-byte — any mismatch degrades to `NULL` (an un-highlighted
-  caption) rather than risking a wrong bold-face; measured 0 mismatches
-  across all 9647 edges. Added a permanent `verify_transfer.py` AC7 check
-  (every resolved span is a valid, non-empty, in-range slice of
-  `evidence_clean`) so a future regression here fails the build, not just
-  today's manual spot-check. Wired into `v_realization` (`build_links.py`)
-  and `v_llc_realization` (`build_llc.py`); `app_hierarchy.py`/`app_llc.py`
-  each got an identical small `highlight()` helper (bold via markdown,
-  degrades to plain text when the span is `None`) — duplicated across the
-  two files rather than extracted into a shared module, same deliberate
-  precedent as `excerpt()`/`snapshot_age_note()` (each app is meant to
-  stay a single deployable Streamlit file); `check_code_clones.py` flags
-  the new pair as expected, not a defect. Spent real effort getting a
-  genuine live-app check rather than settling for a SQL-level one: found
-  and fixed an environment issue first (`pip` and `python3` resolved to
-  different interpreters in this container, so installed packages
-  silently vanished from `python3`'s view — fixed by always using
-  `python3 -m pip install`), then drove both running apps with Node's
-  pre-installed Playwright and screenshotted real "cited as"/"Citation as
-  found" captions showing the correct phrase bolded, apparatus text
-  correctly excluded. **Next Cleanup rotation**: re-run all eleven checks
-  as a baseline per usual; no open residual from this thread. The `llc_
-  implementing_act` summary table's own `max(e.evidence_clean)` aggregate
-  (one representative snippet per implementing-act group, `build_llc.py`)
-  was deliberately left unwired to the new columns — it has no single
-  `edge_id` to key an aggregate offset off, and it already doesn't do
-  per-citation display; not a gap, a different kind of table.
+- **Cleanup rotation — current state: shipped `requirements.txt`, closing a
+  cold-start gap no prior Cleanup rotation had actually fixed (only
+  diagnosed) — every fresh container started with NONE of duckdb/streamlit/
+  pyflakes/vulture/bandit installed and had to `git lfs pull` the real
+  parquet files, with no record anywhere of which exact versions this
+  project had been verified against. Re-ran all nine repeatable Cleanup
+  checks as baseline first (pyflakes, vulture, bandit, and the six repo
+  scripts): all clean/unchanged from their last recorded state, zero new
+  findings. Last touched 2026-11-17.** The 2026-11-01 Cleanup entry (see
+  below) had already found and fixed the diagnostic side of this (a clear
+  `SystemExit` instead of a bare DuckDB "no magic bytes" error when the
+  parquet is still a git-lfs pointer stub) but explicitly left the
+  underlying cold-start step itself alone as "outside this project's
+  control." That's true for `git lfs pull` (the container image doesn't
+  preinstall `git-lfs`'s data, nothing to fix) but turned out NOT true for
+  the Python side — nothing stopped this project from shipping a
+  `requirements.txt`, and today's own session start proved the cost is
+  real: `verify_transfer.py` failed on `ModuleNotFoundError: No module
+  named 'duckdb'` before any work could begin, same as (per the 2026-11-01
+  entry's own count) roughly 15+ prior sessions hit some version of this.
+  Pinned (not left open) to the exact versions verified against
+  `corpus.duckdb` and all nine Cleanup checks today: `duckdb==2.0.0`,
+  `streamlit==1.67.0`, `pyflakes==4.1.0`, `vulture==2.16`, `bandit==1.9.4`
+  — pinning matters here specifically because the Cleanup rotation's own
+  day-over-day "same baseline, no regression" comparisons (e.g. bandit's
+  57 B608 count, vulture's 0 findings) would silently stop being
+  comparable if a tool version changed what it flags out from under them.
+  Added a two-line cold-start pointer to `verify_transfer.py`'s own module
+  docstring (the first thing every session actually runs) rather than
+  editing `README.md`, which is purely the HuggingFace dataset card and
+  has no engineering-setup section to begin with — confirmed by grep, not
+  assumed. Considered also adding a cloud-environment `setup_script` (this
+  session's own tooling supports it) but decided against: this session's
+  cloud environment is the account-wide "Default," shared by every future
+  project, not a per-repo one, and a setup script there would be invisible
+  to anyone cloning the repo from GitHub directly — `requirements.txt` is
+  strictly more portable and is the documented, version-controlled fix.
+  No schema change, no `corpus.duckdb` rebuild; `verify_transfer.py`
+  reconfirmed green after the docstring edit. **Next Cleanup rotation**:
+  re-run all nine checks as baseline per usual; no open residual from this
+  thread. Worth watching going forward: if a future rotation needs a
+  package no prior session needed (e.g. `pandas`/`pyarrow` for some new
+  analysis script), add it to `requirements.txt` in the same commit rather
+  than letting the file drift stale.
 
 ---
 
@@ -1577,10 +1567,50 @@ paragraph here.
   the shared `ast_scope.py` module along the way (see Active threads/Log for
   the full trace). Now an eleventh repeatable Cleanup check; next rotation
   should re-run all eleven.
+- **Fixed, 2026-11-17: the fresh-container cold-start gap (`ModuleNotFoundError`
+  for `duckdb`/`streamlit`/the Cleanup tools) that the 2026-11-14/15/16
+  entries each independently re-hit and hand-fixed for their own session
+  only, never committing a shared fix.** Shipped `requirements.txt` pinned
+  to the versions verified that day (`duckdb==2.0.0`, `streamlit==1.67.0`,
+  `pyflakes==4.1.0`, `vulture==2.16`, `bandit==1.9.4`) plus a cold-start
+  pointer in `verify_transfer.py`'s docstring. See Active threads and Log,
+  2026-11-17, for the full reasoning (including why this went in
+  `requirements.txt`, not `README.md` or a cloud-environment
+  `setup_script`). Not fully closed: if a future rotation needs a new
+  package (e.g. `pandas`/`pyarrow`), add it to `requirements.txt` in the
+  same commit — don't let it drift stale the way the dependency set itself
+  drifted unrecorded for months before this fix.
+- **New, 2026-11-17, not yet acted on: three sessions in a row (2026-11-15,
+  -16, -17) have started with a detached or stale-pointer `HEAD` relative
+  to `origin/main`, each one independently re-diagnosed via a fresh
+  `git fetch`.** Every instance so far has turned out benign (the real
+  commits had already reached GitHub; only the container's cached local
+  ref was behind), so nothing has actually been lost — but the pattern
+  itself, recurring with this regularity, suggests the fresh-container
+  setup this project runs under doesn't always start from a clean
+  `git clone` of current `origin/main`, contrary to this file's own stated
+  assumption ("fresh isolated clone with no memory except what's committed
+  to git"). Low priority (zero actual harm in 3/3 occurrences, and the fix
+  each time is one `git fetch` + fast-forward), but worth a session
+  spending 10 minutes confirming WHY before a fourth occurrence, in case
+  it's ever not benign — e.g. check whether `git reflog`/`git log --all`
+  ever shows a commit that reached a local branch but never reached
+  `origin/main` at all, which would be a real lost-work incident rather
+  than a stale-pointer one.
 
 ---
 
 ## Log
+
+### 2026-11-17 — Cleanup rotation: shipped `requirements.txt`, the actual fix (not just a diagnostic) for the recurring fresh-container cold-start gap; re-ran all nine repeatable checks as baseline, zero regressions
+
+**Housekeeping first.** Session started `HEAD` detached 4 commits ahead of local `main`/`origin/main` (`311cf7e` vs. `be842d1`) — looked at first glance like 2026-11-16's work had been stranded off-branch again, the same shape as the 2026-11-16 entry's own recovered-push incident. Re-fetched `origin/main` directly rather than trusting the cached ref, same discipline that entry used: `origin/main` was already at `311cf7e` — the work had reached GitHub fine; only this container's local branch pointer was stale. `git checkout main && git merge --ff-only origin/main` resolved it cleanly (no `git push` needed, nothing to recover). This is now the third dated entry in a row to hit some variant of "detached/stale `HEAD` on session start" — worth naming as its own low-grade pattern rather than re-diagnosing fresh each time (see Backlog).
+
+**Then hit the actual blocker this entry is about.** `verify_transfer.py` failed immediately: `ModuleNotFoundError: No module named 'duckdb'`. This exact failure — and the `streamlit` and `git-lfs`-pointer-stub variants of it — has now been independently re-diagnosed and silently worked around in at least the 2026-11-14, 2026-11-15, and 2026-11-16 entries (each one's own "housekeeping" paragraph), plus the 2026-10-?? entry that added `verify_transfer.py`'s `_check_parquet_pulled()` diagnostic for the LFS half specifically. Every one of those fixed it *for that session only* by running `python3 -m pip install duckdb streamlit` (or similar) by hand, then moved on — nothing was ever committed to make the NEXT fresh container not hit the identical wall. That's the actual gap: the project had a precise diagnostic for the LFS half and nothing at all, not even a comment, for the Python half, and no single place recording which exact tool versions this project's own checks had last been verified against.
+
+Fixed it for real this time: added `requirements.txt`, pinned to the exact versions installed and verified in this session — `duckdb==2.0.0`, `streamlit==1.67.0` (runtime), `pyflakes==4.1.0`, `vulture==2.16`, `bandit==1.9.4` (the three external Cleanup-rotation tools). Pinned rather than left open deliberately: the Cleanup rotation's own day-over-day comparisons (bandit's 57 `B608` count, vulture's 0 findings, etc.) are implicitly baselined against a specific tool version's ruleset — an unpinned upgrade could silently change what counts as a finding and get misread as a regression. Added a two-line cold-start pointer (`git lfs pull && python3 -m pip install -r requirements.txt`) to `verify_transfer.py`'s own module docstring, since that's the first script every session actually runs — not to `README.md`, which a `grep -i "install\|setup"` confirmed is purely the HuggingFace dataset card with no engineering-setup section at all, the wrong audience for this. Also considered a cloud-environment `setup_script` (this session's own tooling exposes `update_environment`/`create_environment`) and deliberately didn't use it: `get_environment` showed this session's environment is the account-wide "Default," shared by every future project (`is_default: true`), and a setup script there would (a) apply to unrelated projects and (b) be invisible to anyone who clones the repo straight from GitHub rather than through this account's cloud sessions. `requirements.txt` is strictly more portable and is now the version-controlled source of truth; left the cloud environment untouched.
+
+**Baseline re-run**, all nine repeatable Cleanup checks, before and after the `requirements.txt`/docstring change (identical both times — this was a pure documentation/dependency-manifest addition, zero code-path changes): `pyflakes *.py` clean; `vulture *.py --min-confidence 60` clean; `bandit -r . -x ./articles,./documents,./okoz,./structure` 57 `B608`/3 `B311`/1 `B110`-reviewed, same as prior baseline; `check_sql_bindings.py` 114/114; `check_fstring_interp.py` 55/55; `check_param_arity.py` 198/198; `check_dead_views.py` 11/11 clean; `check_dead_columns.py` same 15-column flagged set as 2026-11-14's entry (no change expected or found); `check_code_clones.py` same 6 pairs as 2026-11-14's entry. Zero new findings, zero regressions. No `corpus.duckdb` rebuild, no `build_*.py` re-run needed — nothing touched the data layer. `verify_transfer.py` green before and after. Committed and pushed to `main`.
 
 ### 2026-11-16 — Data currency rotation: closed a latent (0-occurrence today) correctness risk in how `v_article_currency` and both apps key currency lookups by `article_number` text instead of `norm_id`, shipped a permanent `verify_transfer.py` guard; also recovered a dropped day-end push and installed missing pipeline deps in this fresh container
 

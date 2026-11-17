@@ -15,6 +15,9 @@ Checks
        every Uzbek article body in the derived layer identical to the parquet
 
 Exit code 0 = all checks pass, 1 = at least one failure.
+
+Cold start (every fresh container — see DAILY_REVIEW.md, Cleanup, 2026-11-17):
+  git lfs pull && python3 -m pip install -r requirements.txt
 """
 from __future__ import annotations
 

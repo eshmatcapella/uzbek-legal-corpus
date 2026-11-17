@@ -1,0 +1,21 @@
+# Pinned to the exact versions verified against corpus.duckdb and the eleven
+# Cleanup static-analysis checks on 2026-11-17 (see DAILY_REVIEW.md). Every
+# fresh container starts with NONE of these installed and the parquet files
+# as git-lfs pointer stubs — run, in order:
+#
+#   git lfs pull
+#   python3 -m pip install -r requirements.txt
+#
+# Pinned rather than left open: an unpinned duckdb could read corpus.duckdb
+# with a different on-disk format than the one it was built/verified against,
+# and an unpinned pyflakes/vulture/bandit could silently change what counts
+# as a finding, breaking the day-over-day "same baseline, no regression"
+# comparisons the Cleanup rotation relies on.
+
+duckdb==2.0.0
+streamlit==1.67.0
+
+# dev / Cleanup-rotation static analysis tools
+pyflakes==4.1.0
+vulture==2.16
+bandit==1.9.4
