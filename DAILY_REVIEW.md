@@ -46,75 +46,90 @@ just let the Log entry be the permanent record — don't also keep growing a
 paragraph here.
 
 - **Extractor rotation — current state: gold set still 805 records (batch
-  20), precision 3271/3282 (99.7%), recall 3271/3301 (99.1%), up from
-  3264/3280 / 3264/3301 — 5 of the 9 open known_gap items swept and FIXED
-  today (no new gold batch drawn; the novel-signature pool is still fully
-  exhausted). Last touched 2026-11-15.** Executed the sweep the 2026-11-12
-  entry decided on (option 3: fix known_gap backlog items instead of a third
-  signature-widening or uniform resampling, since the widened signature's
-  yield had fallen off and the last real bug found was positional, not
-  shape-driven). Re-verified each of the 9 open known_gap items' corpus-wide
-  scope fresh against real anchor windows (not stale backlog prose) before
-  touching anything, per that entry's own discipline. Fixed 5, all
-  purely-additive regex extensions with zero collateral risk, confirmed by a
-  full before/after corpus-wide diff of every candidate row's `extract()`
-  output (not just a sample) after each change:
-  - `gold_id` 123 (Roman-numeral chapter never got the paragraf/section
-    lookahead the Arabic `bob` branch has) — ported the lookahead into the
-    Roman-chapter branch, gated to a single roman numeral.
-  - `gold_id` 324 ("§ N" section-mark notation) — new `RE_SECTION_MARK`
-    regex, tried as a fallback alongside the word form.
-  - `gold_id` 341 (chapter+paragraf space-separator, "22-bobining 2
-    paragrafi") — widened `RE_SECTION_LIST`'s own separator to accept a bare
-    space, same tolerance `RE_CLAUSE`'s main separator already had.
-  - `gold_id` 618 (Arabic-digit "boʻlim" meaning chapter, not the
-    roman-numeral Part `RE_ROMAN_PART` already handles) — new
-    `RE_ARABIC_BOLIM`, scanned independently, resolving to `target_kind=
-    "chapter"`.
-  - `gold_id` 140 ("hamda" as a third list conjunction alongside comma/va)
-    — added to both `RE_CLAUSE`'s `nums` group and `_expand()`'s split.
+  20), precision 3269/3279 (99.7%), recall 3272/3301 (99.1%) — the
+  self-naming-parenthetical known_gap (`gold_id` 754) FIXED today, the
+  novel-signature pool re-confirmed still fully exhausted (727/727, no new
+  batch drawn). Last touched 2026-11-18.** First ran the untried "option 4"
+  the 2026-11-15 entry left open (re-run `build_gold_sample_novel.py` after
+  the 5 known_gap fixes to see if they'd opened new novel signatures):
+  confirmed 727/727 covered, 0 novel, exactly as before — and necessarily
+  so, not just empirically: `build_gold_sample_novel.py`'s `signature()`
+  is computed purely from raw window TEXT plus `anchor_kind`/`field`, never
+  from `extract()`'s own output, so no change to `citation_extractor.py`'s
+  regex logic could ever move this number. Closes that open question for
+  good (don't re-run it again after a pure extractor-logic change; only
+  after a corpus update or a new signature feature would it move).
 
-  Net corpus-wide: exactly 5 (row, field) pairs changed across the whole
-  candidate set, each matching its own known_gap's previously-measured
-  single-occurrence scope exactly, zero collateral anywhere else — verified
-  by diffing a full `extract()` snapshot over all 2036 non-empty
-  (row, field) keys before and after. `link_edge` 9647 → 9649 (+2, both
-  from the "hamda" list expansion recovering articles 11/12 at row 24219;
-  the other four fixes each upgraded an existing edge's `dst_kind`/grain in
-  place, net zero new edges). `build_links.py`/`build_llc.py` re-run (no
-  `corpus.duckdb` rebuild); `verify_transfer.py` green; all 74/74 extractor
-  self-tests pass (up from 65, including a pre-existing self-test and a
-  pre-existing gold record that had locked in the OLD buggy behavior as
-  "expected" — both corrected in place, same bookkeeping precedent as every
-  prior fix on this list). Both apps smoke-tested live via Playwright
-  (standalone, not simultaneously — see Log for a documented, pre-existing,
-  unrelated DB-lock quirk in how the two apps race for a write-vs-read-only
-  connection when started together, not a regression from today); the one
-  structurally new citation (`gold_id` 618's row, `link_edge` edge_id 2362)
-  confirmed correctly resolved at the DB level (`dst_kind='chapter'`,
-  `dst_struct_node_id='C40'`). Also fixed two stale Backlog/Active-threads
-  bookkeeping drifts found while cross-checking every known_gap bullet
-  against `gold_citations.json`'s actual current verdicts: the "paragrifi"
-  misspelling bullet still read "Not fixed today" two weeks after its real
-  2026-11-02 fix, and the "Build the gold set" bullet's own mismatch list
-  and precision/recall numbers hadn't been refreshed since 2026-11-02 either
-  (both corrected, see Backlog). **Next Extractor rotation**: 4 known_gap
-  items remain open, each previously judged architecturally harder than
-  today's 5 (not re-litigated today — re-verify scope fresh before acting,
-  same discipline as always): `gold_id` 587 (bare "Kodeksning" self-
-  reference disambiguation needs `doc_type` threaded through `extract()`),
-  `gold_id` 597 (amending law's own next heading misattributed — a false
-  positive needing a word-substitution-phrase heuristic), `gold_id` 370
-  ("moddsi" typo — explicitly flagged as not worth the over-matching risk at
-  1 occurrence), and `gold_id` 754/763 (self-naming-parenthetical chain —
-  needs either excluding the spurious anchor or chaining
-  `RE_LEADING_PUB_PAREN` through multiple parens). The novel-signature
-  sampler is still genuinely empty (727/727 signatures covered) — don't draw
-  another batch from it as-is; a fourth option (re-run `build_gold_sample_
-  novel.py`'s own signature function against the now-5-fixes-different
-  extractor output to see if any of today's fixes created new distinct
-  signatures worth a fresh novel batch) is untried and worth considering
-  before a third signature-widening.
+  Then picked up the hardest of the 4 remaining known_gap items, `gold_id`
+  754 (row 30003's self-naming-parenthetical chain, see Backlog for the
+  full original finding): a "(... deb yuritiladi/ataladi)" naming
+  parenthetical ("hereinafter referred to as the Civil Code") repeats the
+  Code's own name inside its parens, which `RE_ANCHOR_CC` matches as a
+  spurious second anchor, truncating the real anchor's own window right
+  before the real citation. First attempt — just drop any anchor match
+  found entirely inside such a parenthetical — was WRONG and would have
+  shipped a regression: dropping the spurious anchor alone exposes the
+  literal word "kodeksi" (still sitting unconsumed inside the now-anchorless
+  parenthetical) to `RE_STOP`'s own `kodeksi` alternative, which then
+  re-breaks the real anchor's own (now-longer) window all over again. Caught
+  this BEFORE shipping by re-running the full corpus-wide before/after
+  `extract()` diff (same discipline as 2026-11-15, not just a sample): 5
+  rows that were already correct went FP/lost their real citation, and the
+  target bug (row 30003) stayed broken. Reverted that attempt within the
+  same session (see `citation_extractor.py`'s own `RE_NAMING_PAREN` comment
+  for the full before/after reasoning, kept permanently as a worked example
+  of why "drop the anchor" isn't enough). Real fix: blank the whole naming
+  parenthetical out with spaces (same length-preserving technique
+  `RE_LEADING_PUB_PAREN` already uses on a single leading paren, computed
+  once up front over the whole text via a new `_blank_naming_parens()`
+  helper) BEFORE anchor-finding and clause-scanning — removes the spurious
+  anchor AND removes "kodeksi" from the gap `RE_STOP` searches, in one pass.
+  `_evidence()` still slices the UNBLANKED original text, so the displayed
+  citation context is unaffected.
+
+  Measured corpus-wide before shipping (every row containing the literal
+  "Fuqarolik kodeksi deb yuritiladi/ataladi" naming clause): 8 rows, 9 raw
+  occurrences (5291, 18091, 25971, 30003, 30057, 30344 ×2, 30762, 30789).
+  Full before/after `extract()` diff over all 2036 non-empty (row, field)
+  keys: exactly these 8 rows change, zero collateral anywhere else. Net
+  effect: article 327 recovered at row 30003 (the one documented recall
+  loss); the other 7 rows each lose a REDUNDANT bare `act` edge that a
+  spurious anchor's own (separately-windowed) bucket had been producing
+  alongside the real citation — the real citation itself (549/43/327/etc.,
+  already correct via that same coincidence) is unchanged in every one of
+  those rows. `link_edge` 9649 → 9640 (-10 redundant `act` edges, +1 real
+  `article` edge). Also corrected two OTHER gold records in place, found
+  because they scored as new regressions after the fix (caught by
+  `score_gold.py`, not assumed): `gold_id` 731 (row 5291) and `gold_id` 773
+  (row 25971) are the REAL anchor of two of those same 8 rows, and their own
+  "expected" had been pinned to the OLD bare-`act` behavior for that
+  specific anchor (correct under the old design, where the real citation was
+  recovered by the spurious anchor's separate bucket instead) — corrected to
+  the real citation each anchor now produces directly. Recall improved
+  3271/3301 → 3272/3301 (the one genuine gain); precision denominator
+  shrank 3282 → 3279 with the ratio unchanged (0.997 both ways) — a
+  `score_gold.py` measurement-coverage nuance, not a regression: its own
+  per-anchor precision bucket for `gold_id` 731/773 still computes its
+  window boundary from `cx._anchors()` called on RAW (unblanked) text, so
+  for those two specific anchors the recovered citation's position now
+  falls just outside that stale boundary and contributes to neither tp nor
+  fp — recorded as a new Backlog item rather than fixed today (see Backlog),
+  since fixing it risks reclassifying `gold_id` 754 itself as DRIFT (its own
+  anchor position is the spurious one, which no longer exists post-fix).
+  74/74 extractor self-tests pass; `verify_transfer.py` green; both apps
+  smoke-tested live via Playwright (standalone, not simultaneously), Article
+  327's page in `app_hierarchy.py` confirmed rendering its (now one edge
+  richer) realization pyramid correctly. **Next Extractor rotation**: 3
+  known_gap items remain open: `gold_id` 587 (bare "Kodeksning"
+  self-reference disambiguation needs `doc_type` threaded through
+  `extract()`), `gold_id` 597 (amending law's own next heading
+  misattributed — a false positive needing a word-substitution-phrase
+  heuristic), `gold_id` 370 ("moddsi" typo — explicitly flagged as not worth
+  the over-matching risk at 1 occurrence). The novel-signature sampler is
+  still genuinely empty (727/727) and, per today's finding, re-running it
+  after a pure extractor-logic change is now a known no-op — only draw a
+  fresh batch after a real corpus update, or pursue option 1 (uniform
+  regression resampling) or option 3 (another known_gap sweep) instead.
 
 - **Data currency rotation — current state: closed a latent, currently-0-
   occurrence but structurally real correctness risk in how `v_article_
@@ -262,8 +277,8 @@ paragraph here.
   twenty batches — two uniform-random, eighteen signature-stratified) +
   `score_gold.py` (the scorer) + `build_gold_sample.py`/
   `build_gold_sample_novel.py` (the two samplers) now exist; current score
-  (post-2026-11-15 known_gap sweep, see Active threads and Log)
-  **precision 3271/3282 (99.7%), recall 3271/3301 (99.1%)**. Updating this
+  (post-2026-11-18 self-naming-parenthetical fix, see Active threads and Log)
+  **precision 3269/3279 (99.7%), recall 3272/3301 (99.1%)**. Updating this
   paragraph's own stale drift while here (several named gaps below had
   already been fixed on their own dated entries without this summary ever
   being revised — same drift class the 2026-11-15 "paragrifi" bookkeeping
@@ -274,11 +289,14 @@ paragraph here.
   fixed, see Backlog), the 2026-10-10 "moddsi" typo (`gold_id` 370, a single
   source-data typo, deliberately not generalized), the 2026-10-27 "bare
   Kodeksning self-reference" gap (`gold_id` 587, needs `doc_type` threaded
-  through `extract()` for a single occurrence), the 2026-10-27 "amending
-  law's own next heading misattributed" false positive (`gold_id` 597), and
-  the 2026-11-09 self-naming-parenthetical chain (`gold_id` 754/763) — all
-  five left open at their own documented single-occurrence or
-  architecture-cost reasoning, see Backlog for each. The Roman-chapter+
+  through `extract()` for a single occurrence), and the 2026-10-27 "amending
+  law's own next heading misattributed" false positive (`gold_id` 597) —
+  all four left open at their own documented single-occurrence or
+  architecture-cost reasoning, see Backlog for each. The 2026-11-09
+  self-naming-parenthetical chain (`gold_id` 754, not 763 — that gold_id was
+  a mislabeling this paragraph itself carried since 2026-11-09, corrected
+  2026-11-18 while fixing the real bug) was FIXED 2026-11-18 — removed from
+  this list accordingly; see Active threads and Log. The Roman-chapter+
   paragraf gap, the "hamda" list-separator gap, the "§ N" section-mark
   gap, and the chapter+paragraph space-separator gap (gold_id 123/140/324/
   341) were all FIXED 2026-11-15 in one Extractor-rotation sweep of the
@@ -469,46 +487,40 @@ paragraph here.
   collateral. `gold_id` 618 corrected to `correct` in place; the weak `act`
   fallback citation this row carried before is now the correct `chapter`
   citation (`link_edge` edge_id 2362). See DAILY_REVIEW.md 2026-11-15 Log.
-- **A self-naming "(... deb yuritiladi)" parenthetical creates a spurious
+- ~~**A self-naming "(... deb yuritiladi)" parenthetical creates a spurious
   second anchor, which can chain into a second, un-reached publication
-  parenthetical and drop a real citation entirely.** Found 2026-11-09 via
-  gold batch 19 (`gold_id` 763, row 30003): "...Fuqarolik kodeksining
+  parenthetical and drop a real citation entirely.**~~ **FIXED 2026-11-18**
+  (Extractor rotation). Found 2026-11-09 via gold batch 19 (`gold_id` 754 —
+  this bullet originally, incorrectly, cited `gold_id` 763; 763 is an
+  unrelated, already-correct record for a different row, found and corrected
+  while fixing this one, see Log), row 30003: "...Fuqarolik kodeksining
   (keyingi oʻrinlarda Fuqarolik kodeksi deb yuritiladi) (Oʻzbekiston
   Respublikasi Oliy Majlisining Axborotnomasi, 1996-yil, 2-songa ilova)
   327-moddasiga muvofiq..." — the naming clause "(hereinafter referred to
   as the Civil Code)" itself contains the literal phrase "Fuqarolik
-  kodeksi", which `RE_ANCHOR_CC` matches as a second, meaningless anchor
-  right after the real one (same mechanism, inverted, as the already-
-  recorded "an amending law's own next heading can be misattributed"
-  false-positive class, 2026-10-27 — here the noise is the Code's OWN name
-  recurring, not another act's). This spurious anchor's own window starts
-  immediately with the naming clause's closing "deb yuritiladi)", then the
-  act's genuine publication-record parenthetical, then the real citation.
-  `RE_LEADING_PUB_PAREN` only blanks a publication paren sitting at the
-  very START of a window; here it's the SECOND of two consecutive leading
-  parens, never reached, so `RE_STOP`'s break fires on "Axborotnomasi"
-  inside it and article 327 is lost entirely — not a display artifact, no
-  other anchor in the row recovers it either. Measured corpus-wide: exactly
-  8 rows share the literal naming clause "Fuqarolik kodeksi deb
-  yuritiladi/ataladi" (5291, 18091, 25971, 30003, 30057, 30344, 30762,
-  30789); only row 30003 also chains a second publication parenthetical
-  before the real citation — the other 7 either have no pub-paren there (so
-  the spurious anchor's own window reaches the real citation unobstructed,
-  recovering it by coincidence, with a harmless redundant bare `act` edge
-  alongside the real one) or have no article number following at all (row
-  18091). True in-scope footprint: exactly 1 occurrence. Not fixed given
-  the single-occurrence scope, same precedent as several items on this
-  list; recorded as a permanent `gold_citations.json` known_gap record
-  (`gold_id` 763) instead. If ever picked up, two viable designs: (a)
-  exclude an anchor match that falls entirely inside an immediately-
-  preceding "(... deb yuritiladi/ataladi)" naming parenthetical, so the
-  spurious anchor never forms and the REAL anchor's own window (currently
-  truncated at the spurious anchor's start) reaches through the whole
-  naming clause to the real citation instead — this would also remove the
-  5 redundant `act` edges the coincidence-recovery rows carry today; or (b)
-  generalize `RE_LEADING_PUB_PAREN` to chain through multiple consecutive
-  leading parens, not just one. (a) is the more complete fix (also cleans
-  up the redundant-edge rows); (b) is narrower and more purely additive.
+  kodeksi", which `RE_ANCHOR_CC` matched as a second, meaningless anchor
+  right after the real one, truncating the real anchor's own window before
+  it ever reached the real citation. Fixed by blanking every such naming
+  parenthetical out (space-filled, length-preserving, same technique
+  `RE_LEADING_PUB_PAREN` already used on a single leading paren) before
+  anchor-finding and clause-scanning, via a new `_blank_naming_parens()`
+  helper — NOT by simply excluding the spurious anchor match itself (design
+  (a) considered below; tried first, reverted the same session: it leaves
+  the literal word "kodeksi" sitting unconsumed in the real anchor's own
+  window, which `RE_STOP`'s own `kodeksi` alternative then reads as a
+  different-code announcement and re-breaks the window all over again — see
+  `citation_extractor.py`'s `RE_NAMING_PAREN` comment for the full trace).
+  Measured corpus-wide before shipping: 8 rows, 9 raw occurrences of the
+  literal naming clause (5291, 18091, 25971, 30003, 30057, 30344 ×2, 30762,
+  30789); full before/after `extract()` diff over all 2036 non-empty
+  (row, field) keys confirms exactly these 8 rows change and nothing else.
+  Net: article 327 recovered at row 30003 (the one true recall loss); the
+  other 7 rows each lose a redundant bare `act` edge a spurious anchor had
+  been producing alongside an already-correct citation (design (b) below —
+  chaining `RE_LEADING_PUB_PAREN` through multiple parens — was not needed;
+  the chosen fix subsumes it). `link_edge` 9649 → 9640. See Active threads
+  and Log, 2026-11-18, for the full trace, including the two other gold
+  records (`gold_id` 731, 773) corrected in place as a consequence.
 - ~~**Chapter list with a parenthetical quoted title after EACH chapter
   number drops the whole list.**~~ **FIXED 2026-10-27.** Found 2026-10-24 via
   gold batch 14: row 29093 reads "Fuqarolik kodeksining 43 ("Bank omonati")
@@ -1302,6 +1314,37 @@ paragraph here.
   just worth a second look if a future session wants to push further.
 
 ### Cleanup
+- **`score_gold.py` duplicates `citation_extractor.extract()`'s own
+  anchor-finding/windowing logic by calling `cx._anchors()` directly on RAW
+  text, instead of sharing whatever internal scan-text transform `extract()`
+  itself applies before finding anchors.** Found 2026-11-18 while fixing the
+  self-naming-parenthetical known_gap (see Log): `extract()` now scans a
+  naming-paren-BLANKED copy internally (`_blank_naming_parens()`, private to
+  that module), but `score_gold.py`'s own per-anchor precision bucket
+  (`anchors = cx._anchors(text, ...)`, `limit = min(a_end+WINDOW,
+  anchors[idx+1][0]...)`) still computes its window boundary from the
+  UNBLANKED text — for the 2 gold records whose real anchor sits right
+  before a naming parenthetical (`gold_id` 731, 773), the real citation's
+  position now falls just outside that stale boundary, so `cites_here` comes
+  back empty and the record contributes to neither tp nor fp on the
+  precision side (recall is unaffected, since recall scores against the
+  whole-field `extract()` output, not the per-anchor bucket). Not a wrong
+  number — just a silently narrower precision denominator (3282 → 3279) for
+  those two records specifically, invisible unless you go looking the way
+  this session did. Not fixed today: naively switching `score_gold.py` to
+  also call `_anchors()` on a blanked copy breaks `gold_id` 754 instead (its
+  OWN recorded anchor position is the spurious one the naming-paren blanking
+  deliberately removes, so blanking there would make that gold record's
+  anchor "no longer found" — reclassified as DRIFT instead of scored). A
+  real fix needs `gold_id` 754 re-pointed to the real anchor's own position
+  at row 30003 (8224, not the spurious 8266 it's recorded against today)
+  AND `score_gold.py` switched to a shared blanked-scan helper, done
+  together in one pass — not attempted today since neither alone is safe
+  and `gold_id` 754 already scores correctly via its current (unblanked,
+  still-coincidentally-resolving) position. Worth doing together next time
+  `score_gold.py` or this exact mechanism comes up again; low priority
+  otherwise (affects 2 of 805 records' precision bucket only, zero effect
+  on recall or on any downstream table).
 - ~~**`parser.py`'s `REPEALED_ARTICLES` hardcoded set (line 30) is provably
   100% redundant.**~~ **Fixed 2026-10-26**: deleted `REPEALED_ARTICLES` and
   the dead `and superscript_val is None` guard; `is_repealed` is now just
@@ -1601,6 +1644,26 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-18 — Extractor rotation: closed the "re-run the novel sampler" open question for good (structurally, not just empirically), then fixed the self-naming-parenthetical known_gap (`gold_id` 754, row 30003) — caught and reverted a wrong first attempt via the full corpus-wide diff before it shipped
+
+**Cold start.** Fresh container, as expected per the 2026-11-17 fix: `python3 -m pip install -r requirements.txt` (not bare `pip install`, which on this container's Python resolves to a *different* interpreter, 3.13 vs. the 3.11 `python3` — tried bare `pip install` first out of habit, got a `ModuleNotFoundError` from `python3` despite pip reporting success; `verify_transfer.py`'s own docstring already says `python3 -m pip install`, which does work, so this isn't a new gap, just a reminder to actually read the docstring instead of defaulting to `pip install`). `git lfs pull` confirmed the parquet was pulled, not a pointer stub. Baseline `verify_transfer.py` green before touching anything.
+
+**Option 4 from 2026-11-15, closed.** That entry left open whether re-running `build_gold_sample_novel.py` after the 5 known_gap fixes would surface new novel signatures. Ran it: 727/727 covered, 0 novel — unchanged. Then realized this wasn't just "still exhausted today," it's structurally guaranteed: `build_gold_sample_novel.py`'s `signature()` function computes its signature purely from the raw window TEXT plus `anchor_kind`/`field` — it never calls `citation_extractor.extract()` at all (deliberately, per its own module docstring: "a re-run of RE_CLAUSE... would just re-encode what the extractor already handles"). Since none of the 2026-11-15 fixes touched the corpus text itself, no regex-logic change to `citation_extractor.py` could ever move this number. Closed for good — don't re-run this check after a pure logic change again; only after a corpus update or a new signature feature.
+
+**Picked up `gold_id` 754 (self-naming-parenthetical chain, row 30003) — the hardest of the 4 remaining known_gap items, previously deferred at a measured single-occurrence scope.** Root cause (see Backlog's original 2026-11-09 finding for the full detail): a "(... deb yuritiladi/ataladi)" naming parenthetical ("hereinafter referred to as the Civil Code") repeats the Code's own name inside its parens; `RE_ANCHOR_CC` matches that repetition as a spurious second anchor, which truncates the real anchor's own window right before the real citation and, in this one row, chains into a second un-reached publication parenthetical that drops article 327 entirely.
+
+First attempt (the backlog's own design (a)): exclude any `RE_ANCHOR_CC`/`RE_ANCHOR_FK`/`RE_ANCHOR_SELF` match found entirely inside such a parenthetical, computed once per `_anchors()` call. Self-tests passed (74/74) and looked promising. But running this project's own standing discipline — a full before/after `extract()` diff over every candidate row, not just the target row — caught a real regression before it shipped: dropping the spurious anchor alone leaves the literal word "kodeksi" sitting unconsumed, in plain text, inside the (now anchor-less) parenthetical; `RE_STOP`'s own `kodeksi|kodeksining|kodeksning` alternative then reads that as a different-code announcement in the GAP before the real anchor's own (now-longer) window reaches the real citation, and re-breaks the window all over again. Measured: 5 rows that were already correctly resolving their citation (via the OLD, spurious-anchor-coincidence mechanism) went FP/lost their real citation outright under this "fix," and the actual target (row 30003) stayed broken, since its own real anchor's window now also got re-broken by the same mechanism. Reverted within the same session, before any commit.
+
+Real fix: blank the whole naming parenthetical out with spaces (length-preserving, same technique `RE_LEADING_PUB_PAREN` already uses on a single leading paren) BEFORE anchor-finding and clause-scanning, via a new module-level `_blank_naming_parens()` helper and `RE_NAMING_PAREN` regex, called once per `extract()` invocation to build a `scan_text` used for anchor-finding, window-slicing, and the qism/band tail lookup — `_evidence()` still slices the UNBLANKED original `text`, so the displayed citation context is unaffected. This removes the spurious anchor (nothing inside a blanked span can match `RE_ANCHOR_CC`) AND removes "kodeksi" from `RE_STOP`'s view in the same pass, so the real anchor's own window runs straight through the (now invisible) naming clause to the real citation.
+
+Measured corpus-wide before shipping (every row containing the literal "Fuqarolik kodeksi deb yuritiladi/ataladi" naming clause, replicating `build_links.py`'s own row-selection query exactly — `kodeks|\bfk\b` regex filter, `doc_id`/`alias_docs`/`is_the_code` resolved the same way): 8 rows, 9 raw occurrences (5291, 18091, 25971, 30003, 30057, 30344 ×2, 30762, 30789). Full before/after `extract()` diff over all 2036 non-empty (row, field) keys corpus-wide: exactly these 8 rows change, zero collateral anywhere else. Net: article 327 recovered at row 30003 (the one true, previously-undocumented-as-fixed recall loss); the other 7 rows each lose a redundant bare `act` edge a spurious anchor's own separately-windowed bucket had been producing *alongside* an already-correct citation (the real citation itself — 549/43/327/etc. — is unchanged in every one of those 7 rows, confirmed present in both the before and after snapshots). `build_links.py` re-run: `link_edge` 9649 → 9640 (-10 redundant `act` edges, +1 real `article` edge — net matches the diff exactly). `build_llc.py` re-run, no change (none of the 8 rows are in the LLC vertical slice). 74/74 extractor self-tests pass; `verify_transfer.py` green.
+
+**`score_gold.py` caught two more records that needed correcting — a real find, not just confirmation.** Running the gold scorer after the fix showed a 2-record *regression* (`gold_id` 731, 773 newly FN) alongside the expected fix (`gold_id` 754 no longer mismatched). Traced it rather than assuming the scorer was wrong: both are the REAL anchor of two of the same 8 rows (5291, 25971) — under the OLD design, that anchor correctly fell through to a bare `act` citation (its own window truncated at the spurious anchor), while the real citation was recovered by the spurious anchor's own separate bucket; `gold_citations.json` had pinned their `expected` to that bare-`act` outcome, correctly, under the old architecture. Under the fix, this same real anchor now produces the real citation (549, 327) directly, and the bare `act` signature no longer appears anywhere in the row's output at all, so recall correctly flagged these two records as newly failing their stale `expected`. Corrected both in place (`expected` updated to the real citation each anchor now produces, `notes` updated to explain why, `verdict` left `correct` since it still is), same bookkeeping precedent as every prior in-place gold correction this project has made. `gold_id` 754 itself: `verdict` corrected `known_gap` → `correct`; `expected` was already right (it had always wanted article 327), so only `verdict`/`notes` changed. Net score: precision 3271/3282 → 3269/3279 (ratio unchanged, 0.997 both ways — the denominator shrink is a separate, now-documented `score_gold.py` measurement nuance, see Backlog, not a new error); recall 3271/3301 → 3272/3301, the one genuine improvement. Also found and corrected a 2026-11-09 mislabeling while cross-checking: the Backlog/Active-threads prose for this bug had always cited `gold_id` 763, which is actually an unrelated, already-correct record for a completely different row (43620) — the real known_gap record was `gold_id` 754 all along. Corrected everywhere this file and `gold_citations.json`'s own notes reference it.
+
+Both apps smoke-tested live via Playwright (standalone, not simultaneously, per the documented DB-lock quirk): `app_hierarchy.py`'s Article explorer, navigated to Article 327, renders its realization pyramid (33 incoming edges, one richer than before) with no errors; `app_llc.py`'s LLC skeleton page loads and renders its Chapter 1 foundation list correctly (unaffected — none of today's changed rows are in the LLC slice).
+
+**Decision**: ship the fix. **Next Extractor rotation**: 3 known_gap items remain (`gold_id` 587, 597, 370), each previously judged harder/narrower than today's; novel-signature sampler re-confirmed exhausted and now known not to move from a pure logic change — pursue option 1 (uniform regression resampling) or option 3 (another known_gap sweep) next, or a fresh angle. New Cleanup-rotation backlog item opened: `score_gold.py`'s own `_anchors()` call duplicates `extract()`'s internal (now blanking-aware) windowing instead of sharing it, which silently narrows the precision denominator for `gold_id` 731/773 specifically — low priority, documented, not fixed today (fixing it safely also requires re-pointing `gold_id` 754 to its real-anchor position, see Backlog).
 
 ### 2026-11-17 — Cleanup rotation: shipped `requirements.txt`, the actual fix (not just a diagnostic) for the recurring fresh-container cold-start gap; re-ran all nine repeatable checks as baseline, zero regressions
 

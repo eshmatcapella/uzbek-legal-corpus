@@ -78,6 +78,61 @@ ORDINALS = ("birinchi", "ikkinchi", "uchinchi", "toʻrtinchi", "to'rtinchi", "be
 # without the coincidence. See DAILY_REVIEW.md 2026-10-30.
 RE_ANCHOR_CC = re.compile(r"Fuqarolik\s+kodeks(?:i[^\W0-9]*|ning)", re.IGNORECASE)
 RE_OLD_CODE = re.compile(r"19\d\d\s*-\s*yilgi\s*$", re.IGNORECASE)
+# A self-naming "(... deb yuritiladi/ataladi)" parenthetical ("hereinafter
+# referred to as ...") routinely repeats, inside its own parens, the exact
+# name it is defining an abbreviation FOR -- e.g. "...Fuqarolik kodeksi
+# (keyingi oʻrinlarda Fuqarolik kodeksi deb yuritiladi) 327-moddasiga...".
+# The second, parenthesized "Fuqarolik kodeksi" is pure definitional noise,
+# not a second real anchor, but RE_ANCHOR_CC matches it anyway, creating a
+# spurious anchor immediately after the real one. Per `_anchors()`'s own
+# "never scan past the next anchor" rule, the REAL anchor's window then gets
+# truncated right at the spurious one's start, before ever reaching the
+# citation that follows the closing paren -- and the spurious anchor's own
+# window starts mid-clause ("... deb yuritiladi) <citation>"), which
+# RE_LEADING_PUB_PAREN can't recognize as a publication parenthetical (it
+# isn't one, and isn't even at the window's start). Found 2026-11-09 via gold
+# batch 19 (gold_id 763, row 30003): article 327 dropped entirely because
+# this row chains a SECOND, genuine publication parenthetical right after
+# the naming one, so `RE_STOP`'s whole-window break (fired on "Axborotnomasi"
+# inside that second paren) discards the real citation too. Measured
+# corpus-wide 2026-11-18 (every row containing the literal "Fuqarolik kodeksi
+# deb yuritiladi/ataladi" naming clause): 8 rows, 9 raw occurrences
+# (5291, 18091, 25971, 30003, 30057, 30344 x2, 30762, 30789).
+#
+# First fix attempted (reverted, same session): just drop any anchor match
+# that falls entirely inside such a parenthetical, so the spurious anchor
+# never forms. That's necessary but NOT sufficient -- 5 of the other 7 rows
+# were already recovering the real citation today only BECAUSE the spurious
+# anchor's own (separately-windowed) scan started right after "kodeksi",
+# never seeing that word as a gap at all. Drop the spurious anchor alone and
+# the REAL anchor's own (now-unbounded) window reaches the citation directly
+# -- but the literal word "kodeksi", still sitting unconsumed inside the
+# naming parenthetical, is itself one of RE_STOP's own trigger words (see
+# RE_STOP's `kodeksi|kodeksining|kodeksning` alternative above): the gap
+# before the real citation's RE_CLAUSE match now contains "kodeksi" in plain
+# text, so RE_STOP fires and the whole-window `break` discards the citation
+# all over again -- a regression (5291, 30057, 30344, 30762, 30789 all lost
+# their real citation), and 30003 itself stayed broken.
+#
+# Real fix: blank the whole naming parenthetical out (same length-preserving
+# space-fill RE_LEADING_PUB_PAREN already uses, just computed once up front
+# over the whole text rather than per-window) BEFORE anchor-finding and
+# clause-scanning -- see `_blank_naming_parens()`. This removes the spurious
+# anchor (nothing inside the blanked span can match RE_ANCHOR_CC) AND removes
+# "kodeksi" from the gap RE_STOP searches (it's now blank spaces), so the
+# real anchor's own window runs straight through the (now-invisible) naming
+# clause to the real citation, exactly as if it had never repeated the
+# Code's name at all. `_evidence()` still slices the UNBLANKED original
+# text, so the displayed citation context still shows the real naming
+# clause verbatim. Re-measured after this fix (see DAILY_REVIEW.md
+# 2026-11-18): article 327 recovered at row 30003 (the one documented
+# recall miss); the 5 redundant `act`-kind edges the spurious anchor
+# produced at 18091/25971/30057/30344/30762/30789 are gone, with no loss --
+# every real citation those 6 rows already had stays exactly as it was; and
+# 5291's own previously-"coincidentally-recovered" article 549 is now found
+# the SAME way (via the real anchor directly), not lost. Zero rows anywhere
+# else in the corpus change at all.
+RE_NAMING_PAREN = re.compile(r"\([^()]*\bdeb\s+(?:yuritiladi|ataladi)\b[^()]*\)", re.IGNORECASE)
 # "FK" as a standalone token, immediately followed by a number or a reference word.
 RE_ANCHOR_FK = re.compile(r"(?<![A-Za-zА-Яа-я0-9ʻʼ'-])FK(?:ning|ga|da|ni)?(?=\s+\d|\s+boshqa|\s+[0-9])")
 # "ushbu/shu Kodeks" — only meaningful when the citing act IS the Code.
@@ -563,6 +618,30 @@ def _evidence(text: str, start: int, end: int, pad: int = 90) -> str:
     return re.sub(r"\s+", " ", text[max(0, start - pad): end + pad]).strip()
 
 
+def _blank_naming_parens(text: str) -> str:
+    """Replace every self-naming '(... deb yuritiladi/ataladi)' parenthetical
+    with spaces of the same length, so neither a spurious anchor nor a
+    RE_STOP trigger word can be read out of its body, while every later
+    offset into the result still lines up with the untouched original text
+    (same length-preserving-blank technique RE_LEADING_PUB_PAREN already
+    uses on a single leading paren, applied corpus-wide up front instead of
+    per-window). The ORIGINAL `text` -- not this blanked copy -- is still
+    what `_evidence()` slices, so the naming clause remains visible,
+    verbatim, in the evidence snippet shown to a reader; only the SCANNING
+    (anchor-finding, RE_CLAUSE/RE_STOP matching) is done against the blanked
+    copy. See RE_NAMING_PAREN's own comment for why a naive "just drop the
+    spurious anchor" fix (tried first, reverted 2026-11-18) isn't enough:
+    blanking the anchor's match alone still leaves "kodeksi" sitting in the
+    real anchor's own window gap, which RE_STOP's bare "kodeksi" alternative
+    then reads as a different-code announcement and wrongly discards the
+    rest of the window.
+    """
+    out = text
+    for m in RE_NAMING_PAREN.finditer(text):
+        out = out[:m.start()] + " " * len(m.group(0)) + out[m.end():]
+    return out
+
+
 def _anchors(text: str, *, allow_fk_alias: bool, is_the_code: bool) -> list[tuple[int, int, str]]:
     found: list[tuple[int, int, str]] = []
     for m in RE_ANCHOR_CC.finditer(text):
@@ -583,13 +662,17 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
     if not text:
         return []
     out: list[Citation] = []
-    anchors = _anchors(text, allow_fk_alias=allow_fk_alias, is_the_code=is_the_code)
+    # Scan against a naming-paren-blanked copy (see _blank_naming_parens);
+    # `text` itself stays untouched so `_evidence()` can still show the
+    # genuine, unblanked source text to a reader.
+    scan_text = _blank_naming_parens(text)
+    anchors = _anchors(scan_text, allow_fk_alias=allow_fk_alias, is_the_code=is_the_code)
 
     for i, (a_start, a_end, kind) in enumerate(anchors):
         # Never scan past the next anchor: its numbers belong to it.
         hard_limit = anchors[i + 1][0] if i + 1 < len(anchors) else len(text)
         limit = min(a_end + WINDOW, hard_limit)
-        window = text[a_end:limit]
+        window = scan_text[a_end:limit]
 
         pub_paren = RE_LEADING_PUB_PAREN.match(window)
         if pub_paren:
@@ -623,7 +706,7 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
                 # project's own backlog note proposed. Measured corpus-wide
                 # before shipping: 8 real qism/band attachments recovered,
                 # zero collateral change (see DAILY_REVIEW.md).
-                tail = text[abs_end: min(abs_end + 60, hard_limit)]
+                tail = scan_text[abs_end: min(abs_end + 60, hard_limit)]
                 suffix = m.group("suffix").lower()
                 if suffix.startswith("sining"):
                     qms = _qism_list(tail) or _qism_range(tail)

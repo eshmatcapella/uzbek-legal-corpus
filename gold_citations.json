@@ -36101,16 +36101,16 @@
       "window": "kiston Respublikasi Fuqarolik kodeksi (bundan buyon matnda ",
       "expected": [
         {
-          "target_kind": "act",
-          "article": null,
+          "target_kind": "article",
+          "article": "549",
           "struct_number": null,
           "section_number": null,
           "listing": "single",
-          "qism": null
+          "qism": "birinchi qism"
         }
       ],
       "verdict": "correct",
-      "notes": ""
+      "notes": "2026-11-09, gold batch 19 (see gold_id 754/773's own notes for the shared mechanism): this real anchor's own window used to be truncated at the spurious second anchor the self-naming parenthetical creates ('(bundan buyon matnda Fuqarolik kodeksi deb yuritiladi)' repeats the Code's own name inside its parens), so this specific anchor correctly fell through to a bare 'act' citation while the real article 549 citation was recovered instead by the spurious anchor's own separate bucket -- 'correct' under that design. FIXED 2026-11-18 (see gold_id 754's updated notes for the full fix): RE_NAMING_PAREN + _blank_naming_parens() now blanks the whole naming parenthetical before scanning, so the spurious anchor never forms and THIS anchor's own window runs straight through to the real citation instead. Re-measured corpus-wide before shipping: this anchor now correctly produces article 549 directly; expected corrected in place from a bare 'act' citation to the real one, same bookkeeping precedent as every other in-place gold correction on this list."
     },
     {
       "gold_id": 732,
@@ -36910,8 +36910,8 @@
           "qism": null
         }
       ],
-      "verdict": "known_gap",
-      "notes": "LexUZ writes “...Fuqarolik kodeksining (keyingi oʻrinlarda Fuqarolik kodeksi deb yuritiladi) (Oʻzbekiston Respublikasi Oliy Majlisining Axborotnomasi, 1996-yil, 2-songa ilova) 327-moddasiga muvofiq...” — the self-naming parenthetical “(keyingi oʻrinlarda Fuqarolik kodeksi deb yuritiladi)” (‘hereinafter referred to as the Civil Code’) itself contains the literal phrase “Fuqarolik kodeksi”, which RE_ANCHOR_CC matches as a SECOND, spurious anchor sitting right after the real one. This anchor is the spurious one (anchor_start 8266): its own window starts immediately with the naming clause's closing ‘deb yuritiladi)’, then the act's genuine publication-record parenthetical (Axborotnomasi, 1996-yil, 2-songa ilova), then the real citation ‘327-moddasiga’. RE_LEADING_PUB_PAREN only blanks a publication paren that sits at the very START of a window -- here it is the SECOND of two consecutive leading parens, so it is never reached, and RE_STOP's break fires on 'Axborotnomasi' inside it, dropping article 327 entirely (this anchor's own bucket falls through to the bare 'act' fallback, and no other anchor in the row recovers article 327 either -- a genuine corpus-wide recall loss, not a display artifact). Measured corpus-wide: exactly 8 rows contain the literal self-naming clause 'Fuqarolik kodeksi deb yuritiladi/ataladi' (5291, 18091, 25971, 30003, 30057, 30344, 30762, 30789); this is the ONLY one of the 8 where a second, chained publication-record parenthetical sits between the naming clause and the real citation -- the other 7 either have no pub-paren there (so the spurious second anchor's own window reaches the real citation unobstructed, recovering it by coincidence -- see gold_id for row 25971, same naming clause, no pub-paren, correctly extracts article 327) or have no article number following at all (row 18091, a descriptive sentence with nothing to cite). So the true in-scope footprint of this exact compounding shape (naming clause immediately followed by a chained pub-paren before the real citation) is exactly 1 occurrence corpus-wide. Not fixed today: a real fix would need either (a) excluding an anchor match that falls entirely inside an immediately-preceding '(... deb yuritiladi/ataladi)' naming parenthetical (so the spurious anchor never forms, and the REAL anchor's own window -- currently truncated at the spurious anchor's start -- reaches through the whole naming clause to the real citation instead), or (b) generalizing RE_LEADING_PUB_PAREN to chain through multiple consecutive leading parens, not just one -- either a real, if narrow, design change, not justified for a single occurrence per this project's existing precedent (paragrif/Roman-chapter-lookahead/section-mark/boʻlim known_gaps, all deferred at 1-2 occurrences). Recorded as a permanent known_gap. Also note: this same spurious-anchor mechanism produces a redundant bare 'act' edge alongside the real article citation in the 5 other rows where the citation IS recovered (5291, 25971, 30344, 30762, 30789) -- harmless to precision/recall (an 'act' edge is still a true, if weaker, statement) but worth noting if a future session picks up (a) above, since fixing the anchor-formation bug would also remove that redundant edge."
+      "verdict": "correct",
+      "notes": "LexUZ writes “...Fuqarolik kodeksining (keyingi oʻrinlarda Fuqarolik kodeksi deb yuritiladi) (Oʻzbekiston Respublikasi Oliy Majlisining Axborotnomasi, 1996-yil, 2-songa ilova) 327-moddasiga muvofiq...” -- the self-naming parenthetical repeats the Code's own name inside its parens, which RE_ANCHOR_CC matched as a SECOND, spurious anchor right after the real one, truncating the real anchor's own window and landing this specific (spurious) anchor's own bucket on a chained second publication parenthetical that RE_STOP's break discarded before ever reaching '327-moddasiga'. FIXED 2026-11-18 (Extractor rotation): added RE_NAMING_PAREN (matches any balanced, non-nested '(...deb yuritiladi/ataladi...)' parenthetical) and _blank_naming_parens(), which blanks every such span (same length-preserving space-fill RE_LEADING_PUB_PAREN already uses on a single leading paren) across the WHOLE text before anchor-finding and clause-scanning in extract(). This removes the spurious anchor entirely (nothing inside the blanked span can match RE_ANCHOR_CC) AND removes the literal word 'kodeksi' from the real anchor's own window gap (it would otherwise trigger RE_STOP's own 'kodeksi' alternative and wrongly re-break the window again -- a regression hit and reverted within this same session before landing this fix, see RE_NAMING_PAREN's own comment in citation_extractor.py). _evidence() still slices the UNBLANKED original text, so the naming clause remains visible, verbatim, in the displayed citation context. Measured corpus-wide before shipping (every row containing the literal 'Fuqarolik kodeksi deb yuritiladi/ataladi' naming clause): 8 rows, 9 raw occurrences (5291, 18091, 25971, 30003, 30057, 30344 x2, 30762, 30789). Net effect: article 327 recovered at this row (the one documented recall miss); the redundant bare 'act' edges the spurious anchor produced at 18091/25971/30057/30344/30762/30789 are gone with zero citation loss (every real citation those rows already had is unchanged, now found directly via the real anchor instead of via the spurious one's coincidental recovery); gold_id 731 (row 5291) and gold_id 773 (row 25971) -- the real anchors of two of those same 8 rows -- are corrected in place alongside this record, since their own 'expected' had been pinned to the OLD bare-'act' behavior for that specific anchor, not the real citation. Zero rows anywhere else in the corpus change at all. verdict corrected known_gap -> correct in place, same bookkeeping precedent as every other fixed known_gap on this list."
     },
     {
       "gold_id": 755,
@@ -37442,8 +37442,8 @@
       "window": "kiston Respublikasi Fuqarolik kodeksining (keyingi oʻrinlarda ",
       "expected": [
         {
-          "target_kind": "act",
-          "article": null,
+          "target_kind": "article",
+          "article": "327",
           "struct_number": null,
           "section_number": null,
           "listing": "single",
@@ -37451,7 +37451,7 @@
         }
       ],
       "verdict": "correct",
-      "notes": "Correctly extracts a redundant bare 'act' edge, not article 327 -- this IS the real anchor of the self-naming-parenthetical known_gap mechanism (gold_id 754, row 30003): the real citation '327-moddasiga' sits past this anchor's own window limit (bounded by the SPURIOUS second anchor the naming clause itself creates), recovered instead by that second anchor's own bucket elsewhere in the same row -- one of the 7 rows (per gold_id 754's note) where no chained pub-paren blocks the recovery, so the whole-field extract() output is correct even though this anchor's own bucket is just the redundant 'act' edge."
+      "notes": "2026-11-09, gold batch 19 (see gold_id 754's own notes for the shared mechanism): this real anchor's own window used to be truncated at the spurious second anchor the self-naming parenthetical creates, so this specific anchor correctly fell through to a bare 'act' citation while the real article 327 citation was recovered instead by the spurious anchor's own separate bucket -- 'correct' under that design (this record's own prior note called it out explicitly as the real anchor of the gold_id 754 mechanism). FIXED 2026-11-18 (see gold_id 754's updated notes for the full fix): RE_NAMING_PAREN + _blank_naming_parens() now blanks the whole naming parenthetical before scanning, so the spurious anchor never forms and THIS anchor's own window runs straight through to the real citation instead. Re-measured corpus-wide before shipping: this anchor now correctly produces article 327 directly; expected corrected in place from a bare 'act' citation to the real one, same bookkeeping precedent as every other in-place gold correction on this list."
     },
     {
       "gold_id": 774,
