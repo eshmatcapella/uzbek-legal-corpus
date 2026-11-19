@@ -557,9 +557,48 @@ def main() -> int:
     # Roman-numeral-plus-any-unit alternative (same bare-space-instead-of-
     # hyphen and apostrophe-letter variants as the digit branch already
     # tolerates) alongside the existing digit-unit branch.
+    # Measured 2026-11-19 (Data currency rotation): the qualifier can also be a
+    # LIST of articles, not a single one — "...OʻRQ-683-sonli Qonunining
+    # (Oʻzbekiston Respublikasi Oliy Majlisi ... Axborotnomasi, 2021-yil,
+    # 4-songa ilova) 12 va 110-moddalari" voids articles 12 AND 110 of that
+    # act, not the whole thing. The single-item digit branch above requires the
+    # number to be glued directly to its own hyphen+unit, so on a list it can
+    # only match the LAST member — and since the lazy `[\s\w\-]{0,80}?` prefix
+    # can skip right over "12 va " (ordinary word characters) to reach "110-
+    # moddalari" on its own, the match doesn't fail outright, it silently loses
+    # every member but the last. Found via the standing cross-signal technique,
+    # not a text grep: `v_act_currency` flagged -5388561 (OʻRQ-683 itself, the
+    # single biggest `article_amendment.amending_doc_id` — 375/612 events,
+    # including the General Part's own widely-cited 2021 restatements) as
+    # `derived_status='superseded'`, which looked implausible for an act this
+    # heavily relied on elsewhere; tracing its own `repeal_clause` rows back to
+    # the raw text found 5 of its 35 "repealed" citations are really list
+    # locators that fell through to NULL (= "whole act"), not single items.
+    # Measured corpus-wide (full before/after diff over all 885 repeal-list
+    # items before shipping): 31 items recover a list locator that was
+    # previously NULL (misread as "whole act"), across 21 distinct dst_doc_id;
+    # 1 more item (row 3399, doc -1920893, whose own title is literally "26 VA
+    # 27-MODDALARIGA") had a non-NULL locator that was already silently
+    # truncated to just "27-moddalariga" by the same lazy-prefix-skips-the-
+    # list-head mechanism — corrected to the full list; zero other items
+    # change. Of the 21 dst_doc_id, 19 have NO remaining whole-act repeal_clause
+    # row at all once this is fixed, flipping `v_act_currency.derived_status`
+    # 'superseded' -> 'no repeal found' (2 — -2159832, -1420858 — keep a
+    # second, genuine whole-act repeal row and stay superseded, correctly).
+    # Real downstream effect: 7 of the 19 are `llc_implementing_act` rows
+    # (route='names_llc_law', tier 3, 1 hit each) that `app_llc.py::page_acts()`
+    # currently hides by default (its "Hide superseded" toggle defaults on) —
+    # they reappear in the LLC dossier's default view once this ships. Fixed
+    # by widening the digit branch with an optional, capped (<=6 members)
+    # list-prefix of bare "NUM," / "NUM va" items before the final NUM-unit —
+    # same list grammar citation_extractor's own RE_CLAUSE already uses for
+    # the Code's own citations, just not previously ported to this module's
+    # separate repeal-locator regex (same gap class as the 2026-10-20
+    # Roman-numeral fix, a different missing alternative in the same regex).
     re_target_locator = re.compile(
         r"^[\s\w\-]{0,80}?(?:\([^()]{0,300}\)\s*)?"
-        r"(\d+[\d\-]*\s*-\s*(?:modda|qism|band|bob|paragraf)\w*"
+        r"((?:\d+[\d\-]*\s*(?:,\s*|\s+va\s+)\s*){0,6}"
+        r"\d+[\d\-]*\s*-\s*(?:modda|qism|band|bob|paragraf)\w*"
         r"|[IVXL]{1,6}(?:\s*-\s*|\s+)(?:modda|qism|band|bob|paragraf|bo[ʻʼ']?lim)\w*)",
         re.IGNORECASE,
     )

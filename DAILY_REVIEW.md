@@ -131,69 +131,56 @@ paragraph here.
   fresh batch after a real corpus update, or pursue option 1 (uniform
   regression resampling) or option 3 (another known_gap sweep) instead.
 
-- **Data currency rotation — current state: closed a latent, currently-0-
-  occurrence but structurally real correctness risk in how `v_article_
-  currency` and BOTH apps key their currency lookups — shipped a permanent
-  `verify_transfer.py` guard rather than just documenting it. Zero live
-  impact; zero residual. Last touched 2026-11-16.** A new variant of the
-  standing cross-signal technique: instead of cross-checking two signals'
-  *values* against each other, checked the safety of the *join key* a
-  signal is attached back to a `norm_id` through. `v_article_currency`
-  (`build_links.py`) is `GROUP BY doc_id, coalesce(target_article_number,
-  host_article_number)` — a TEXT key — with `norm_id` picked via
-  `max(norm_id)`; both `app_hierarchy.py` (`page_article()`) and
-  `app_llc.py` (`page_article()`, and the LLC foundation-articles table)
-  independently look the view back up by `WHERE doc_id = ? AND
-  article_number = ?`, the same text key, never `norm_id`. The corpus has
-  exactly one `article_number` text shared by two distinct `norm_id`s
-  today (`"261"` → `a261#1`/`a261#2`, the pre-existing `review_ambiguous_
-  key` case, fixed at the event-resolution level 2026-11-03). Checked
-  whether that fix also makes the VIEW's own text-keyed GROUP BY safe, not
-  just the event-level resolution: confirmed corpus-wide only one
-  `article_amendment` event ever targets article_number `"261"` (resolves
-  cleanly to `a261#1`) and, more generally, zero `(doc_id, article_number)`
-  keys anywhere in `article_amendment` ever span 2+ distinct `norm_id`s —
-  so today both the view's `GROUP BY` and both apps' lookups are safe. But
-  if a FUTURE amendment ever targets `a261#2` specifically (or any new
-  article-renumbering ever creates a second ambiguous key), this join would
-  silently merge two unrelated norm_ids' amendment histories into one row,
-  and both apps would show one norm_id's currency badge/history on the
-  OTHER norm_id's article page — a wrong legal-currency claim with no error
-  or warning. Mutation-tested the failure mode directly (synthetic
-  in-memory DuckDB table with two norm_ids sharing one article_number key →
-  the new check's query correctly returns 1, confirming it would fire) before
-  shipping. Added a permanent `verify_transfer.py` AC7 check (`v_article_
-  currency never merges two distinct norm_ids under one (doc_id,
-  article_number) key`) so this can never regress silently — passes 0/0
-  today, and would FAIL the build the moment it ever stops being true,
-  turning a silent future display bug into a loud build failure instead.
-  Also tried, while in this area, two cheap genuinely-untried pairings
-  from the standing technique's own list: `v_en_amendment_staleness.
-  en_text_stale` (17 articles) vs. `v_article_currency.has_removed_or_
-  voided_part` (29 articles, 28 with `norm_id IS NULL` because the article
-  no longer exists in `norm_unit` at all — correct, not a bug, there's no
-  live page to badge) — zero overlap, confirming the two signals describe
-  disjoint failure modes (English-translation lag vs. in-force partial
-  removal) rather than double-counting the same risk; and the lone
-  `en_align_status='suspect_version_drift'` article (26¹) against the same
-  `has_removed_or_voided_part` — also false (26¹'s only amendment event is
-  `inserted`, not removed/voided). Both ruled out cleanly, no new backlog
-  item from either. `verify_transfer.py` green throughout (new check
-  included); `check_sql_bindings.py`/`check_fstring_interp.py`/`check_
-  param_arity.py`/`check_dead_views.py`/`check_dead_columns.py`/`check_code_
-  clones.py` all re-run, no regressions (counts shift only from the new
-  check's own query, not from any behavior change). No `corpus.duckdb`
-  rebuild needed — pure verification-layer addition, zero rows touched.
-  **Next Data currency rotation**: no residual from this thread. Fall back
-  to the standing cross-signal technique — the growing set of
-  independently-populated currency/evidence columns (`evidence_kind`,
-  `dst_dangling`, `derived_status`, `en_align_status`, `has_removed_or_
-  voided_part`, `locator_latest_change_type`, version dates) has found
-  something real on most tries so far (see Backlog's own running count) —
-  pick two not yet tried together; today's two new attempts (`en_text_
-  stale`×`has_removed_or_voided_part`, `suspect_version_drift`×`has_
-  removed_or_voided_part`) are now exhausted, don't re-try them without a
-  new angle.
+- **Data currency rotation — current state: fixed a real list-locator gap in
+  `build_links.py`'s `repeal_clause.target_locator` regex — 21 acts were
+  misclassified whole-act-superseded, 19 flip to 'no repeal found' (234→214
+  corpus-wide), 7 of them live `llc_implementing_act` rows the LLC dossier
+  hides by default today. Zero residual. Last touched 2026-11-19.** Found via
+  the standing cross-signal technique on a pairing never tried before:
+  `article_amendment.amending_doc_id` × `v_act_currency.derived_status` — does
+  an act that amended the Civil Code later show up itself as superseded?
+  345/612 events hit, an implausibly large and oddly-titled set (Election-Code/
+  Telecommunications-Law *adoption* acts "superseding" a general cross-code
+  amendments law) to wave off as expected legislative housekeeping without
+  checking the mechanism. Root cause: `re_target_locator` only ever recognized
+  a SINGLE trailing locator ("N-moddasi"); a repeal-list item naming several
+  articles ("12 va 110-moddalari") couldn't match at all, defaulting to `NULL`
+  → read as "whole act repealed" by `v_act_currency`'s `whole_repeal` CTE —
+  same gap *class* as the 2026-10-20 Roman-numeral fix (a missing alternative
+  in the same regex), different grammar (list, not numeral system). Measured
+  corpus-wide before shipping (full before/after diff, all 885 repeal-list
+  items): 31 items recover a list locator from `NULL`, 1 more (already
+  non-null) gets corrected from a silently-truncated single member to its
+  full list, zero regressions either direction. Of 21 distinct `dst_doc_id`
+  affected, 19 fully flip to 'no repeal found' (confirmed by a full
+  before/after set-diff of every superseded doc_id, not just hand-traced
+  ones — 20 left the superseded set net, one beyond the 19 hand-traced, from
+  a dst_doc_id a manual grouping step mis-assigned; the automated diff found
+  zero false flips in either direction); 2 correctly keep a second,
+  independent whole-act repeal row and stay superseded. 7 of the 19 are
+  `llc_implementing_act` rows (`route='names_llc_law'`, tier 3) that
+  `app_llc.py::page_acts()`'s "Hide superseded" toggle (defaults on) was
+  hiding from users — re-ran the page's own live query post-fix to confirm
+  they now surface. One of the 21, `-5388561` (OʻRQ-683, 2021-04-21), is also
+  the single biggest `article_amendment.amending_doc_id` corpus-wide (375/612
+  events, including the acts behind the already-documented Article 1 EN-
+  staleness case) — removes a standing blemish from that signal's own data,
+  though neither app currently displays `derived_status` for an *amending*
+  act directly, so there was no live mis-display from that specific angle.
+  Re-ran `build_links.py`/`build_llc.py` only (no `corpus.duckdb` rebuild);
+  `verify_transfer.py` green throughout. See Log, 2026-11-19, for the full
+  trace, including the two cheap pairings tried first and ruled out clean
+  (`llc_norm.cc_norm_id` × `has_removed_or_voided_part`: 0/29 overlap;
+  `effective_date` < `amend_date` self-consistency: 2/65 hits, both verified
+  as genuine statutory retroactivity clauses, not bugs). **Next Data currency
+  rotation**: no residual from this thread. Fall back to the standing
+  cross-signal technique — this is now its ninth hit out of roughly a dozen
+  pairings tried; keep pulling from the growing signal set (see Backlog) for
+  pairs not yet tried, including `derived_status` itself now joined against
+  more targets (e.g. whether any currently-"superseded" amending act's
+  OWN amendment events should be re-examined for the same list-locator class
+  of gap on the amending side, not just the repealing side — not checked
+  today, worth a look).
 
 - **Cleanup rotation — current state: shipped `requirements.txt`, closing a
   cold-start gap no prior Cleanup rotation had actually fixed (only
@@ -1000,7 +987,20 @@ paragraph here.
   2026-11-16, for the full trace. The same day also closed two cheap value
   pairings as exhausted (zero overlap, not worth re-trying): `en_text_
   stale` × `has_removed_or_voided_part`, and `suspect_version_drift` ×
-  `has_removed_or_voided_part`.
+  `has_removed_or_voided_part`. **2026-11-19: ninth hit, back to a value
+  pairing, and the biggest-impact one yet** — `article_amendment.
+  amending_doc_id` × `v_act_currency.derived_status` (does an act that
+  amended the Civil Code later show up itself as superseded?) surfaced an
+  implausibly large 345/612 hit rate, which traced to a real `repeal_clause.
+  target_locator` list-grammar gap (same class as the 2026-10-20 Roman-
+  numeral fix): 21 acts were misclassified whole-act-superseded, 19 flip to
+  'no repeal found' (234→214 corpus-wide), 7 of them live `llc_implementing_
+  act` rows `app_llc.py::page_acts()` hides by default today. See Active
+  threads and Log, 2026-11-19, for the full trace. Two cheap pairings tried
+  first and closed clean the same day: `llc_norm.cc_norm_id` ×
+  `has_removed_or_voided_part` (0/29 overlap) and `article_amendment`'s own
+  `effective_date` < `amend_date` self-consistency (2/65 hits, both verified
+  as genuine statutory retroactivity clauses in the evidence text, not bugs).
 - ~~**Does `v_article_currency.has_removed_or_voided_part` (drives the ⚠️
   "part of this article has been removed/voided" badge in both apps'
   Legislative history caption) under-warn for a fully `restated`
@@ -1644,6 +1644,20 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-19 — Data currency rotation: a list-locator gap in `repeal_clause.target_locator` was silently misclassifying 21 acts (including the Civil Code's own biggest amending act) as whole-act-superseded, 7 of them live `llc_implementing_act` rows hidden from the LLC dossier's default view today
+
+**Cold start.** Fresh container; `git lfs pull` + `python3 -m pip install -r requirements.txt` per the 2026-11-17 fix, both worked first try (no cold-start friction today — the fix is holding). Baseline `verify_transfer.py` green (234 acts provably superseded) before touching anything.
+
+**Picked Data currency per the rotation order** (Extractor 11-18 → Data currency 11-19 → Cleanup next), per Active threads' own last-touched dates. Tried a handful of cheap candidate pairings first from the standing cross-signal technique (`llc_norm.cc_norm_id` × `v_article_currency.has_removed_or_voided_part`: 0/29 overlap, clean; `effective_date` < `amend_date` self-consistency within `article_amendment`: 2/65 hits, both verified as genuine retroactivity clauses in the evidence text — "...2024-yil 1-yanvardan eʼtiboran yuzaga kelgan munosabatlarga nisbatan ham tatbiq etiladi", explicitly backdating a Feb-2024 law to Jan 1 — not a bug) before landing on the one that paid off: `article_amendment.amending_doc_id` × `v_act_currency.derived_status` — do any of the acts that amended the Civil Code show up, themselves, as later `superseded`? This had never been tried; in principle it shouldn't matter (an executed amendment stays in the Code's text regardless of what later happens to the amending instrument), but 345/612 events hit turned out too large and too oddly-titled a set (Election-Code and Telecommunications-Law adoption acts "superseding" a general cross-code amendments act) to wave off without checking the mechanism.
+
+**Root cause, traced to the raw text, not assumed:** `build_links.py`'s `re_target_locator` (the regex that decides whether a `repeal_clause` item voids a *specific* article/part of the cited act, or the whole act when no locator parses) only ever recognized a single trailing locator glued to its own unit word. When LexUZ's list item instead names several articles — "...OʻRQ-683-sonli Qonunining (Oʻzbekiston Respublikasi Oliy Majlisi ... Axborotnomasi, 2021-yil, 4-songa ilova) 12 va 110-moddalari" (articles 12 **and** 110) — the digit branch can't match starting at "12" (no immediate hyphen+unit), and because the regex's own lazy prefix is free to skip over ordinary word/space characters, it silently re-anchors past "12 va " and matches only "110-moddalari" as if that were the one and only member, or (when even that slips past the parenthetical skip budget differently) fails outright and returns `None` — which `v_act_currency`'s `whole_repeal` CTE then reads as "no locator = whole act repealed." Same gap *class* as the 2026-10-20 Roman-numeral fix (a missing alternative in the same regex), different grammar (list, not numeral system) — ported citation_extractor's own list separators (`,`/`va`) into this module's separate locator regex as a new, capped (≤6 members) optional list-prefix before the existing single-locator match.
+
+**Measured corpus-wide before shipping** (full before/after diff over all 885 repeal-list items, old regex vs. new): 853 unchanged, 1 corrected (row 3399, doc **-1920893**, whose own title is literally "...26 VA 27-MODDALARIGA..." — previously stored only `'27-moddalariga'`, now the full `'26 va 27-moddalariga'`; not live in either app today, found anyway via the full diff rather than skipped), **31 recovered from `NULL` (misread as whole-act) to a real list locator**, across 21 distinct `dst_doc_id`, zero regressions (no previously-resolved locator went to `None`, no previously-"no repeal found" act became falsely superseded). Of the 21: **19 flip from `derived_status='superseded'` to `'no repeal found'`** (confirmed by diffing the full superseded-doc set before/after, not just the 21 candidates — exactly 20 doc_ids actually left the superseded set, one more than the 19 I'd hand-traced, from a dst_doc_id my manual grouping mis-assigned; the automated set-diff is the number that matters and shows zero false flips either direction). The other 2 (`-2159832`, `-1420858`) correctly keep a second, independent whole-act repeal row and stay superseded. `v_act_currency`: 234 → 214 provably-superseded acts.
+
+**Real, visible downstream effect** (same precedent as 2026-10-20's "one act showing a false 🔴 badge" — this time seven): 7 of the 19 flipped acts are `llc_implementing_act` rows (`route='names_llc_law'`, tier 3, 1 hit each — `-5388561`/`-4661840`/`-2724496`/`-2388207`/`-2323079`/`-2111255`/`-973890`) that `app_llc.py::page_acts()` currently **hides by default** (its "Hide superseded" toggle defaults on) — verified by re-running the exact query the page runs: 56 rows now surface under `route='names_llc_law'` with the default toggle, where the 7 were previously invisible unless a user explicitly unhid superseded acts. `-5388561` (OʻRQ-683, "On introducing amendments and additions to certain legislative acts," 2021-04-21) is also, by a wide margin, the single biggest `amending_doc_id` in `article_amendment` (375/612 events corpus-wide, 170/288 in First-Part scope) — including the acts behind the already-documented 2021 General Part restatements (e.g. the Article 1 case flagged by `v_en_amendment_staleness`) — so this also removes a standing, if silent, blemish on the currency data behind that whole signal, even though neither app currently surfaces `derived_status` for an *amending* act directly (only for a *repealing* one), so there was no live mis-display from that side specifically.
+
+Re-ran `build_links.py` (`repeal_clause` 374→343 whole-act, 511→542 locator-scoped; `link_edge` unchanged at 9640 — no citation-extraction logic touched) and `build_llc.py` (`llc_implementing_act` 7 rows corrected). `verify_transfer.py` green throughout, including the new AC7 join-key guard from 2026-11-16. No `corpus.duckdb` rebuild from scratch — ran only the two affected build steps against the existing DB, per the standing constraint. Both apps compile; `app_llc.py::page_acts()`'s live query re-run directly (not just eyeballed) against the rebuilt DB for both `route` values with the default toggle, no errors, counts match the build log.
 
 ### 2026-11-18 — Extractor rotation: closed the "re-run the novel sampler" open question for good (structurally, not just empirically), then fixed the self-naming-parenthetical known_gap (`gold_id` 754, row 30003) — caught and reverted a wrong first attempt via the full corpus-wide diff before it shipped
 
