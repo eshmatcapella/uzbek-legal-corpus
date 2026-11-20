@@ -6,6 +6,7 @@ just run a checklist. Multi-day threads are normal and expected; a thread stays
 "active" until it resolves, not until a calendar day ends.
 
 How to use this file each session:
+0. Normalize git state first: `git fetch origin main && git checkout main && git merge --ff-only origin/main`. The container this session runs in is NOT a fresh `git clone` of `origin/main` despite this file's own purpose paragraph above — forensically confirmed 2026-11-20 (see Cleanup, Log) that `.git/logs/HEAD` persists reflog entries across multiple calendar days in the same repository, and the environment's own bootstrap leaves local `refs/heads/main` wherever the previous session's own `git checkout main` last left it (always exactly one session behind, since that checkout happens before that session's own final commit+push). HEAD itself always starts correctly detached at the true tip of `origin/main` — nothing is ever lost — but `git status`/`git log` against the stale local `main` branch will misleadingly look behind until you run the line above. Do this before reading anything else below, so you don't re-diagnose it.
 1. Read "Active threads" below. Continue one if it's mid-flight.
 2. Otherwise pull the next-highest-value item from "Backlog" (rotate across
    the three focus areas rather than draining one), or invent a new angle the
@@ -182,50 +183,63 @@ paragraph here.
   of gap on the amending side, not just the repealing side — not checked
   today, worth a look).
 
-- **Cleanup rotation — current state: shipped `requirements.txt`, closing a
-  cold-start gap no prior Cleanup rotation had actually fixed (only
-  diagnosed) — every fresh container started with NONE of duckdb/streamlit/
-  pyflakes/vulture/bandit installed and had to `git lfs pull` the real
-  parquet files, with no record anywhere of which exact versions this
-  project had been verified against. Re-ran all nine repeatable Cleanup
-  checks as baseline first (pyflakes, vulture, bandit, and the six repo
-  scripts): all clean/unchanged from their last recorded state, zero new
-  findings. Last touched 2026-11-17.** The 2026-11-01 Cleanup entry (see
-  below) had already found and fixed the diagnostic side of this (a clear
-  `SystemExit` instead of a bare DuckDB "no magic bytes" error when the
-  parquet is still a git-lfs pointer stub) but explicitly left the
-  underlying cold-start step itself alone as "outside this project's
-  control." That's true for `git lfs pull` (the container image doesn't
-  preinstall `git-lfs`'s data, nothing to fix) but turned out NOT true for
-  the Python side — nothing stopped this project from shipping a
-  `requirements.txt`, and today's own session start proved the cost is
-  real: `verify_transfer.py` failed on `ModuleNotFoundError: No module
-  named 'duckdb'` before any work could begin, same as (per the 2026-11-01
-  entry's own count) roughly 15+ prior sessions hit some version of this.
-  Pinned (not left open) to the exact versions verified against
-  `corpus.duckdb` and all nine Cleanup checks today: `duckdb==2.0.0`,
-  `streamlit==1.67.0`, `pyflakes==4.1.0`, `vulture==2.16`, `bandit==1.9.4`
-  — pinning matters here specifically because the Cleanup rotation's own
-  day-over-day "same baseline, no regression" comparisons (e.g. bandit's
-  57 B608 count, vulture's 0 findings) would silently stop being
-  comparable if a tool version changed what it flags out from under them.
-  Added a two-line cold-start pointer to `verify_transfer.py`'s own module
-  docstring (the first thing every session actually runs) rather than
-  editing `README.md`, which is purely the HuggingFace dataset card and
-  has no engineering-setup section to begin with — confirmed by grep, not
-  assumed. Considered also adding a cloud-environment `setup_script` (this
-  session's own tooling supports it) but decided against: this session's
-  cloud environment is the account-wide "Default," shared by every future
-  project, not a per-repo one, and a setup script there would be invisible
-  to anyone cloning the repo from GitHub directly — `requirements.txt` is
-  strictly more portable and is the documented, version-controlled fix.
-  No schema change, no `corpus.duckdb` rebuild; `verify_transfer.py`
-  reconfirmed green after the docstring edit. **Next Cleanup rotation**:
-  re-run all nine checks as baseline per usual; no open residual from this
-  thread. Worth watching going forward: if a future rotation needs a
-  package no prior session needed (e.g. `pandas`/`pyarrow` for some new
-  analysis script), add it to `requirements.txt` in the same commit rather
-  than letting the file drift stale.
+- **Cleanup rotation — current state: forensically root-caused the
+  recurring "stale/detached HEAD at session start" pattern (2026-11-15,
+  -16, -17, and again today — the fourth occurrence the 2026-11-17 bullet
+  said was worth investigating) for good — confirmed benign, zero lost
+  work, fixed procedurally (new step 0 in this file's own instructions).
+  Re-ran all eleven repeatable Cleanup checks as baseline: all
+  clean/unchanged from their last recorded state, zero new findings. Last
+  touched 2026-11-20.** Root cause, from direct forensic evidence rather
+  than inference: `.git/logs/HEAD` and `.git/logs/refs/heads/main` on
+  session start contained reflog entries from BOTH 2026-11-19 (timestamp
+  1795050334, 01:05 UTC) AND 2026-11-20 (1795136716, 01:05 UTC) — exactly
+  24h apart — in the SAME repository. A true fresh `git clone` per session
+  would only ever show that session's own entries; this proves the
+  container's `.git` directory (and its branch refs) persists across
+  sessions and is only refreshed via `git fetch` + a detached-HEAD checkout
+  of the new tip commit, contradicting this file's own stated assumption
+  ("fresh isolated clone with no memory except what's committed to git" —
+  corrected the purpose paragraph's practical implication via the new step
+  0, left the paragraph itself alone since the *lesson* — nothing persists
+  except what reaches git — still holds, even if the transport mechanism
+  isn't a clone). The mechanism: `refs/heads/main` was created exactly once
+  (`branch: Created from refs/remotes/origin/main`, 2026-11-19 01:05:35)
+  and never updated since — each day's HEAD correctly lands on the true
+  `origin/main` tip (detached), but local `main` only ever advances when
+  that day's own session runs `git checkout main` itself (as this file's
+  instructions already imply), which happens BEFORE that session's own
+  final commit — so local `main` is always exactly one session's worth of
+  commits behind until the next session's own `git fetch`+ff-merge catches
+  it up. Checked the one scenario that would make this a real incident, not
+  a cosmetic one, per the 2026-11-17 bullet's own question: `git log --all`
+  shows every commit `refs/heads/main` has ever pointed to also reachable
+  from (and identical to) `origin/main`'s history after each fetch — no
+  commit has ever existed on a local branch without reaching `origin/main`.
+  Zero lost work, 4/4 occurrences now explained, not just observed. Fix
+  shipped as the new step 0 above (not a code change — there's nothing in
+  this project's own pipeline to fix; the behavior lives in the hosting
+  platform, outside this repo's control) so future sessions spend one
+  command instead of independently re-diagnosing the stale pointer every
+  time. **Next Cleanup rotation**: no residual from this thread; `check_code_clones.py`'s own 6-pair baseline and `check_dead_columns.py`'s
+  13-flag baseline were both re-confirmed unchanged today — re-run all
+  eleven checks as usual, plus the still-open `score_gold.py`
+  unblanked-window precision-denominator item below (low priority, 2/805
+  records, deliberately deferred again today in favor of the HEAD
+  investigation).
+
+  Prior state (2026-11-17, now superseded by the bullet above — kept as a
+  one-line pointer, full detail in that date's Log entry): shipped
+  `requirements.txt` pinned to `duckdb==2.0.0`/`streamlit==1.67.0`/
+  `pyflakes==4.1.0`/`vulture==2.16`/`bandit==1.9.4` plus a cold-start
+  pointer in `verify_transfer.py`'s docstring, fixing (not just diagnosing)
+  the fresh-container `ModuleNotFoundError` gap. Still true today: every
+  fresh container needs `git lfs pull` + `pip install -r requirements.txt`
+  before anything runs (confirmed again this session — parquet was a
+  134-byte LFS stub, `duckdb`/`streamlit` not installed) — that part of the
+  cold-start cost is real and unrelated to the git-ref issue above, and
+  remains unfixed (outside this project's control, per that date's own
+  reasoning).
 
 ---
 
@@ -1623,27 +1637,59 @@ paragraph here.
   package (e.g. `pandas`/`pyarrow`), add it to `requirements.txt` in the
   same commit — don't let it drift stale the way the dependency set itself
   drifted unrecorded for months before this fix.
-- **New, 2026-11-17, not yet acted on: three sessions in a row (2026-11-15,
-  -16, -17) have started with a detached or stale-pointer `HEAD` relative
-  to `origin/main`, each one independently re-diagnosed via a fresh
-  `git fetch`.** Every instance so far has turned out benign (the real
-  commits had already reached GitHub; only the container's cached local
-  ref was behind), so nothing has actually been lost — but the pattern
-  itself, recurring with this regularity, suggests the fresh-container
-  setup this project runs under doesn't always start from a clean
-  `git clone` of current `origin/main`, contrary to this file's own stated
-  assumption ("fresh isolated clone with no memory except what's committed
-  to git"). Low priority (zero actual harm in 3/3 occurrences, and the fix
-  each time is one `git fetch` + fast-forward), but worth a session
-  spending 10 minutes confirming WHY before a fourth occurrence, in case
-  it's ever not benign — e.g. check whether `git reflog`/`git log --all`
-  ever shows a commit that reached a local branch but never reached
-  `origin/main` at all, which would be a real lost-work incident rather
-  than a stale-pointer one.
+- ~~**Three sessions in a row (2026-11-15, -16, -17) started with a
+  detached or stale-pointer `HEAD` relative to `origin/main`.**~~
+  **Root-caused 2026-11-20** (fourth occurrence, same session that hit it
+  investigated it per this bullet's own instruction) — see Active threads
+  for the full forensic trace and the new step 0 this file's own
+  instructions now carry. Confirmed via `.git/logs/HEAD` timestamps benign
+  in all 4/4 occurrences (`git log --all` shows every local-`main` commit
+  always reachable from `origin/main`, never the other way around) and
+  structurally explained (the container persists `.git` across sessions
+  and only ever fetches+detached-checks-out; local `main` only advances
+  when a session runs its own `git checkout main`, always one session
+  behind until the next fetch). Not a code fix — nothing in this
+  project's pipeline caused or can prevent this, it's a hosting-platform
+  behavior — so closed via a procedural instruction change, not a commit
+  to any `.py` file.
 
 ---
 
 ## Log
+
+### 2026-11-20 — Cleanup rotation: forensically root-caused the recurring stale-HEAD pattern (4th occurrence) with git reflog timestamps, confirmed zero lost work, fixed procedurally; re-ran all eleven repeatable checks clean
+
+**Cold start.** Container started HEAD-detached at `643b51a` with local `main`/`origin/main` refs one commit stale (`4c912db`) — the exact pattern the 2026-11-17 Cleanup bullet flagged as "worth investigating before a fourth occurrence." This was that fourth occurrence, so investigated it properly instead of the usual one-line `git fetch`+ff-merge dismissal. Also needed the now-routine `git lfs pull` (parquet was a 134-byte LFS pointer stub) + `pip install -r requirements.txt` (`duckdb`/`streamlit` not installed) — both worked first try, confirming the 2026-11-17 `requirements.txt` fix is still holding.
+
+**The investigation.** Before touching `main`, read `.git/logs/HEAD` and `.git/logs/refs/heads/main` directly (not just `git log`/`git status`, which only show current state, not history-of-state). Found four entries total, with real Unix timestamps:
+
+```
+.git/logs/HEAD:
+  0000000 -> 4c912db   1795050334  (2026-11-19 01:05:34 UTC) — no action label (initial checkout)
+  4c912db -> 4c912db   1795050335  (2026-11-19 01:05:35 UTC) checkout: moving from 4c912db to main
+  4c912db -> 643b51a   1795136716  (2026-11-20 01:05:16 UTC) — no action label (today's checkout)
+  643b51a -> 4c912db   1795136744  (2026-11-20 01:05:44 UTC) checkout: moving from 643b51a to main   [mine, today]
+
+.git/logs/refs/heads/main:
+  0000000 -> 4c912db   1795050335  (2026-11-19 01:05:35 UTC) branch: Created from refs/remotes/origin/main
+  4c912db -> 643b51a   1795136747  (2026-11-20 01:05:47 UTC) merge origin/main: Fast-forward          [mine, today]
+```
+
+Two entries carry no reflog action label at all — those are the two session-start checkouts themselves (2026-11-19's and today's), each landing HEAD, detached, exactly on `origin/main`'s true tip at that moment (`4c912db` then, correctly; `643b51a` today, correctly — confirmed by `git fetch` afterward: `origin/main` really was at `643b51a`, not ahead of it). The decisive fact: **these two checkouts are 24h01m apart, in the same `.git` directory, with the same `refs/remotes/origin/main` history building on itself rather than starting fresh.** A real `git clone` per session would produce a reflog containing only that session's own entries — it cannot contain yesterday's. This directly falsifies this file's own "fresh isolated clone" framing of the container's git state (not the deeper lesson — "nothing persists except what reaches git" — which still holds; just the specific mechanism).
+
+Reconstructed the actual mechanism: `refs/heads/main` was created exactly once, 2026-11-19 01:05:35, "from `refs/remotes/origin/main`" — and never touched again until I ran `git merge --ff-only` just now. Meanwhile HEAD gets re-pointed to the correct new tip commit every session (via whatever `git fetch`-equivalent step the platform runs before Claude starts), but always detached — nothing in that bootstrap step ever advances the local `main` branch pointer itself. Local `main` only moves when a session's own work does it — which is exactly what both 2026-11-19's and today's reflog show happening at `+1s` and `+28s` respectively after each checkout, i.e., session-authored, not platform-authored. Since that `git checkout main` always happens *before* that session's own final commit+push, local `main` is structurally guaranteed to be exactly one session's commits behind every single time the *next* session starts, until that next session's own fetch catches it up — a steady-state artifact, not drift that compounds or ever closes a gap on its own.
+
+**Checked the one scenario that would make this a real incident** (the 2026-11-17 bullet's own closing question): does `git log --all` / the reflog ever show a commit that reached a local branch but never reached `origin/main`? No — `git fetch` today moved `origin/main` from `4c912db` to `643b51a` cleanly (a pure fast-forward, no divergence, no `(forced update)` reflog marker anywhere in either file), and every commit local `main` has ever pointed to is, after that fetch, reachable from `origin/main`. 4/4 occurrences (2026-11-15, -16, -17, -20) are now confirmed benign by direct evidence, not just by absence-of-symptom.
+
+**Fix.** Not a code change — there is nothing in this project's pipeline that causes or could prevent a hosting-platform behavior. Added a step 0 to this file's own "How to use this file each session" instructions (`git fetch origin main && git checkout main && git merge --ff-only origin/main`, done first) and folded the full finding into the Active threads Cleanup bullet and the Backlog item it resolves, so no future session re-diagnoses this from scratch — closing the actual time-cost (roughly 10 minutes of re-diagnosis per the 2026-11-17 estimate, paid three times already) rather than just the risk.
+
+**Baseline re-run, all eleven repeatable Cleanup checks** (first full re-run since 2026-11-17, now that deps are installed): `pyflakes *.py` clean; `vulture *.py --min-confidence 60` clean; `bandit -r . -x ./articles,./documents,./okoz,./structure` — 57 `B608`/3 `B311`/1 `B110`, identical to the documented baseline, all pre-reviewed; `check_sql_bindings.py` 114/114; `check_fstring_interp.py` 55/55; `check_param_arity.py` 198/198; `check_dead_views.py` 11/11 (2 view-on-view edges); `check_dead_columns.py` 176 columns checked, 13 flagged — same set as 2026-11-16's corrected baseline; `check_code_clones.py` 129 functions across 23 files, same 6 cross-file pairs as the 2026-11-14-established baseline (`highlight()`, `snapshot_age_note()`, `sha256_file()`, `excerpt()` 0.930, `citation_dict`/`citation_to_dict` 0.795, `base_table_columns`/`view_sql` 0.614). Zero new findings, zero regressions anywhere. `python -m unittest test_transfer_e2e.py` 14/14. `verify_transfer.py`: **VERIFICATION PASSED — all checks green** (74/74 extractor self-tests, 9640 edges, 214 superseded acts, 386/386 General Part articles classified, 39 OKOZ mappings still awaiting the owner's validation — untouched, as required).
+
+**Decision.** No code or data touched today — this was a pure diagnostic/documentation session, same category as 2026-10-19's `DAILY_REVIEW.md` pruning. Justified given the explicit standing instruction ("worth a session spending 10 minutes confirming WHY before a fourth occurrence") and because leaving it open any longer meant a fifth, sixth, Nth future session each paying the same 10-minute re-diagnosis tax indefinitely. `git status`: clean. Committing only `DAILY_REVIEW.md`.
+
+**Next Cleanup rotation**: no residual from the HEAD investigation. One real item remains open from 2026-11-18/-19 (see Backlog > Cleanup): `score_gold.py`'s per-anchor precision window still computes from unblanked text instead of sharing `citation_extractor.py`'s `_blank_naming_parens()`-scanned copy, silently narrowing the precision denominator for `gold_id` 731/773 (2 of 805 records) — needs `gold_id` 754 re-pointed to its real anchor position (8224, not 8266) in the same pass, deliberately deferred again today in favor of the higher-value, fully-resolvable HEAD investigation.
+
+---
 
 ### 2026-11-19 — Data currency rotation: a list-locator gap in `repeal_clause.target_locator` was silently misclassifying 21 acts (including the Civil Code's own biggest amending act) as whole-act-superseded, 7 of them live `llc_implementing_act` rows hidden from the LLC dossier's default view today
 
