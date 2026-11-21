@@ -255,8 +255,55 @@ RE_CLAUSE = re.compile(
 # Civil Code's own text, "ushbu/mazkur/shu Kodeksning" is always itself the
 # self_reference anchor match (RE_ANCHOR_SELF consumes the whole word,
 # including "-ning"), so this stop-word never fires there.
+#
+# BUT bare "Kodeksning" (or "ushbu/mazkur/shu Kodeksning" with nothing else
+# naming a different act in front of it) directly after -- or, in a longer
+# window, still clearly continuing -- the Civil Code's own mention is a THIRD
+# surface form this single substring match can't tell apart from the two
+# above: "Oʻzbekiston Respublikasining Fuqarolik kodeksi Kodeksning
+# 53-moddasi" is LexUZ redundantly restating the Civil Code's own name one
+# word after naming it, not announcing a different code (`gold_id` 587, row
+# 19636, found 2026-10-27). Moved the bare "kodeksning" alternative out to its
+# own `RE_STOP_KODEKSNING` below, checked by `extract()`'s `_is_stop` helper
+# at every stop-check call site.
+#
+# First attempt (2026-11-21): gate purely on `doc_type` -- stop only when the
+# citing act genuinely has "its own code" (`doc_type == "code"`) or `doc_type`
+# isn't known at all (`None`, the conservative default every caller gets
+# unless it explicitly threads `doc_type` through). A full corpus-wide
+# before/after `extract()` diff (same discipline as every prior fix here, not
+# just the 2 occurrences the original narrow measurement found) caught this
+# alone as WRONG before shipping: row 29029 ("Fuqarolik kodeksining
+# 166-moddasi, Oʻzbekiston Respublikasi Maʼmuriy javobgarlik toʻgʻrisidagi
+# kodeksning 60, 61-moddalari...") has `doc_type='law'`, same as the bug, but
+# here "kodeksning" genuinely IS naming a different code -- the Code on
+# Administrative Liability, named immediately before it by its own
+# "<subject> toʻgʻrisidagi" qualifier phrase -- and a doc_type-only gate would
+# have wrongly attributed its 60/61 to the Civil Code. The real second signal
+# is local, not document-level: is "kodeksning" preceded, anywhere in the same
+# stop-check span, by a "toʻgʻrisida(gi)" act-naming qualifier? If so it always
+# stops, regardless of `doc_type` -- `RE_ACT_QUALIFIER` below checks exactly
+# this, scanned over the same span before deferring to `doc_type` at all.
+#
+# Measured corpus-wide before shipping (every anchor-window stop-check span
+# anywhere in the corpus whose own text contains bare "kodeksning", cross-
+# checked against each row's actual text and `doc_type`, not just the 2 the
+# original narrow single-regex measurement found): 4 occurrences total.
+# Row 19636 (`doc_type='law'`, no qualifier before it) -- the known bug,
+# fixed, recovers article 53. Row 29029 (`doc_type='law'`, preceded by
+# "toʻgʻrisidagi") -- correctly still stops via `RE_ACT_QUALIFIER`, zero
+# change. Two more, not previously found by the narrower 2026-10-27
+# measurement because it only looked within 20 chars of a bare digit+modda
+# clause: row 11208 (`doc_type='constitution'`, "...Ushbu Kodeksning
+# 197-moddasiga muvofiq..." continuing a Civil Code citation 166 moddasi
+# started two sentences earlier) and row 41405 (`doc_type='law'`,
+# "...ushbu Kodeksning 57-bobi ("Zarar yetkazishdan kelib chiqadigan
+# majburiyatlar")..." continuing a Civil Code article-725 citation) -- both
+# genuine additional recall fixes under the same doc_type+qualifier logic,
+# recovering article 197 and chapter 57 respectively. See DAILY_REVIEW.md
+# 2026-11-21 for the full trace and the `link_edge` before/after count.
 RE_STOP = re.compile(
-    r"(?i:qonuni|qonuniga|qonunining|qonunning|kodeksi|kodeksining|kodeksning|"
+    r"(?i:qonuni|qonuniga|qonunining|qonunning|kodeksi|kodeksining|"
     r"farmoni|farmonining|qarori|qarorining|"
     r"nizom|konstitutsiya|buyrugʻi|buyrugi|reglament|"
     # A "yoʻriqnoma" (instruction/guideline) being named is the same "a
@@ -300,6 +347,18 @@ RE_STOP = re.compile(
     r"qonun\s*\()"
     r"|Qonun\b"
 )
+# Bare "kodeksning" (genitive without "-i-"), split out from RE_STOP above so it
+# can be gated on `doc_type` instead of firing unconditionally — see the long
+# comment above RE_STOP's own definition for the full reasoning and the
+# gold_id 587 fix it's for.
+RE_STOP_KODEKSNING = re.compile(r"kodeksning", re.IGNORECASE)
+# A "<subject> toʻgʻrisidagi" qualifier (any okina spelling) immediately in
+# front of "kodeksning" names a SPECIFIC different code by its own subject
+# matter ("Maʼmuriy javobgarlik toʻgʻrisidagi kodeksning" — "of the Code on
+# Administrative Liability"), unlike bare/"ushbu/mazkur/shu" "kodeksning" on
+# its own. When this qualifier is present, "kodeksning" always stops the scan
+# regardless of `doc_type` — see RE_STOP_KODEKSNING's own comment, row 29029.
+RE_ACT_QUALIFIER = re.compile(r"to[ʻʼ']?g[ʻʼ']?risida", re.IGNORECASE)
 # Abbreviation of another code — FPK (Civil Procedure), JPK (Criminal Procedure),
 # IPK, MMK and so on.  Case-sensitive on purpose: under IGNORECASE this would match
 # any three-letter word ending in "k".  "FK" itself is one letter shorter and so is
@@ -658,10 +717,29 @@ def _anchors(text: str, *, allow_fk_alias: bool, is_the_code: bool) -> list[tupl
 
 
 def extract(text: str | None, *, allow_fk_alias: bool = False,
-            is_the_code: bool = False) -> list[Citation]:
+            is_the_code: bool = False, doc_type: str | None = None) -> list[Citation]:
     if not text:
         return []
     out: list[Citation] = []
+
+    def _is_stop(s: str) -> bool:
+        # Bare/"ushbu/mazkur/shu" "kodeksning" only means "a different code is
+        # being named" when the citing act genuinely has a code of its own
+        # (`doc_type == "code"`) or the caller hasn't told us `doc_type` at
+        # all (`None`, the conservative old-behavior default) -- UNLESS a
+        # "<subject> toʻgʻrisidagi" qualifier right before it already names a
+        # specific different code explicitly, which always stops regardless
+        # of `doc_type`. See RE_STOP_KODEKSNING's own comment for the full
+        # reasoning and the corpus-wide measurement.
+        if RE_STOP.search(s) or RE_STOP_ABBR.search(s):
+            return True
+        m = RE_STOP_KODEKSNING.search(s)
+        if not m:
+            return False
+        if RE_ACT_QUALIFIER.search(s[:m.start()]):
+            return True
+        return doc_type is None or doc_type == "code"
+
     # Scan against a naming-paren-blanked copy (see _blank_naming_parens);
     # `text` itself stays untouched so `_evidence()` can still show the
     # genuine, unblanked source text to a reader.
@@ -686,7 +764,7 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
         for m in RE_CLAUSE.finditer(window):
             # A different act named before this clause claims it instead.
             gap = window[consumed_to:m.start()]
-            if RE_STOP.search(gap) or RE_STOP_ABBR.search(gap):
+            if _is_stop(gap):
                 break
             unit = m.group("unit").lower()
             nums, listing = _expand(m.group("nums"))
@@ -795,7 +873,7 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
         # the whole window from its own start, same convention as the
         # Roman-chapter fallback uses for its own stop-word gate.
         for m in RE_ROMAN_PART.finditer(window):
-            if RE_STOP.search(window[:m.start()]) or RE_STOP_ABBR.search(window[:m.start()]):
+            if _is_stop(window[:m.start()]):
                 break
             if (num := _roman(m.group("r1"))) is not None:
                 abs_start, abs_end = a_end + m.start(), a_end + m.end()
@@ -809,7 +887,7 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
         # same reason (a chapter citation can sit on either side of an
         # already-matched clause in the same window).
         for m in RE_ARABIC_BOLIM.finditer(window):
-            if RE_STOP.search(window[:m.start()]) or RE_STOP_ABBR.search(window[:m.start()]):
+            if _is_stop(window[:m.start()]):
                 break
             abs_start, abs_end = a_end + m.start(), a_end + m.end()
             out.append(Citation("chapter", None, int(m.group("num")), None, None, kind, "single",
@@ -952,6 +1030,38 @@ def _selftest() -> int:
         ("Fuqarolik kodeksining 14-moddasi. mazkur Kodeksning 20-moddasi.",
          {"is_the_code": True},
          [("article", "14", "single"), ("article", "20", "single")]),
+        # gold_id 587 (row 19636): bare "Kodeksning" directly after the Code's
+        # own name, with no other code named and no demonstrative, is LexUZ
+        # redundantly restating the Civil Code, not announcing a different
+        # one -- but only when the CITING act has no code of its own to mean
+        # ("doc_type='law'"). Must NOT stop the scan here.
+        ("Oʻzbekiston Respublikasining Fuqarolik kodeksi Kodeksning 53-moddasi.",
+         {"doc_type": "law"}, [("article", "53", "single")]),
+        # control: the exact same bare "Kodeksning" shape still stops the scan
+        # when the citing act genuinely IS some other code (doc_type='code',
+        # row 21291) -- matches the already-tested "mazkur Kodeksning" design
+        # above, and the conservative no-doc_type default (old behavior) below.
+        ("Oʻzbekiston Respublikasining Fuqarolik kodeksi Kodeksning 53-moddasi.",
+         {"doc_type": "code"}, [("act", None, "single")]),
+        ("Oʻzbekiston Respublikasining Fuqarolik kodeksi Kodeksning 53-moddasi.",
+         {}, [("act", None, "single")]),
+        # row 29029: a "<subject> toʻgʻrisidagi kodeksning" qualifier names a
+        # SPECIFIC other code (Administrative Liability) right before bare
+        # "kodeksning" -- must still stop unconditionally, even with the same
+        # doc_type='law' as the gold_id 587 bug above. Caught by the full
+        # corpus-wide diff before shipping the doc_type-only first attempt.
+        ("Fuqarolik kodeksining 166-moddasi, Oʻzbekiston Respublikasi Maʼmuriy "
+         "javobgarlik toʻgʻrisidagi kodeksning 60, 61-moddalari.",
+         {"doc_type": "law"}, [("article", "166", "single")]),
+        # row 11208/41405: "ushbu Kodeksning" continuing an EARLIER Civil Code
+        # citation in the same window, with ordinary prose (no act qualifier)
+        # in between, must also NOT stop when doc_type has no code of its own
+        # -- found via the same corpus-wide diff, not previously in the gold
+        # set (a bonus recall fix alongside gold_id 587).
+        ("Fuqarolik kodeksining 166-moddasiga koʻra ham mulkdorning huquqi cheklanadi. "
+         "Ushbu Kodeksning 197-moddasiga muvofiq mulk huquqi toʻxtatiladi.",
+         {"doc_type": "constitution"},
+         [("article", "166", "single"), ("article", "197", "single")]),
         # a plain space instead of a hyphen before modda/bob/paragraf, real
         # corpus phrasings (2026-09-15)
         ("Fuqarolik kodeksining 49 moddasi.", {}, [("article", "49", "single")]),

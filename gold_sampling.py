@@ -84,7 +84,7 @@ def build_candidate_windows(
             anchors = cx._anchors(text, allow_fk_alias=allow_alias, is_the_code=is_code)
             if not anchors:
                 continue
-            all_cites = cx.extract(text, allow_fk_alias=allow_alias, is_the_code=is_code)
+            all_cites = cx.extract(text, allow_fk_alias=allow_alias, is_the_code=is_code, doc_type=doc_type)
             for i, (a_start, a_end, kind) in enumerate(anchors):
                 limit = min(a_end + cx.WINDOW, anchors[i + 1][0] if i + 1 < len(anchors) else len(text))
                 window_text = text[max(0, a_start - 20):limit]

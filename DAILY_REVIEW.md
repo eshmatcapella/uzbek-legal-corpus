@@ -47,90 +47,27 @@ just let the Log entry be the permanent record — don't also keep growing a
 paragraph here.
 
 - **Extractor rotation — current state: gold set still 805 records (batch
-  20), precision 3269/3279 (99.7%), recall 3272/3301 (99.1%) — the
-  self-naming-parenthetical known_gap (`gold_id` 754) FIXED today, the
-  novel-signature pool re-confirmed still fully exhausted (727/727, no new
-  batch drawn). Last touched 2026-11-18.** First ran the untried "option 4"
-  the 2026-11-15 entry left open (re-run `build_gold_sample_novel.py` after
-  the 5 known_gap fixes to see if they'd opened new novel signatures):
-  confirmed 727/727 covered, 0 novel, exactly as before — and necessarily
-  so, not just empirically: `build_gold_sample_novel.py`'s `signature()`
-  is computed purely from raw window TEXT plus `anchor_kind`/`field`, never
-  from `extract()`'s own output, so no change to `citation_extractor.py`'s
-  regex logic could ever move this number. Closes that open question for
-  good (don't re-run it again after a pure extractor-logic change; only
-  after a corpus update or a new signature feature would it move).
-
-  Then picked up the hardest of the 4 remaining known_gap items, `gold_id`
-  754 (row 30003's self-naming-parenthetical chain, see Backlog for the
-  full original finding): a "(... deb yuritiladi/ataladi)" naming
-  parenthetical ("hereinafter referred to as the Civil Code") repeats the
-  Code's own name inside its parens, which `RE_ANCHOR_CC` matches as a
-  spurious second anchor, truncating the real anchor's own window right
-  before the real citation. First attempt — just drop any anchor match
-  found entirely inside such a parenthetical — was WRONG and would have
-  shipped a regression: dropping the spurious anchor alone exposes the
-  literal word "kodeksi" (still sitting unconsumed inside the now-anchorless
-  parenthetical) to `RE_STOP`'s own `kodeksi` alternative, which then
-  re-breaks the real anchor's own (now-longer) window all over again. Caught
-  this BEFORE shipping by re-running the full corpus-wide before/after
-  `extract()` diff (same discipline as 2026-11-15, not just a sample): 5
-  rows that were already correct went FP/lost their real citation, and the
-  target bug (row 30003) stayed broken. Reverted that attempt within the
-  same session (see `citation_extractor.py`'s own `RE_NAMING_PAREN` comment
-  for the full before/after reasoning, kept permanently as a worked example
-  of why "drop the anchor" isn't enough). Real fix: blank the whole naming
-  parenthetical out with spaces (same length-preserving technique
-  `RE_LEADING_PUB_PAREN` already uses on a single leading paren, computed
-  once up front over the whole text via a new `_blank_naming_parens()`
-  helper) BEFORE anchor-finding and clause-scanning — removes the spurious
-  anchor AND removes "kodeksi" from the gap `RE_STOP` searches, in one pass.
-  `_evidence()` still slices the UNBLANKED original text, so the displayed
-  citation context is unaffected.
-
-  Measured corpus-wide before shipping (every row containing the literal
-  "Fuqarolik kodeksi deb yuritiladi/ataladi" naming clause): 8 rows, 9 raw
-  occurrences (5291, 18091, 25971, 30003, 30057, 30344 ×2, 30762, 30789).
-  Full before/after `extract()` diff over all 2036 non-empty (row, field)
-  keys: exactly these 8 rows change, zero collateral anywhere else. Net
-  effect: article 327 recovered at row 30003 (the one documented recall
-  loss); the other 7 rows each lose a REDUNDANT bare `act` edge that a
-  spurious anchor's own (separately-windowed) bucket had been producing
-  alongside the real citation — the real citation itself (549/43/327/etc.,
-  already correct via that same coincidence) is unchanged in every one of
-  those rows. `link_edge` 9649 → 9640 (-10 redundant `act` edges, +1 real
-  `article` edge). Also corrected two OTHER gold records in place, found
-  because they scored as new regressions after the fix (caught by
-  `score_gold.py`, not assumed): `gold_id` 731 (row 5291) and `gold_id` 773
-  (row 25971) are the REAL anchor of two of those same 8 rows, and their own
-  "expected" had been pinned to the OLD bare-`act` behavior for that
-  specific anchor (correct under the old design, where the real citation was
-  recovered by the spurious anchor's separate bucket instead) — corrected to
-  the real citation each anchor now produces directly. Recall improved
-  3271/3301 → 3272/3301 (the one genuine gain); precision denominator
-  shrank 3282 → 3279 with the ratio unchanged (0.997 both ways) — a
-  `score_gold.py` measurement-coverage nuance, not a regression: its own
-  per-anchor precision bucket for `gold_id` 731/773 still computes its
-  window boundary from `cx._anchors()` called on RAW (unblanked) text, so
-  for those two specific anchors the recovered citation's position now
-  falls just outside that stale boundary and contributes to neither tp nor
-  fp — recorded as a new Backlog item rather than fixed today (see Backlog),
-  since fixing it risks reclassifying `gold_id` 754 itself as DRIFT (its own
-  anchor position is the spurious one, which no longer exists post-fix).
-  74/74 extractor self-tests pass; `verify_transfer.py` green; both apps
-  smoke-tested live via Playwright (standalone, not simultaneously), Article
-  327's page in `app_hierarchy.py` confirmed rendering its (now one edge
-  richer) realization pyramid correctly. **Next Extractor rotation**: 3
-  known_gap items remain open: `gold_id` 587 (bare "Kodeksning"
-  self-reference disambiguation needs `doc_type` threaded through
-  `extract()`), `gold_id` 597 (amending law's own next heading
-  misattributed — a false positive needing a word-substitution-phrase
-  heuristic), `gold_id` 370 ("moddsi" typo — explicitly flagged as not worth
-  the over-matching risk at 1 occurrence). The novel-signature sampler is
-  still genuinely empty (727/727) and, per today's finding, re-running it
-  after a pure extractor-logic change is now a known no-op — only draw a
-  fresh batch after a real corpus update, or pursue option 1 (uniform
-  regression resampling) or option 3 (another known_gap sweep) instead.
+  20), precision 3270/3279 (99.7%), recall 3273/3301 (99.2%) — the bare
+  "Kodeksning" self-reference known_gap (`gold_id` 587) FIXED today, plus 2
+  bonus non-gold-set recall fixes from the same change. Last touched
+  2026-11-21.** Threaded `doc_type` through `extract()` (already in scope,
+  unchanged, at all 3 real call sites) and split bare "kodeksning" out of
+  `RE_STOP` into its own doc_type-gated `RE_STOP_KODEKSNING`, plus a new
+  `RE_ACT_QUALIFIER` guard a corpus-wide diff showed was also needed (a
+  doc_type-only first attempt would have regressed row 29029 — see Backlog
+  for the full mechanism). `link_edge` 9640→9642; `llc_implementing_act`'s
+  `cites_cc_foundation` tier 3 gains 1 act (63→64) as a side effect. 79/79
+  self-tests pass; `verify_transfer.py` green; both apps' own live queries
+  re-run directly against the rebuilt DB, resolve cleanly, surface the new
+  rows sensibly. See Log, 2026-11-21, for the full trace. **Next Extractor
+  rotation**: 2 known_gap items remain open: `gold_id` 597 (amending law's
+  own next heading misattributed — a false positive needing a
+  word-substitution-phrase heuristic), `gold_id` 370 ("moddsi" typo —
+  explicitly flagged as not worth the over-matching risk at 1 occurrence).
+  The novel-signature sampler is still genuinely empty (727/727) and known
+  not to move from a pure extractor-logic change — only draw a fresh batch
+  after a real corpus update, or pursue option 1 (uniform regression
+  resampling) or option 3 (another known_gap sweep) instead.
 
 - **Data currency rotation — current state: fixed a real list-locator gap in
   `build_links.py`'s `repeal_clause.target_locator` regex — 21 acts were
@@ -278,8 +215,8 @@ paragraph here.
   twenty batches — two uniform-random, eighteen signature-stratified) +
   `score_gold.py` (the scorer) + `build_gold_sample.py`/
   `build_gold_sample_novel.py` (the two samplers) now exist; current score
-  (post-2026-11-18 self-naming-parenthetical fix, see Active threads and Log)
-  **precision 3269/3279 (99.7%), recall 3272/3301 (99.1%)**. Updating this
+  (post-2026-11-21 bare-"Kodeksning" fix, see Active threads and Log)
+  **precision 3270/3279 (99.7%), recall 3273/3301 (99.2%)**. Updating this
   paragraph's own stale drift while here (several named gaps below had
   already been fixed on their own dated entries without this summary ever
   being revised — same drift class the 2026-11-15 "paragrifi" bookkeeping
@@ -288,12 +225,12 @@ paragraph here.
   interposed different act name" cluster (7 occurrences/4 rows across
   gold_id 194/195/196/295/379/451/623 — a cross-clause-inference gap, not
   fixed, see Backlog), the 2026-10-10 "moddsi" typo (`gold_id` 370, a single
-  source-data typo, deliberately not generalized), the 2026-10-27 "bare
-  Kodeksning self-reference" gap (`gold_id` 587, needs `doc_type` threaded
-  through `extract()` for a single occurrence), and the 2026-10-27 "amending
-  law's own next heading misattributed" false positive (`gold_id` 597) —
-  all four left open at their own documented single-occurrence or
-  architecture-cost reasoning, see Backlog for each. The 2026-11-09
+  source-data typo, deliberately not generalized), and the 2026-10-27
+  "amending law's own next heading misattributed" false positive (`gold_id`
+  597) — all three left open at their own documented single-occurrence or
+  architecture-cost reasoning, see Backlog for each. The 2026-10-27 "bare
+  Kodeksning self-reference" gap (`gold_id` 587) was FIXED 2026-11-21 —
+  removed from this list accordingly; see Active threads and Log. The 2026-11-09
   self-naming-parenthetical chain (`gold_id` 754, not 763 — that gold_id was
   a mislabeling this paragraph itself carried since 2026-11-09, corrected
   2026-11-18 while fixing the real bug) was FIXED 2026-11-18 — removed from
@@ -373,33 +310,36 @@ paragraph here.
   per-anchor citation set `[203]` → `[202, 203]`, listing `single` →
   `list`) to match the fixed extractor. Re-ran `build_links.py`/
   `build_llc.py`: link_edge 9640 → 9642 edges. See Log, 2026-10-30.
-- **Bare "Kodeksning" (no ushbu/mazkur/shu) directly after the Civil Code's
+- ~~**Bare "Kodeksning" (no ushbu/mazkur/shu) directly after the Civil Code's
   own name can be a redundant self-reference, not a different-code
-  announcement.** Found 2026-10-27 via batch 15 (gold_id 587, row 19636):
-  "Oʻzbekiston Respublikasining Fuqarolik kodeksi Kodeksning 53-moddasi"
-  drops article 53 entirely, because `RE_STOP`'s "kodeksning" alternative
-  (added 2026-09-15, measured then at 32 correct stops / 0 collateral loss)
-  assumes bare "Kodeksning" always names a DIFFERENT code. Here it doesn't:
-  the citing document's `doc_type` is `law` (not `code`), so it has no "own
-  code" for "Kodeksning" to self-refer to — it's LexUZ redundantly restating
-  the Civil Code just named one word earlier. Checked the one other
-  near-identical corpus-wide surface form ("mazkur Kodeksning <N>-moddasi"
-  directly after a Civil Code mention, row 21291/gold_id 24 in the same
-  batch): there `doc_type` genuinely IS `code`, matching this project's
-  existing, deliberately-tested design (see `citation_extractor.py`'s own
-  self-test for "mazkur Kodeksning" with `is_the_code=False`) — so that one
-  is correct, not a second instance. Measured corpus-wide (regex:
-  `Kodeksning\s+\d+\s*-?\s*modda` within 20 chars of a `fuqarolik_kodeksi`
-  anchor): exactly 2 raw matches total, one of each kind — so this gap's
-  true footprint is exactly 1 occurrence. Not fixed given the
-  single-occurrence scope AND because `extract()` has no access to
-  `doc_type` at all (the one signal that would distinguish the two cases) —
-  would need a new parameter threaded through every caller for a single
-  occurrence. The existing "kodeksning" stop-word itself is NOT touched by
-  this finding — its own 32-correct-stops justification still holds; this is
-  a narrower residual gap in that design's generality, recorded rather than
-  acted on (see DAILY_REVIEW.md's own instruction not to silently override a
-  documented design decision). Recorded as a permanent known_gap.
+  announcement.**~~ **FIXED 2026-11-21** (Extractor rotation). Found
+  2026-10-27 via batch 15 (gold_id 587, row 19636): "Oʻzbekiston
+  Respublikasining Fuqarolik kodeksi Kodeksning 53-moddasi" dropped article
+  53 entirely, because `RE_STOP`'s "kodeksning" alternative assumed bare
+  "Kodeksning" always names a DIFFERENT code. Threaded `doc_type` through
+  `extract()` (it turned out to already be in scope, unchanged, at all three
+  real call sites — `build_links.py`, `gold_sampling.py`, `score_gold.py` —
+  contradicting this bullet's own original "needs a new parameter threaded
+  through every caller" cost estimate) and split bare "kodeksning" out of
+  `RE_STOP` into its own `RE_STOP_KODEKSNING`, gated: stop only when
+  `doc_type=='code'` or unknown (`None`, old-behavior default), UNLESS a
+  "<subject> toʻgʻrisidagi" qualifier right before it already names a
+  specific different code explicitly (new `RE_ACT_QUALIFIER`), which always
+  stops regardless of `doc_type`. That second guard was NOT in the original
+  plan — a doc_type-only first attempt, checked via this project's standing
+  full corpus-wide before/after `extract()` diff rather than just the 2
+  occurrences the original narrow regex measurement found, would have
+  shipped a real regression: row 29029 ("...Maʼmuriy javobgarlik
+  toʻgʻrisidagi kodeksning 60, 61-moddalari...") has the same `doc_type='law'`
+  as the bug but genuinely does name a different code. The same wider diff
+  found 2 more genuine recall fixes the original measurement's narrow regex
+  (digit+modda within 20 chars) missed entirely: row 11208 ("Ushbu Kodeksning
+  197-moddasiga", `doc_type='constitution'`) and row 41405 ("ushbu Kodeksning
+  57-bobi", `doc_type='law'`), each continuing an earlier Civil Code citation
+  in the same field. `link_edge` 9640→9642; one of the three, row 19636's own
+  citing act, newly enters `llc_implementing_act`'s `cites_cc_foundation`
+  tier-3 set (63→64 acts) via the recovered article-53 edge. See Log,
+  2026-11-21, for the full trace.
 - **An amending/omnibus law's own next sequential article heading can be
   misattributed to the Civil Code — a NEW false-positive class, not a grain
   loss.** Found 2026-10-27 via batch 15 (gold_id 597, row 24979): the anchor
@@ -1656,6 +1596,28 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-21 — Extractor rotation: fixed the bare "Kodeksning" self-reference known_gap (`gold_id` 587) by threading `doc_type` through `extract()`, caught and fixed a real regression in the first design via the standing corpus-wide diff, found 2 bonus recall fixes along the way
+
+**Cold start.** Container started HEAD-detached, two commits behind local `main` (`4c912db` vs. `origin/main`'s `082eef6`) — the now-documented steady-state pattern (see 2026-11-20). Ran the step-0 fix from this file's own instructions: `git fetch origin main && git checkout main && git merge --ff-only origin/main` — clean fast-forward, no divergence. `git lfs pull` (parquet was a 134-byte stub) + `python3 -m pip install -r requirements.txt`, both worked first try.
+
+**Picked up Extractor rotation per the rotation order** (Extractor 11-18 → Data currency 11-19 → Cleanup 11-20 → Extractor next). Of the 2 remaining known_gap items judged "harder" on 2026-11-18 (`gold_id` 587, 597, 370 — 370 was already explicitly closed as "not worth generalizing at 1 occurrence" and left alone), picked `gold_id` 587: bare "Kodeksning" (no ushbu/mazkur/shu) directly after the Civil Code's own anchor reads as a different-code announcement and drops the real citation, but when the citing act is a plain `law` (not a `code`), it has no "own code" to self-refer to — it's LexUZ redundantly restating the Civil Code just named. The backlog's own 2026-10-27 write-up had left this unfixed specifically because "`extract()` has no access to `doc_type` at all... would need a new parameter threaded through every caller."
+
+**That cost estimate turned out to be wrong — checked rather than taken on faith.** `doc_type` was already being fetched and sitting unused in scope at all three real call sites: `build_links.py`'s own row-scan loop (`for row_id, doc_id, doc_type, art_no, *texts in rows`), `gold_sampling.py`'s identical loop (which even already stores `doc_type` into every candidate dict, just never forwards it to `cx.extract()`), and `score_gold.py` (which has `doc_id` per gold record but not `doc_type` directly — fixed by adding one column to its existing per-row-id parquet SELECT). No new parameter needed threading through any *caller chain* — just three one-line call-site edits once `extract()` itself accepted the kwarg.
+
+**First design (doc_type-only gate): split "kodeksning" out of `RE_STOP`'s own combined alternation into a dedicated `RE_STOP_KODEKSNING`, checked via a new `_is_stop()` closure in `extract()` at all 4 existing stop-check call sites; stop only when `doc_type=='code'` (the citing act genuinely has its own code) or `doc_type is None` (conservative default for any caller not yet passing it — keeps every existing self-test passing unchanged).** 77/77 self-tests passed with 2 new cases added (the bug text with `doc_type='law'`, recovers article 53; the same text with `doc_type='code'`/no `doc_type`, still stops).
+
+**Caught a real regression before shipping, via this project's own standing discipline: a full corpus-wide before/after `extract()` diff over every candidate (row_id, field) with a nonempty citation output (2036 keys), not just the 2 occurrences the original 2026-10-27 regex-based measurement found.** That measurement (`Kodeksning\s+\d+\s*-?\s*modda` within 20 chars of an anchor) was too narrow in two directions at once. First, the regression: row 29029 ("Fuqarolik kodeksining 166-moddasi, Oʻzbekiston Respublikasi Maʼmuriy javobgarlik toʻgʻrisidagi kodeksning 60, 61-moddalari va ... Jinoyat kodeksining 170—173-moddalari") has `doc_type='law'` — same as the real bug — but here "kodeksning" genuinely does name a different code (the Administrative Liability Code), explicitly qualified by "<subject> toʻgʻrisidagi" right before it; a doc_type-only gate would have wrongly attributed its articles 60/61 to the Civil Code. Added a second, local guard: `RE_ACT_QUALIFIER` (`to[ʻʼ']?g[ʻʼ']?risida`), checked against the text immediately preceding the "kodeksning" match within the same stop-check span — when it matches, stop unconditionally regardless of `doc_type`. Second, two false negatives the narrow digit+modda-within-20-chars measurement never saw at all: row 11208 (`doc_type='constitution'`, "...Fuqarolik kodeksining 166-moddasiga koʻra ham ... Ushbu Kodeksning 197-moddasiga muvofiq..." — continuing the same Civil Code citation two sentences later with ordinary prose in between, no qualifier) and row 41405 (`doc_type='law'`, "...Fuqarolik kodeksining 725-moddasiga muvofiq ... ushbu Kodeksning 57-bobi ("Zarar yetkazishdan kelib chiqadigan majburiyatlar") qoidalari boʻyicha..." — same pattern, a chapter citation this time). Both recovered correctly once the qualifier guard made the doc_type gate safe to apply generally rather than narrowly.
+
+**Measured corpus-wide before shipping the final design** (same 2036-key before/after diff, re-run after adding `RE_ACT_QUALIFIER`): exactly 3 keys change, zero collateral anywhere else. Row 19636 (the gold_id 587 target): `act` → `article 53`. Row 41405: `+chapter 57` (a genuinely separate second citation in the same field, not a duplicate — confirmed by reading the full text, which cites article 725 and chapter 57 in two different sentences). Row 11208: `+article 197` — read the full raw text to confirm this is NOT a duplicate of the field's existing article-197 citation (which comes from an independent second "Fuqarolik kodeksining 197-moddasi asosida" anchor ~1000 chars later in the same long paragraph) but a genuinely separate, previously-missed earlier mention ("Ushbu Kodeksning 197-moddasiga muvofiq") — the real text legitimately cites article 197 twice. Row 29029 confirmed unchanged by the final diff (zero regression). 79/79 self-tests pass (2 more added: the row-29029 qualifier case and a row-11208-style continuation case).
+
+Wired `doc_type` through all 3 real call sites (`build_links.py` line 278, `gold_sampling.py` line 87, `score_gold.py`'s new `doc_type` column + its `_anchors()`/`extract()` calls). Re-ran `build_links.py` only (no `corpus.duckdb` rebuild from scratch): `link_edge` 9640 → 9642. Re-ran `build_llc.py`: `cites_cc_foundation` tier 3 gains exactly 1 act, 63 → 64 — row 19636's own citing act (doc_id -3841957, "Ekstremizmga qarshi kurashish toʻgʻrisida" / On Combating Extremism) newly cites a Civil Code foundation article (53) for the first time, confirmed by checking it had *zero* prior `link_edge` rows at all. Re-ran `score_gold.py`: precision 3269/3279 → 3270/3279 (ratio unchanged at 0.997 — gold_id 587's own anchor moves from FN to TP); recall 3272/3301 → 3273/3301 (0.991 → 0.992) — the one gold-set gain (rows 11208/41405 aren't in the gold set, so they don't move this number, only the corpus-wide `link_edge` count). Remaining 9 gold mismatches are all pre-existing, unrelated, already-documented known_gaps (194/195/196/295/370/379/451/597/623) — none newly introduced.
+
+Updated `gold_citations.json`: `gold_id` 587 `verdict` `known_gap` → `correct`, `notes` prefixed with the fix trace (original finding kept below it, same precedent as every prior in-place gold correction). `pyflakes`/`check_sql_bindings.py` (114/114, unchanged)/`check_param_arity.py` (198/198, unchanged) all clean on the touched files. Both apps compile; re-ran each app's own live query directly against the rebuilt DB rather than a full browser click-through (per the DB-lock quirk, `app_hierarchy.py` was also booted standalone via `streamlit run --server.headless true` and hit with Playwright first, HTTP 200, no application errors — only the expected sandboxed-telemetry console noise): `app_hierarchy.py`'s own incoming-edges query for articles 53 and 197 resolves cleanly and correctly separates the new `editorial`-kind cross_references edges from the `normative` realization panel; `app_llc.py::page_acts()`'s own `cites_cc_foundation` query returns 78 rows (hide-dead) and correctly surfaces the new act. `python verify_transfer.py`: **VERIFICATION PASSED — all checks green**, 214 acts provably superseded (unchanged, as expected — no data-currency logic touched), identical reconciliation-detail table to yesterday's baseline. `python -m unittest test_transfer_e2e.py`: 14/14.
+
+**Decision.** Ship the fix. The doc_type-only design would have been a real, silent regression (row 29029) had the standing full-corpus-diff discipline not caught it before shipping — worth calling out explicitly as a case where this project's own measurement convention (not just the 2 occurrences a narrower original measurement found) earned its cost. **Next Extractor rotation**: 2 known_gap items remain open, `gold_id` 597 (amending law's own next heading misattributed — false positive, needs a word-substitution-phrase heuristic) and `gold_id` 370 ("moddsi" typo, explicitly judged not worth the over-matching risk at 1 occurrence). Novel-signature sampler still genuinely exhausted (727/727); pursue option 1 (uniform regression resampling) or option 3 (gold_id 597) next, or a fresh angle — the `RE_ACT_QUALIFIER` technique (checking for an explicit act-naming qualifier phrase near a stop-word, rather than gating purely on document-level metadata) may generalize to other stop-word gaps worth a look.
+
+---
 
 ### 2026-11-20 — Cleanup rotation: forensically root-caused the recurring stale-HEAD pattern (4th occurrence) with git reflog timestamps, confirmed zero lost work, fixed procedurally; re-ran all eleven repeatable checks clean
 

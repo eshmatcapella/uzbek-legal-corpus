@@ -88,7 +88,7 @@ def main() -> int:
 
     row_ids = sorted({r["row_id"] for r in records})
     rows = {r[0]: r for r in con.execute(f"""
-        SELECT file_row_number, article_text, cross_references, amendment_note
+        SELECT file_row_number, article_text, cross_references, amendment_note, doc_type
         FROM {raw} WHERE file_row_number IN (SELECT * FROM UNNEST(?))
     """, [row_ids]).fetchall()}
 
@@ -110,6 +110,7 @@ def main() -> int:
 
         is_code = rec["is_the_code"]
         allow_alias = rec["doc_id"] in alias_docs
+        doc_type = row[4]
         anchors = cx._anchors(text, allow_fk_alias=allow_alias, is_the_code=is_code)
         a_start, a_end, kind = rec["anchor_start"], rec["anchor_end"], rec["anchor_kind"]
         if (a_start, a_end, kind) not in anchors:
@@ -123,7 +124,7 @@ def main() -> int:
             drift.append((rec["gold_id"], "window text changed"))
             continue
 
-        all_cites = cx.extract(text, allow_fk_alias=allow_alias, is_the_code=is_code)
+        all_cites = cx.extract(text, allow_fk_alias=allow_alias, is_the_code=is_code, doc_type=doc_type)
         cites_here = [citation_to_dict(c) for c in all_cites
                       if a_start <= c.start < limit]
         full_sigs = [signature(c) for c in (citation_to_dict(c) for c in all_cites)]

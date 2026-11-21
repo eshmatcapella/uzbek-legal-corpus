@@ -275,7 +275,8 @@ def main() -> int:
             src_tier = tier_of.get(doc_id, 9)
             is_code = doc_id in CC_DOCS
             for field, text in zip(SOURCE_FIELDS, texts):
-                for c in cx.extract(text, allow_fk_alias=doc_id in alias_docs, is_the_code=is_code):
+                for c in cx.extract(text, allow_fk_alias=doc_id in alias_docs, is_the_code=is_code,
+                                     doc_type=doc_type):
                     dst_norm = dst_struct = dst_doc = dst_art = None
                     ambiguous = dangling = False
                     stored_kind = c.target_kind
