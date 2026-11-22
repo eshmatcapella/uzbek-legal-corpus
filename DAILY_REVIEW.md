@@ -69,11 +69,26 @@ paragraph here.
   after a real corpus update, or pursue option 1 (uniform regression
   resampling) or option 3 (another known_gap sweep) instead.
 
-- **Data currency rotation — current state: fixed a real list-locator gap in
-  `build_links.py`'s `repeal_clause.target_locator` regex — 21 acts were
-  misclassified whole-act-superseded, 19 flip to 'no repeal found' (234→214
-  corpus-wide), 7 of them live `llc_implementing_act` rows the LLC dossier
-  hides by default today. Zero residual. Last touched 2026-11-19.** Found via
+- **Data currency rotation — current state: followed up the 2026-11-19
+  repeal_clause list-locator fix's own "worth a look" pointer onto the
+  amending side (`article_amendment.locator`) — the same list-locator gap
+  CLASS is real there too (an exact-string chronology partition that a
+  later list-form qism restatement can't resolve against an earlier
+  single-qism void recorded under different wording), but corpus-wide
+  measurement found zero live occurrences today. Shipped a permanent
+  `verify_transfer.py` AC7 guard (proved with a mutation test) instead of
+  leaving the latent failure mode only documented — same precedent as the
+  2026-11-16 ambiguous-key guard. Zero residual. Last touched 2026-11-22.**
+  See Log, 2026-11-22, for the full trace (including a second pairing
+  re-checked and re-confirmed clean: `repeal_clause` still never targets
+  the Civil Code's own doc_id after the Nov-19 fix, 0/0 overlap).
+
+  Prior state (2026-11-19, now superseded by the bullet above — kept as a
+  one-line pointer, full detail in that date's Log entry): fixed a real
+  list-locator gap in `build_links.py`'s `repeal_clause.target_locator`
+  regex — 21 acts were misclassified whole-act-superseded, 19 flip to 'no
+  repeal found' (234→214 corpus-wide), 7 of them live `llc_implementing_act`
+  rows the LLC dossier hides by default today. Found via
   the standing cross-signal technique on a pairing never tried before:
   `article_amendment.amending_doc_id` × `v_act_currency.derived_status` — does
   an act that amended the Civil Code later show up itself as superseded?
@@ -110,15 +125,14 @@ paragraph here.
   trace, including the two cheap pairings tried first and ruled out clean
   (`llc_norm.cc_norm_id` × `has_removed_or_voided_part`: 0/29 overlap;
   `effective_date` < `amend_date` self-consistency: 2/65 hits, both verified
-  as genuine statutory retroactivity clauses, not bugs). **Next Data currency
-  rotation**: no residual from this thread. Fall back to the standing
-  cross-signal technique — this is now its ninth hit out of roughly a dozen
-  pairings tried; keep pulling from the growing signal set (see Backlog) for
-  pairs not yet tried, including `derived_status` itself now joined against
-  more targets (e.g. whether any currently-"superseded" amending act's
-  OWN amendment events should be re-examined for the same list-locator class
-  of gap on the amending side, not just the repealing side — not checked
-  today, worth a look).
+  as genuine statutory retroactivity clauses, not bugs).
+
+  **Next Data currency rotation**: no residual from this thread (the
+  amending-side list-locator follow-up above closed the one pointer this
+  entry had left open). Fall back to the standing cross-signal technique —
+  still a strong hit rate (9 real findings across roughly a dozen pairings
+  tried before today's 10th/11th checks both came back clean); keep pulling
+  from the growing signal set (see Backlog) for pairs not yet tried.
 
 - **Cleanup rotation — current state: forensically root-caused the
   recurring "stale/detached HEAD at session start" pattern (2026-11-15,
@@ -955,6 +969,33 @@ paragraph here.
   `has_removed_or_voided_part` (0/29 overlap) and `article_amendment`'s own
   `effective_date` < `amend_date` self-consistency (2/65 hits, both verified
   as genuine statutory retroactivity clauses in the evidence text, not bugs).
+  **2026-11-22: tenth and eleventh checks, both clean — the streak's first
+  back-to-back misses.** Followed the 2026-11-19 entry's own "amending side"
+  pointer: does `article_amendment.locator`'s qism-list grammar ("55-moddaning
+  birinchi, ikkinchi va uchinchi qismlari") have the same single-item gap
+  `repeal_clause.target_locator` had? Measured the real population first:
+  of 24 removed/voided non-empty locators, 13 don't match `re_qism_locator`
+  — but all 13 are whole-article lists ("65 va 66-moddalar"), a shape that
+  regex deliberately never claims to handle (it's scoped to one qism inside
+  one article), not a qism-list gap at all. Separately, exactly 5 locators
+  corpus-wide use the plural "qismlari" list form at all (articles 55 ×2,
+  79, 785, 1065) — none of them are themselves removed/voided (`change_type`
+  is `restated`/`supplemented` in all 5), so `void_qism`'s single-qism regex
+  has no live bug to find on that axis either. The real risk was one layer
+  deeper: `v_locator_amendment_status`'s chronology-override (2026-11-10)
+  partitions on the EXACT locator string, so a later qism-list restatement
+  can't resolve an earlier single-qism void recorded under different
+  wording even when the ordinals overlap — checked exhaustively (every
+  removed/voided single-qism locator against every later-or-same-day
+  qism-list locator on the same (doc_id, article), corpus-wide): 0
+  overlaps today (confirmed with a mutation test that the check isn't
+  vacuous — a fabricated colliding pair is caught). Shipped as a permanent
+  `verify_transfer.py` guard. Eleventh: re-tried 2026-10-23's literal
+  `repeal_clause` vs. Civil-Code-doc_id pairing post the Nov-19 fix (that
+  fix changed `target_locator` resolution broadly, worth confirming the
+  "zero overlap" conclusion still holds, not just assuming it) — still
+  0/0 after the fix. See Active threads and Log, 2026-11-22, for the full
+  trace.
 - ~~**Does `v_article_currency.has_removed_or_voided_part` (drives the ⚠️
   "part of this article has been removed/voided" badge in both apps'
   Legislative history caption) under-warn for a fully `restated`
@@ -1596,6 +1637,26 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-22 — Data currency rotation: followed the 2026-11-19 fix's own pointer onto the amending side, confirmed the list-locator gap class is real there but has zero live occurrences, shipped a permanent `verify_transfer.py` guard against it
+
+**Cold start.** Container started HEAD-detached at `c44c8a4`, local `main` one commit stale (`4c912db`) — the now-routine pattern (see 2026-11-20). `git fetch origin main && git checkout main && git merge --ff-only origin/main`: clean fast-forward, confirmed `HEAD`/local `main`/`origin/main` all converge on `c44c8a4`, zero divergence (`git merge-base --is-ancestor` checked both directions before touching anything). `git lfs pull` (parquet was a 134-byte stub) needed. `pip install -r requirements.txt` silently installed into the WRONG interpreter the first time — this container's `pip`/`pip3` resolve to a `python3.13` `dist-packages` tree while `python`/`python3` are `3.11.18`; `import duckdb` failed after a "successful" install. Fixed by using `python -m pip install -r requirements.txt` instead (installs into the interpreter that will actually run the scripts). Worth a note for future sessions if this recurs: check `python -V` vs `pip -V`'s own reported interpreter before trusting a clean `pip install` exit code.
+
+**Picked up Data currency per the rotation order** (last touched 2026-11-19, vs. Extractor 2026-11-21 and Cleanup 2026-11-20 — the longest-idle area). The 2026-11-19 entry's own "Next Data currency rotation" note had one concrete, un-chased pointer: "whether any currently-superseded amending act's OWN amendment events should be re-examined for the same list-locator class of gap on the amending side, not just the repealing side." Chased it directly rather than inventing a fresh angle, since it was already identified and specific.
+
+**Measurement 1 — does `article_amendment.locator`'s own qism grammar drop a list the way `repeal_clause.target_locator` did?** `build_links.py`'s `re_qism_locator` (used to build `void_qism`, the table `v_qism_void_citation` is built from) only ever matches a SINGLE ordinal qism per article (`^(\d+)-moddaning (ordinal) qismi(?:ning)?$`). Queried every `change_type IN ('removed','voided')` locator corpus-wide (24 rows, non-empty): 13/24 don't match. Read all 13 directly rather than assuming they're the same bug class: every one is a WHOLE-ARTICLE list ("65 va 66-moddalar", "1052, 1053, 1054 va 1055-moddalar") — a shape `re_qism_locator` deliberately never claims (it's scoped to one qism inside one article, not a list of whole articles), so this is correctly out of scope, not a bug. Zero live finding on this specific regex.
+
+**Measurement 2 — does the corpus even contain a qism-LIST locator (the shape that would need `re_qism_locator` widened)?** Queried every non-empty `article_amendment.locator` for the plural form ("qismlari"/"bandlari"), any `change_type`: exactly 5 corpus-wide (event_id 62/64/100/466/564 — articles 55 ×2, 79, 785, 1065). All 5 are `change_type='restated'` or `'supplemented'`, never `'removed'`/`'voided'` — `void_qism`'s own filter (`change_type IN ('removed','voided')`) means these 5 never reach `re_qism_locator` regardless of whether it could parse them. No live bug in `void_qism` from this angle either, but it raised the real question underneath: could one of these list-form RESTATEMENTS be the event that was SUPPOSED to resolve an earlier single-qism VOID, and silently fail to because of how the resolution is keyed?
+
+**Measurement 3 — the real mechanism, checked exhaustively.** `v_locator_amendment_status` (2026-11-10 fix) decides whether a removed/voided locator is still live by partitioning `article_amendment` on the EXACT locator string and taking the latest `change_type` in that partition. Walked the actual article-55 history to confirm this is a real design gap, not hypothetical: event 60 (2019-12-11, locator `"55-moddaning birinchi qismi"`, restated) and event 62 (2007-12-14, locator `"55-moddaning birinchi, ikkinchi va uchinchi qismlari"`, restated) both touch qism 1 of article 55, at two different literal strings — if either had instead been a VOID, the string-exact partition would never connect them, and the badge would keep showing void after the list-form event plainly gave the qism new text. Wrote an independent qism-list parser (own regex, not importing `build_links.py`'s `re_qism_locator`/`qism_ordinal` — same "naive detector" rationale `verify_transfer.py` already uses elsewhere, reusing only `citation_extractor.ORDINALS`/`_ordinal_index` as shared vocabulary, not logic) and cross-checked every one of the 24 removed/voided single-qism locators against every later-or-same-day qism-list locator on the same `(doc_id, article)`, corpus-wide: **0 overlaps** — the actual void ordinals never collide with the actual list ordinals in today's data.
+
+**Shipped the guard rather than leaving a zero-today finding only in this file.** Added a new AC7 check to `verify_transfer.py` (right after the existing `conflated == 0` ambiguous-`norm_id` guard, same precedent: "guards that latent failure mode rather than just documenting it") that reruns measurement 3 against the live DB and fails if any void-vs-list overlap is ever found. Proved it isn't vacuous with a mutation test: inserted a fabricated event_id 99999 (doc -111189, article 55, `voided`, locator "55-moddaning ikkinchi qismi", dated 2000-01-01 — deliberately earlier than and colliding with real event 62's qism-2 member) — the new check correctly `[FAIL]`ed with the exact colliding pair reported; deleted the row and `git checkout -- corpus.duckdb` afterward to discard the resulting binary diff (insert+delete of the same row still changed the file's bytes at the page level, confirmed via `git status`) rather than let a mutation-test artifact leak into the commit. Re-ran `verify_transfer.py` clean on the restored DB to confirm. `pyflakes verify_transfer.py` clean. No table/column/view touched, no `corpus.duckdb` rebuild needed (the fix lives entirely in `verify_transfer.py`); no app query changed, so the "both apps still resolve" constraint doesn't apply today.
+
+**Measurement 4 — re-checked a prior "zero overlap" claim post-fix rather than assuming it still holds.** The 2026-10-23 entry had closed `article_amendment` vs. `repeal_clause` (same target) as "zero overlap, repeal_clause never targets the Civil Code's own doc_id" — but the 2026-11-19 fix changed `target_locator` resolution broadly, so that conclusion's mechanism changed even though its number wasn't re-measured. Re-ran it directly against the two real Civil Code doc_ids (`-111189`, `-180552`): still 0 rows. (First pass of this re-check used the wrong doc_id, `-42953`, which is actually an unrelated 1998 omnibus amending law that happens to share the Civil Code's generic "ayrim qonun hujjatlariga oʻzgartish va qoʻshimchalar kiritish toʻgʻrisida" title pattern — traced the 7 `repeal_clause` rows that matched it down to their own evidence text, confirmed by `match_method='date+title'`/`cited_number='621-I'` that they're legitimately resolving to that 1998 act, not misfiring onto the Code. Correcting this before trusting the "clean" result was itself worth doing carefully, not worth a backlog entry of its own — recorded here for anyone re-deriving this measurement later.)
+
+**Decision.** No code bug found, but a real latent failure mode was confirmed and permanently guarded rather than left as a documented risk someone has to remember to re-check by hand. Updated `gold_citations.json`: not touched (Extractor-only file). Updated Active threads' Data currency bullet and the Backlog cross-signal paragraph (tenth/eleventh checks, first back-to-back clean pair in the technique's run). `python verify_transfer.py`: **VERIFICATION PASSED — all checks green**, 214 acts superseded (unchanged, as expected — no currency data touched, only a new regression check). Committing `verify_transfer.py` and `DAILY_REVIEW.md` only; `corpus.duckdb` is confirmed byte-identical to `HEAD` (the mutation test was fully reverted via `git checkout`).
+
+---
 
 ### 2026-11-21 — Extractor rotation: fixed the bare "Kodeksning" self-reference known_gap (`gold_id` 587) by threading `doc_type` through `extract()`, caught and fixed a real regression in the first design via the standing corpus-wide diff, found 2 bonus recall fixes along the way
 

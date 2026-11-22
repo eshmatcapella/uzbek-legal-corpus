@@ -380,6 +380,8 @@ def main() -> int:
     if not have_llc:
         log("  [SKIP] llc_norm not built yet — run build_llc.py")
     else:
+        import citation_extractor as cx_
+
         check(con.execute("""
                   SELECT count(*) FROM link_edge
                   WHERE evidence_kind NOT IN ('normative','editorial','amendment')
@@ -481,6 +483,72 @@ def main() -> int:
               "v_article_currency never merges two distinct norm_ids under one "
               "(doc_id, article_number) key",
               f"{conflated} article_number key(s) would be conflated" if conflated else "")
+
+        # v_locator_amendment_status's chronology override (build_links.py,
+        # 2026-11-10: "does a LATER-or-same-day event at the exact same
+        # locator TEXT give the provision new wording") partitions on an
+        # exact string match. That is blind to a later event recorded as a
+        # LIST of qisms ("55-moddaning birinchi, ikkinchi va uchinchi
+        # qismlari") resolving an earlier SINGLE-qism void at one of those
+        # same ordinals ("55-moddaning birinchi qismi") — the two locator
+        # strings never match, so has_removed_or_voided_part/void_qism would
+        # keep flagging the qism as void even after a later list-form
+        # restatement plainly covers it. Found 2026-11-22 (Data currency
+        # rotation) while re-examining the amending side for the same
+        # list-locator gap class as the 2026-11-19 repeal_clause fix: 5
+        # corpus-wide locators use the plural "qismlari" list form (article
+        # 55 x2, 79, 785, 1065), none of them removed/voided themselves, so
+        # void_qism's own single-qism regex has no live bug — but whether a
+        # list-form event could silently fail to resolve an EARLIER
+        # single-qism void was never checked. Independently reimplemented
+        # (not import of build_links.py's own re_qism_locator/qism_ordinal,
+        # same "naive detector" rationale as the self-test call above) a
+        # qism-list parser reusing only citation_extractor's ordinal
+        # vocabulary, and cross-checked every removed/voided single-qism
+        # locator against every later-or-same-day list-qism locator on the
+        # same (doc_id, article) corpus-wide: 0 overlaps today (the actual
+        # qisms involved never collide with the actual void ordinals) — see
+        # DAILY_REVIEW.md 2026-11-22 for the full trace. Guards the latent
+        # failure mode rather than leaving it only documented here, same
+        # precedent as the conflated-norm_id check just above.
+        re_qism_single_ = re.compile(
+            r"^(?P<art>\d+)-moddaning\s+(?P<ord>" + "|".join(cx_.ORDINALS) +
+            r")\s+qismi(?:ning)?$", re.IGNORECASE)
+        re_qism_list_ = re.compile(
+            r"^(?P<art>\d+)-moddaning\s+(?P<ords>(?:(?:" + "|".join(cx_.ORDINALS) +
+            r")\s*(?:,|va)\s*)+(?:" + "|".join(cx_.ORDINALS) + r"))\s+qismlari(?:ning)?$",
+            re.IGNORECASE)
+        void_single = con.execute("""
+            SELECT event_id, doc_id, coalesce(target_article_number, host_article_number),
+                   amend_date, locator
+            FROM article_amendment
+            WHERE change_type IN ('removed', 'voided') AND locator <> ''
+        """).fetchall()
+        all_located = con.execute("""
+            SELECT doc_id, coalesce(target_article_number, host_article_number),
+                   amend_date, locator
+            FROM article_amendment WHERE locator <> ''
+        """).fetchall()
+        missed_resolutions = []
+        for event_id, doc_id, art, vdate, loc in void_single:
+            m = re_qism_single_.match(loc.strip())
+            if not m:
+                continue
+            qnum = cx_._ordinal_index(m.group("ord")) + 1
+            for doc2, art2, vdate2, loc2 in all_located:
+                if doc2 != doc_id or art2 != art or loc2.strip() == loc.strip() or vdate2 < vdate:
+                    continue
+                lm = re_qism_list_.match(loc2.strip())
+                if not lm:
+                    continue
+                ords = re.split(r"\s*,\s*|\s+va\s+", lm.group("ords"))
+                qnums = {cx_._ordinal_index(o) + 1 for o in ords if cx_._ordinal_index(o) is not None}
+                if qnum in qnums:
+                    missed_resolutions.append((event_id, doc_id, art, qnum, loc2))
+        check(len(missed_resolutions) == 0,
+              "no removed/voided single-qism locator is silently missed by a "
+              "later list-form restatement of the same qism",
+              f"{len(missed_resolutions)} missed: {missed_resolutions}" if missed_resolutions else "")
 
         sup = con.execute(
             "SELECT count(DISTINCT doc_id) FROM v_act_currency WHERE derived_status='superseded'"
