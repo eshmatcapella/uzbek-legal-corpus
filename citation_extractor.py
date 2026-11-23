@@ -716,6 +716,31 @@ def _anchors(text: str, *, allow_fk_alias: bool, is_the_code: bool) -> list[tupl
     return sorted(found)
 
 
+def scan_anchors(text: str, *, allow_fk_alias: bool, is_the_code: bool) -> list[tuple[int, int, str]]:
+    """Public entry point for callers OUTSIDE this module (gold_sampling.py,
+    score_gold.py, measure_extractor_recall.py) that need the exact anchor
+    set/positions `extract()` itself will act on -- i.e. anchors found
+    against the same naming-paren-blanked copy `extract()` scans internally
+    (see `_blank_naming_parens()`), not a stale set found directly on raw
+    `text` that can still contain a spurious anchor the blanking would have
+    removed (e.g. row 30003's second, self-referential "Fuqarolik kodeksi"
+    sitting inside its own "(... deb yuritiladi)" naming clause). Found
+    2026-11-23 (see DAILY_REVIEW.md): this exact staleness is what made
+    score_gold.py's per-anchor precision bucket go empty for two gold
+    records (731, 773) once extract() started blanking naming parens on
+    2026-11-18 -- score_gold.py kept computing its own window boundary from
+    the unblanked text, so it disagreed with extract()'s own boundary.
+    `gold_sampling.py` and `measure_extractor_recall.py` called the same raw
+    `_anchors(text, ...)` and carry the identical latent gap, now closed by
+    routing all three through this one function instead of three
+    independently-stale call sites. Offsets are into the blanked copy, which
+    is length-identical to `text` (see `_blank_naming_parens()`), so they
+    still slice correctly into the original, unblanked `text` too -- e.g.
+    for a caller's own window/evidence display, which should keep slicing
+    `text`, not this function's internal blanked copy."""
+    return _anchors(_blank_naming_parens(text), allow_fk_alias=allow_fk_alias, is_the_code=is_the_code)
+
+
 def extract(text: str | None, *, allow_fk_alias: bool = False,
             is_the_code: bool = False, doc_type: str | None = None) -> list[Citation]:
     if not text:

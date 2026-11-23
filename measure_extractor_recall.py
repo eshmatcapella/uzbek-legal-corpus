@@ -30,8 +30,15 @@ the "cross-reference disagreement" section below, kept for the record).
 (see DAILY_REVIEW.md Active threads): the article/chapter checks below now
 scan windows opened by ANY anchor kind (`Fuqarolik kodeksi`, the FK alias,
 and "ushbu/shu/mazkur Kodeks" self-reference), using citation_extractor's
-own `_anchors()` so window boundaries match `extract()` exactly instead of
-being recomputed against only the `Fuqarolik kodeksi` phrase. That also adds
+own anchor-finding so window boundaries match `extract()` exactly instead of
+being recomputed against only the `Fuqarolik kodeksi` phrase (2026-11-23:
+switched from the bare `_anchors()` to the public `scan_anchors()` wrapper,
+which blanks naming parentheticals first the same way `extract()` itself
+does internally -- `_anchors()` alone on raw text can still return a
+spurious anchor the real extractor would never open a window from; see
+`citation_extractor.py::scan_anchors()`'s own docstring and DAILY_REVIEW.md,
+Cleanup, 2026-11-23, for the corpus-wide measurement showing this script's
+own window/naive-hit counts shift accordingly with zero new misses). That also adds
 a qism/band ATTACHMENT check: not "was the article found" (already measured
 clean) but "when a qism/band clause follows a found article citation, does
 the extractor actually attach it to `Citation.qism`". That check exposed a
@@ -77,9 +84,10 @@ def load_rows(con):
 
 def check_recall(rows, alias_docs, naive_re, target_kinds, number_of) -> dict:
     """Scan windows opened by ANY anchor kind (Fuqarolik kodeksi, the FK alias,
-    and the self-reference form), using citation_extractor's own `_anchors()`
-    and the same next-anchor window limit `extract()` uses, so a naive hit
-    is always checked against the citation(s) that could actually explain it."""
+    and the self-reference form), using citation_extractor's own
+    `scan_anchors()` and the same next-anchor window limit `extract()` uses,
+    so a naive hit is always checked against the citation(s) that could
+    actually explain it."""
     windows = naive_total = extracted_total = 0
     misses = []
     by_anchor: dict[str, int] = {}
@@ -91,7 +99,7 @@ def check_recall(rows, alias_docs, naive_re, target_kinds, number_of) -> dict:
             text = texts[field]
             if not text:
                 continue
-            anchors = cx._anchors(text, allow_fk_alias=allow_alias, is_the_code=is_code)
+            anchors = cx.scan_anchors(text, allow_fk_alias=allow_alias, is_the_code=is_code)
             if not anchors:
                 continue
             citations = cx.extract(text, allow_fk_alias=allow_alias, is_the_code=is_code)

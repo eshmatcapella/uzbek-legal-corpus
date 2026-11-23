@@ -111,7 +111,7 @@ def main() -> int:
         is_code = rec["is_the_code"]
         allow_alias = rec["doc_id"] in alias_docs
         doc_type = row[4]
-        anchors = cx._anchors(text, allow_fk_alias=allow_alias, is_the_code=is_code)
+        anchors = cx.scan_anchors(text, allow_fk_alias=allow_alias, is_the_code=is_code)
         a_start, a_end, kind = rec["anchor_start"], rec["anchor_end"], rec["anchor_kind"]
         if (a_start, a_end, kind) not in anchors:
             drift.append((rec["gold_id"], "anchor no longer found at recorded position"))

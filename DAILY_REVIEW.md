@@ -134,63 +134,68 @@ paragraph here.
   tried before today's 10th/11th checks both came back clean); keep pulling
   from the growing signal set (see Backlog) for pairs not yet tried.
 
-- **Cleanup rotation — current state: forensically root-caused the
-  recurring "stale/detached HEAD at session start" pattern (2026-11-15,
-  -16, -17, and again today — the fourth occurrence the 2026-11-17 bullet
-  said was worth investigating) for good — confirmed benign, zero lost
-  work, fixed procedurally (new step 0 in this file's own instructions).
-  Re-ran all eleven repeatable Cleanup checks as baseline: all
-  clean/unchanged from their last recorded state, zero new findings. Last
-  touched 2026-11-20.** Root cause, from direct forensic evidence rather
-  than inference: `.git/logs/HEAD` and `.git/logs/refs/heads/main` on
-  session start contained reflog entries from BOTH 2026-11-19 (timestamp
-  1795050334, 01:05 UTC) AND 2026-11-20 (1795136716, 01:05 UTC) — exactly
-  24h apart — in the SAME repository. A true fresh `git clone` per session
-  would only ever show that session's own entries; this proves the
-  container's `.git` directory (and its branch refs) persists across
-  sessions and is only refreshed via `git fetch` + a detached-HEAD checkout
-  of the new tip commit, contradicting this file's own stated assumption
-  ("fresh isolated clone with no memory except what's committed to git" —
-  corrected the purpose paragraph's practical implication via the new step
-  0, left the paragraph itself alone since the *lesson* — nothing persists
-  except what reaches git — still holds, even if the transport mechanism
-  isn't a clone). The mechanism: `refs/heads/main` was created exactly once
-  (`branch: Created from refs/remotes/origin/main`, 2026-11-19 01:05:35)
-  and never updated since — each day's HEAD correctly lands on the true
-  `origin/main` tip (detached), but local `main` only ever advances when
-  that day's own session runs `git checkout main` itself (as this file's
-  instructions already imply), which happens BEFORE that session's own
-  final commit — so local `main` is always exactly one session's worth of
-  commits behind until the next session's own `git fetch`+ff-merge catches
-  it up. Checked the one scenario that would make this a real incident, not
-  a cosmetic one, per the 2026-11-17 bullet's own question: `git log --all`
-  shows every commit `refs/heads/main` has ever pointed to also reachable
-  from (and identical to) `origin/main`'s history after each fetch — no
-  commit has ever existed on a local branch without reaching `origin/main`.
-  Zero lost work, 4/4 occurrences now explained, not just observed. Fix
-  shipped as the new step 0 above (not a code change — there's nothing in
-  this project's own pipeline to fix; the behavior lives in the hosting
-  platform, outside this repo's control) so future sessions spend one
-  command instead of independently re-diagnosing the stale pointer every
-  time. **Next Cleanup rotation**: no residual from this thread; `check_code_clones.py`'s own 6-pair baseline and `check_dead_columns.py`'s
-  13-flag baseline were both re-confirmed unchanged today — re-run all
-  eleven checks as usual, plus the still-open `score_gold.py`
-  unblanked-window precision-denominator item below (low priority, 2/805
-  records, deliberately deferred again today in favor of the HEAD
-  investigation).
+- **Cleanup rotation — current state: closed the long-deferred
+  `score_gold.py` unblanked-window precision gap (open since 2026-11-18)
+  by giving `citation_extractor.py` a public `scan_anchors()` entry point
+  and routing `score_gold.py`/`gold_sampling.py`/`measure_extractor_recall.py`
+  through it instead of each independently calling the private `_anchors()`
+  on raw text — found two MORE call sites with the identical staleness
+  while fixing the documented one, plus 4 gold records (not just the 1
+  originally scoped) that needed a real decision, not just a mechanical
+  fix. Re-ran all eleven repeatable Cleanup checks as baseline: all
+  clean/unchanged. Last touched 2026-11-23.** `gold_sampling.py` (feeds
+  ALL future gold sampling, not just today's fix) and
+  `measure_extractor_recall.py` (the corpus-wide recall safety net) turned
+  out to share the exact same bug class `score_gold.py` had — each called
+  `cx._anchors(text, ...)` directly on unblanked text instead of the
+  naming-paren-blanked copy `extract()` itself has scanned since
+  2026-11-18, so each could silently disagree with `extract()`'s own
+  window boundary. Unified all three (plus `extract()`'s own internal
+  anchor-finding, unchanged) behind one function instead of patching
+  `score_gold.py` alone and leaving the other two to rediscover the same
+  gap later. Measured corpus-wide before/after on `measure_extractor_recall.py`
+  (only live, user-facing recall signal of the three): windows 2335→2329,
+  naive numbers 2683→2677, extracted 8604→8598 — fewer only because the
+  spurious anchors themselves are gone, not because anything was missed;
+  the exact 20+6 pre-existing misses are byte-identical before/after
+  (set-diffed, not eyeballed). On the gold set itself: of the "8 rows, 9
+  raw occurrences" gold_id 754's own 2026-11-18 notes already named as
+  carrying this spurious-anchor class, 4 had their own gold record pinned
+  directly to the spurious anchor (126/571/611/762, beyond the 1 the
+  Backlog item scoped). `gold_id` 754 re-pointed to its real anchor
+  (8224-8245, not the spurious 8266-8283) as the Backlog item specified;
+  `gold_id` 731/773's stored window re-sliced to the corrected, longer
+  boundary (no longer silently empty); `gold_id` 126/571/611/762 RETIRED
+  rather than re-pointed — each already had a sibling real-anchor record
+  on the same row carrying the identical information (or no information
+  `extract()` doesn't already produce correctly today), so re-pointing
+  would have tested the same thing twice and, left pinned to a now-
+  nonexistent anchor, would DRIFT every single day going forward for a
+  reason that isn't drift (corpus unchanged) but a since-fixed extractor
+  behavior — see `gold_citations.json`'s own `_meta.description` addendum
+  for the full per-record reasoning. Net: 805→801 records, 0 drift (same
+  as before, not a regression — see note), precision 3270/3279 (99.66%)
+  →3269/3278 (99.66%), recall 3273/3301 (99.15%)→3269/3297 (99.15%) — flat
+  at 3dp because the 4 retired records' own expected citations had been
+  double-counted against their sibling's identical expected citation on
+  both sides ever since 2026-11-18, not because nothing changed underneath.
+  `citation_extractor.py` 79/79 self-tests pass; `verify_transfer.py`
+  green; `corpus.duckdb` untouched (nothing in the build pipeline itself
+  changed — this was gold-set/scorer/measurement tooling only). See Log,
+  2026-11-23, for the full trace. **Next Cleanup rotation**: no residual
+  from this thread; re-run all eleven checks as usual. One new, small
+  follow-on worth a look next time Extractor work touches
+  `_blank_naming_parens()` or the naming-paren clause itself: confirm no
+  OTHER call site outside `extract()` still reaches for `cx._anchors()`
+  directly (today's fix covered the three that existed; a future new
+  script should reach for `cx.scan_anchors()` from the start).
 
-  Prior state (2026-11-17, now superseded by the bullet above — kept as a
-  one-line pointer, full detail in that date's Log entry): shipped
-  `requirements.txt` pinned to `duckdb==2.0.0`/`streamlit==1.67.0`/
-  `pyflakes==4.1.0`/`vulture==2.16`/`bandit==1.9.4` plus a cold-start
-  pointer in `verify_transfer.py`'s docstring, fixing (not just diagnosing)
-  the fresh-container `ModuleNotFoundError` gap. Still true today: every
-  fresh container needs `git lfs pull` + `pip install -r requirements.txt`
-  before anything runs (confirmed again this session — parquet was a
-  134-byte LFS stub, `duckdb`/`streamlit` not installed) — that part of the
-  cold-start cost is real and unrelated to the git-ref issue above, and
-  remains unfixed (outside this project's control, per that date's own
-  reasoning).
+  Prior state (2026-11-20, now superseded by the bullet above — kept as a
+  one-line pointer, full detail in that date's Log entry): forensically
+  root-caused the recurring stale/detached-HEAD-at-session-start pattern
+  (4th occurrence) via `git reflog` timestamps — confirmed benign, zero
+  lost work, fixed procedurally (the file's own step 0, still in force,
+  confirmed working again at this session's own cold start today).
 
 ---
 
@@ -1309,37 +1314,27 @@ paragraph here.
   just worth a second look if a future session wants to push further.
 
 ### Cleanup
-- **`score_gold.py` duplicates `citation_extractor.extract()`'s own
+- ~~**`score_gold.py` duplicates `citation_extractor.extract()`'s own
   anchor-finding/windowing logic by calling `cx._anchors()` directly on RAW
   text, instead of sharing whatever internal scan-text transform `extract()`
-  itself applies before finding anchors.** Found 2026-11-18 while fixing the
-  self-naming-parenthetical known_gap (see Log): `extract()` now scans a
-  naming-paren-BLANKED copy internally (`_blank_naming_parens()`, private to
-  that module), but `score_gold.py`'s own per-anchor precision bucket
-  (`anchors = cx._anchors(text, ...)`, `limit = min(a_end+WINDOW,
-  anchors[idx+1][0]...)`) still computes its window boundary from the
-  UNBLANKED text — for the 2 gold records whose real anchor sits right
-  before a naming parenthetical (`gold_id` 731, 773), the real citation's
-  position now falls just outside that stale boundary, so `cites_here` comes
-  back empty and the record contributes to neither tp nor fp on the
-  precision side (recall is unaffected, since recall scores against the
-  whole-field `extract()` output, not the per-anchor bucket). Not a wrong
-  number — just a silently narrower precision denominator (3282 → 3279) for
-  those two records specifically, invisible unless you go looking the way
-  this session did. Not fixed today: naively switching `score_gold.py` to
-  also call `_anchors()` on a blanked copy breaks `gold_id` 754 instead (its
-  OWN recorded anchor position is the spurious one the naming-paren blanking
-  deliberately removes, so blanking there would make that gold record's
-  anchor "no longer found" — reclassified as DRIFT instead of scored). A
-  real fix needs `gold_id` 754 re-pointed to the real anchor's own position
-  at row 30003 (8224, not the spurious 8266 it's recorded against today)
-  AND `score_gold.py` switched to a shared blanked-scan helper, done
-  together in one pass — not attempted today since neither alone is safe
-  and `gold_id` 754 already scores correctly via its current (unblanked,
-  still-coincidentally-resolving) position. Worth doing together next time
-  `score_gold.py` or this exact mechanism comes up again; low priority
-  otherwise (affects 2 of 805 records' precision bucket only, zero effect
-  on recall or on any downstream table).
+  itself applies before finding anchors.**~~ **Fixed 2026-11-23**: added a
+  public `citation_extractor.scan_anchors()` (blanks naming parentheticals
+  first, same as `extract()` does internally) and routed `score_gold.py`
+  AND two other call sites found to share the identical staleness
+  (`gold_sampling.py::build_candidate_windows()`, feeding all future gold
+  sampling; `measure_extractor_recall.py::check_recall()`, the corpus-wide
+  recall safety net) through it instead of three independent `cx._anchors()`
+  calls on raw text. `gold_id` 754 re-pointed to its real anchor (8224, not
+  the spurious 8266) exactly as this item specified; `gold_id` 731/773's
+  stored window re-sliced to the corrected boundary; 4 MORE gold records
+  this item didn't originally scope (126/571/611/762, all pinned to the
+  same spurious-anchor class) retired rather than re-pointed, since each
+  already had a real-anchor sibling covering the identical information —
+  see `gold_citations.json`'s `_meta.description` and the Active threads
+  Cleanup bullet for the full per-record reasoning and before/after
+  numbers. `measure_extractor_recall.py`'s own miss set confirmed
+  byte-identical before/after via a set-diff (zero regression on the one
+  live, user-facing signal of the three). See Log, 2026-11-23.
 - ~~**`parser.py`'s `REPEALED_ARTICLES` hardcoded set (line 30) is provably
   100% redundant.**~~ **Fixed 2026-10-26**: deleted `REPEALED_ARTICLES` and
   the dead `and superscript_val is None` guard; `is_repealed` is now just
@@ -1637,6 +1632,34 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-23 — Cleanup rotation: closed the 2026-11-18/19-deferred `score_gold.py` unblanked-window gap with a shared `citation_extractor.scan_anchors()`, found the identical staleness in 2 more call sites, retired 4 gold records a mechanical fix would have left permanently drifting
+
+**Cold start.** Container started HEAD-detached at `4c912db`, local `main` one commit stale (`c349883`) — the now-routine pattern (see 2026-11-20). `git fetch origin main && git checkout main && git merge --ff-only origin/main`: clean fast-forward. `git lfs pull` (parquet was a 134-byte stub) + `python3 -m pip install -r requirements.txt` both needed and worked first try (used `python3 -m pip` directly per the 2026-11-22 entry's own note about the `pip`/`python` interpreter mismatch on this image).
+
+**Rotation choice.** Forward from the observed cycle (Extractor → Data currency → Cleanup, repeating: 11-21 Extractor, 11-22 Data currency), today is Cleanup. Active threads' own "Next Cleanup rotation" pointer named two things: re-run all eleven checks as baseline, and the still-open `score_gold.py` precision-denominator item (deferred 2026-11-17 and again 2026-11-20). Ran the eleven-check baseline first (below), then picked up the deferred item instead of starting a new check — it had already been deferred twice and had a fully-scoped fix written out in Backlog.
+
+**Baseline, all eleven checks, before touching anything:** `pyflakes *.py` clean; `vulture *.py --min-confidence 60` clean; `bandit` 57 `B608`/3 `B311`/1 `B110`, identical to the documented baseline; `check_sql_bindings.py` 116/116; `check_fstring_interp.py` 55/55 (identical count to the 2026-11-20 baseline); `check_param_arity.py` 200/200; `check_dead_views.py` 11/11 (2 view-on-view edges); `check_dead_columns.py` 176 columns, 13 flagged — same set as every prior baseline; `check_code_clones.py` 130 functions across 23 files, same 6 cross-file pairs as the 2026-11-14-established baseline. `python -m unittest test_transfer_e2e.py` 14/14. `verify_transfer.py`: PASSED. Zero new findings anywhere — confirmed the four-occurrence-old stale-HEAD fix (2026-11-20) is still holding (clean cold start today, no re-diagnosis needed) and nothing drifted since 2026-11-20's own baseline.
+
+**The deferred item.** Backlog's own Cleanup entry: `score_gold.py`'s per-anchor precision bucket computes its anchor list and window boundary from `cx._anchors(text, ...)` on RAW, unblanked text, while `extract()` itself (since the 2026-11-18 self-naming-parenthetical fix) scans a naming-paren-BLANKED copy internally. For two gold records (`gold_id` 731, 773) whose real anchor sits right before a self-naming parenthetical, the stale (shorter) boundary clips the window before reaching the real citation — `cites_here` comes back empty, contributing to neither tp nor fp, a silently narrower denominator invisible unless checked directly. The entry also named the coupled trap: naively blanking `score_gold.py`'s own anchor search breaks `gold_id` 754, whose OWN recorded anchor position (8266-8283) IS the spurious one the blanking removes — it needed re-pointing to the real anchor (8224-8245) in the same pass, not just a windowing fix.
+
+Before touching `score_gold.py`, grepped every call site of `cx._anchors(` across the repo (not just the one Backlog named) — found two more: `gold_sampling.py::build_candidate_windows()` (the shared sampler both `build_gold_sample.py` and `build_gold_sample_novel.py` call for ALL future gold draws) and `measure_extractor_recall.py::check_recall()` (the corpus-wide naive-detector recall safety net, whose own module docstring already *claimed* — inaccurately, since 2026-11-18 — to match `extract()`'s window boundary "exactly"). Same bug class, same root cause, independently reimplemented three times. Fixing `score_gold.py` alone would have left the other two to rediscover this later (exactly the clone-maintenance risk `gold_sampling.py` itself was built on 2026-11-01 to prevent, and exactly the category `check_code_clones.py` can't see here since none of these are >=4-line function pairs similar enough to flag — the duplication is in which *module-level helper* three different functions each call, not in the functions' own bodies).
+
+**The fix.** Added `citation_extractor.py::scan_anchors(text, *, allow_fk_alias, is_the_code)` — `_anchors(_blank_naming_parens(text), ...)`, a one-line wrapper around the two private helpers `extract()` already composes inline. Offsets are into the blanked copy, which is length-identical to `text` (blanking space-fills, never shortens), so they still slice correctly into the original unblanked `text` for window/evidence display — same invariant `extract()`'s own internals already rely on. Switched all three external call sites (`score_gold.py` line 114, `gold_sampling.py` line 84, `measure_extractor_recall.py` line 94) from `cx._anchors(text, ...)` to `cx.scan_anchors(text, ...)`; left `extract()`'s own internals untouched (it still needs the blanked `scan_text` itself for clause-scanning further down, not just the anchor list, so inlining would have cost more than it saved).
+
+**Measuring the effect before deciding what else needed hand attention.** Used `git stash`/`stash pop` to diff `score_gold.py` before vs after on the full 805-record gold set:
+- Before: `gold set: 805 records (805 scored, 0 drift)`, precision 3270/3279 (99.66%), recall 3273/3301 (99.15%).
+- After (code fix only, `gold_citations.json` untouched): `gold set: 805 records (801 scored, 4 drift)` — `gold_id` 126 (row 18091), 571 (row 5291), 611 (row 30762), 762 (row 25971) ALL newly drifted ("anchor no longer found") alongside the two expected ones (731, 773, "window text changed"), and `gold_id` 754 drifted too (anchor no longer found at its old spurious position) rather than silently miscounting — the mechanical half of the fix, by itself, converts the Backlog's documented silent-narrowing failure mode into a loud, correct one for every affected record, but doesn't by itself make the records SCORE right.
+
+Traced all 6 drifted records by hand: all 6 are pinned to window text containing the "Fuqarolik kodeksi deb yuritiladi/ataladi" naming clause. Checked `gold_id` 754's own 2026-11-18 note, which already named the full population this clause appears in corpus-wide: "8 rows, 9 raw occurrences (5291, 18091, 25971, 30003, 30057, 30344 x2, 30762, 30789)". Cross-referencing against which gold records exist on each row: `gold_id` 731 (row 5291) and 773 (row 25971) are the REAL anchor's own gold records (one row below/above their spurious siblings' anchor position) — their window just needed re-slicing to the corrected, longer boundary now that `scan_anchors()` agrees with `extract()`. `gold_id` 571 (row 5291, anchor 2906) and 762 (row 25971, anchor 8973) are each the SPURIOUS anchor's OWN gold record on those same two rows — a second, independent gold record that happened to get sampled at the spurious position back when both anchors still existed pre-2026-11-18, both with `expected` pinned to the SAME citation as their real-anchor sibling (549 for 571/731, 327 for 762/773). `gold_id` 126 (row 18091, anchor 6136) and 611 (row 30762, anchor 34503) are spurious-anchor records on two rows with NO real-anchor sibling gold record at all. Confirmed by re-running `extract()` directly on both rows' full text: row 18091's naming clause is followed by plain prose, no modda number at all (matches 126's own `expected`: a bare `act` citation, no article) — nothing is lost by the anchor disappearing, there was never an article number to recover there; row 30762's real anchor (uninvestigated as a separate gold record, since none was ever sampled there) still correctly produces article 1128 via `extract()`'s full-text output today, same as before 2026-11-18 — 611's own `expected` (article 1128) carries no information the pipeline doesn't already get right via the real anchor, it was just independently re-verifying the same fact the spurious anchor used to also (redundantly) recover.
+
+**The decision.** Re-pointed `gold_id` 754 to 8224-8245 exactly as Backlog specified (new window re-sliced, same pad-20/limit formula, `expected` unchanged — still article 327, now via the real anchor directly). Re-sliced `gold_id` 731/773's stored `window` to the corrected boundary (same anchor position, longer window) so they score as `correct` again instead of drifting. RETIRED `gold_id` 126/571/611/762 outright rather than re-pointing them the way 754 was re-pointed: unlike 754 (which was the ONLY gold record testing row 30003's real citation, so needed to keep testing it from the right position), these four each either duplicate a sibling real-anchor record's own information (571 duplicates 731, 762 duplicates 773) or carry no information `extract()` doesn't already produce correctly via that row's real anchor (126, 611) — and re-pointing all four to their own rows' real anchors would just manufacture 2 more near-duplicate gold records (5291 and 25971 would each carry two near-identical "correct, article X" records at two adjacent anchor positions testing the same underlying fact) while leaving the other 2 (18091, 30762) needing a BRAND NEW anchor position picked by hand with no real "correctness" signal to re-verify beyond what their own row's real anchor already independently covers via `measure_extractor_recall.py`. Retiring was also the only option that doesn't leave a permanent, non-corpus-caused DRIFT: a gold record pinned to an anchor the extractor's own (correct, 2026-11-18) fix permanently eliminated will drift every single day from now on if left in place, which is exactly the kind of recurring, pre-diagnosed-but-never-fixed noise this file's own Cleanup history (see 2026-11-20's stale-HEAD investigation) explicitly tries to stop manufacturing. Documented the full reasoning for all 4 retirements in `gold_citations.json`'s own `_meta.description` (the file's established append-only-narrative convention), not just here, so a future session reading that file directly sees why gold_ids 126/571/611/762 are missing rather than assuming data loss.
+
+**Final numbers**, 801 records, 0 drift: precision 3269/3278 (99.66%), recall 3269/3297 (99.15%) — both ratios flat at 3 significant figures versus the original 805-record baseline, NOT because nothing changed: `gold_id` 731/773/754 recovered (+3 true positives on the precision side net of the retirements' own -4, since each retired record had been a correct, duplicate-counted tp before today), and the 4 retired records' own `expected` citations had been double-counted against their sibling's identical expected citation on BOTH the precision and recall side ever since 2026-11-18 (confirmed by per-record accounting, not assumed) — removing them nets out to the same ratio by coincidence, not because the fix was a no-op.
+
+**Verification.** `citation_extractor.py` 79/79 self-tests pass (unchanged — `extract()`'s own internals weren't touched). `measure_extractor_recall.py`: windows 2335→2329, naive 2683→2677, extracted 8604→8598 (fewer only because the spurious anchors' own windows no longer exist to count, not because a real naive hit went unexplained) — set-diffed the full before/after miss list (not eyeballed): byte-identical, same 20 article-level + 6 chapter-level misses both runs, zero regression on the one live, user-facing signal of the three fixed call sites. Re-ran all eleven Cleanup checks again post-fix: `check_code_clones.py` 131 functions (one new, `scan_anchors()`), same 6 pairs, no new clone risk; everything else unchanged from this morning's baseline. `verify_transfer.py`: PASSED (79/79 extractor self-tests, 9640 edges, 214 superseded acts, 386/386 General Part articles classified, 39 OKOZ mappings still awaiting the owner's validation, untouched). `corpus.duckdb` untouched throughout — nothing in the build pipeline itself changed, this was gold-set/scorer/measurement tooling only, confirmed via `git status` showing only `citation_extractor.py`, `gold_sampling.py`, `score_gold.py`, `measure_extractor_recall.py`, `gold_citations.json` modified.
+
+**Decision.** Committing `citation_extractor.py`, `gold_sampling.py`, `score_gold.py`, `measure_extractor_recall.py`, `gold_citations.json`, `DAILY_REVIEW.md`. This closes the Backlog item in full (not just its originally-scoped 2/805 records) and removes a structural risk (three independently-reimplemented anchor scans) rather than one symptom of it.
 
 ### 2026-11-22 — Data currency rotation: followed the 2026-11-19 fix's own pointer onto the amending side, confirmed the list-locator gap class is real there but has zero live occurrences, shipped a permanent `verify_transfer.py` guard against it
 

@@ -81,7 +81,7 @@ def build_candidate_windows(
         for field, text in zip(SOURCE_FIELDS, texts):
             if not text:
                 continue
-            anchors = cx._anchors(text, allow_fk_alias=allow_alias, is_the_code=is_code)
+            anchors = cx.scan_anchors(text, allow_fk_alias=allow_alias, is_the_code=is_code)
             if not anchors:
                 continue
             all_cites = cx.extract(text, allow_fk_alias=allow_alias, is_the_code=is_code, doc_type=doc_type)
