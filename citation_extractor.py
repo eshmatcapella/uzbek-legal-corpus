@@ -963,6 +963,22 @@ def extract(text: str | None, *, allow_fk_alias: bool = False,
 
         if not produced and kind == "fuqarolik_kodeksi":
             # The act is named but no provision is pinned: a real, weaker signal.
+            # Deliberately gated to this one anchor kind, not self_reference or
+            # fk_alias too (checked explicitly 2026-11-24 via a fresh uniform
+            # gold sample, gold_id 8/16/38 -- see DAILY_REVIEW.md): a bare
+            # self_reference ("ushbu/mazkur Kodeksga", no article) inside the
+            # Code's own text would only ever resolve to a self-loop edge
+            # (build_links.py always maps c.anchor=='self_reference' to
+            # rel='internal'/hrel='self' regardless of dst_doc) -- not an
+            # informative citation, just the Code trivially referring to
+            # itself; 107 corpus-wide occurrences would otherwise become 107
+            # meaningless self-loop link_edge rows. fk_alias has zero
+            # corpus-wide occurrences with no provision at all (measured
+            # 2026-11-24), so this branch is moot for it today, but the same
+            # self-loop-noise reasoning wouldn't apply there if one ever
+            # appeared -- an aliased "FK" with no provision in a genuinely
+            # different citing act would be as informative as a bare
+            # "Fuqarolik kodeksiga muvofiq" is.
             out.append(Citation("act", None, None, None, None, kind, "single",
                                 a_start, a_end, _evidence(text, a_start, a_end)))
     return out

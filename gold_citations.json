@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "description": "Hand-verified ground truth for citation_extractor.py, scored by score_gold.py. 'expected' is what extract() SHOULD produce for this exact anchor occurrence; qism is recorded for documentation but is NOT part of score_gold.py's headline precision/recall (qism isn't consumed by any downstream table/view yet -- see DAILY_REVIEW.md backlog 'Qism-level (article-part) grain'). Batch 1 (gold_id 0-49, seed 20260920, built 2026-09-20): read window-by-window against the raw Uzbek text and citation_extractor.py's own stop-word/anchor rules (see DAILY_REVIEW.md 2026-09-20 log entry for the reasoning behind each verdict, especially the self_reference-without-article-number 'correctly empty' cases and the gazette-locator 'correctly bare act' cases). Every record is 'verdict: correct' -- this batch found no new extractor bug (the first sample in this project's 9-session sampling history not to). Batch 2 (gold_id 50-99, seed 20260922, built 2026-09-22, disjoint from batch 1): same read-by-hand method. 49/50 records are 'verdict: correct'; one (gold_id 52, row 46605) is 'verdict: known_gap' -- a documented, unfixed extractor limitation (a LexUZ 'paragrafi'->'paragrifi' misspelling isn't recognized as the paragraf unit word) recorded with its true expected output so it scores as an honest recall miss rather than being silently marked correct. See DAILY_REVIEW.md 2026-09-22 log entry and Backlog. Batch 3 (gold_id 100-139, built 2026-09-25, drawn by build_gold_sample_novel.py's signature-stratified sampler instead of a fourth uniform-random batch -- see DAILY_REVIEW.md 2026-09-25 for why): 38/40 'verdict: correct' (including one real bug this batch found and fixed at the source, gold_id 108), 2/40 'verdict: known_gap' (a Roman-numeral chapter+paragraf section-grain loss, gold_id 123; the pre-existing qism-grain limitation now also measured in comma-list form, not just the previously-known dash-range form, gold_id 131). Batch 4 (gold_id 140-179, seed 20260928, built 2026-09-28): second signature-stratified round. 38/40 verdict: correct, 2/40 known_gap -- both reconfirmations of already-documented backlog gaps rather than new bugs (the “hamda” list-separator gap, row 24219; the chapter+paragraph-list-with-parenthetical gap, row 25634), each formalized here for the first time as a permanent regression record. One more window (gold_id 170) also re-hit the already-known “boʻlim”-not-a-recognized-unit gap but is scored ’correct’, not ’known_gap’, since the schema has no field at all to record an honest mismatch against (same treatment as qism). Batch 5 (gold_id 180-219, seed 20260928002, built 2026-09-28): a second, disjoint draw the same day after batch 4 found nothing new, to give the “no new bug” result a second, independent check. 37/40 correct, 3/40 known_gap: one NEW gap found and formalized (gold_id 194-196, row 37948 -- a bare article number immediately followed by a different code’s own name loses its unit word to that other code’s clause, silently dropping Civil Code Article 38; measured corpus-wide at exactly 5 raw occurrences across 3 rows, all the same target article -- see Backlog), plus two more ’correct’ boʻlim re-hits (gold_id 186 and 200, same schema-cannot-express reasoning as batch 4’s). Batch 6 (gold_id 220-259, seed 20260929, built 2026-09-29): third signature-stratified round. 40/40 verdict: correct -- but 2 of the 40 (row 43534, row 44469) only score correct because a real, live recall bug found while hand-reading this batch was fixed at the source before merging: RE_STOP's 'axborotnoma' (gazette publication-record) branch is a whole-window `break`, and when the Code's OWN bibliographic parenthetical -- e.g. 'Fuqarolik kodeksi (Oʻzbekiston Respublikasi Oliy Majlisining Axborotnomasi, 1996-yil, ...) 775-moddasining ikkinchi qismidagi ...' -- sits between the anchor and the real target article, the parenthetical's own internal gazette-item locators ('56-modda') are themselves RE_CLAUSE matches whose gap contains 'Axborotnomasi', so the break fires on the very first candidate and discards the real citation that follows the closing paren too. Fixed in citation_extractor.py by blanking a leading, balanced, signal-bearing parenthetical before the clause scan starts (RE_LEADING_PUB_PAREN), scoped to only the parenthetical immediately after the anchor. Measured corpus-wide: 9 rows recovered (articles 15, 38, 43, 48, 53, 292, 775, 788, 1015), 0 regressions (score_gold.py unchanged at 693/700 precision, 693/703 recall on the pre-existing 220 records). See DAILY_REVIEW.md 2026-09-29 for the full measurement. Batch 7 (gold_id 260-299, seed 20261002, signature-stratified via build_gold_sample_novel.py, built 2026-10-02): all 40 verdict 'correct' against the CURRENT (fixed) extractor -- the batch's own reading surfaced the 'boʻlim' part-level gap at 2 of its 40 windows (rows 46656, 48850), which this same session fixed (RE_ROMAN_PART in citation_extractor.py), so both score as correct against the new behavior rather than as known_gap. See DAILY_REVIEW.md 2026-10-02 log entry. Batch 8 (gold_id 300-339, seed 20261004, signature-stratified via build_gold_sample_novel.py, built 2026-10-04): 39/40 verdict 'correct', 1/40 'known_gap' -- a new surface-form gap found by hand-reading this batch (gold_id 324, row 41858): LexUZ's \"9-bobi § 2\" uses the \"§ N\" section-mark notation instead of the word \"paragraf\" the chapter+section lookahead requires literally, so the citation resolves as a bare chapter-9 citation instead of section 9/2. Measured corpus-wide: exactly 1 in-scope occurrence (a second raw match, row 35993, is a different document's own internal Rules, not the Civil Code). Not fixed given the single-occurrence scope, same precedent as the existing 'paragrif' and Roman-chapter-lookahead known_gap records. See DAILY_REVIEW.md 2026-10-04 log entry and Backlog. Batch 9 (gold_id 340-379, seed 20261010, signature-stratified via build_gold_sample_novel.py, built 2026-10-10): 37/40 verdict 'correct', 3/40 'known_gap'. Two new bugs found by hand-reading this batch: (1) gold_id 370 (row 38339), a LexUZ typo \"43-moddsi\" (missing the 'a' in \"moddasi\") drops Civil Code Article 43 entirely -- exactly 1 in-scope occurrence corpus-wide; (2) gold_id 379 (row 42229), a 21-article list (\"14, 15, 324—339, 985, 989 va 990\") loses its unit word entirely to a different Qonun's own clause that follows -- the same failure class as the existing gold_id 194-196 known_gap, but a variant the 2026-09-28 measurement's kodeks-only regex missed; corrected corpus-wide count for that failure class from 5/3 to 6/4 rows (Backlog updated). One more (gold_id 341, row 42566) formalizes an already-documented-but-never-recorded 2026-09-15 backlog item (chapter+paragraph space-separator gap) as a permanent regression record. None of the three fixed given single-occurrence/cross-clause-inference precedent already applied to near-identical gaps. See DAILY_REVIEW.md 2026-10-10 log entry and Backlog. Batch 10 (gold_id 380-419, seed 20261013, signature-stratified via build_gold_sample_novel.py, built 2026-10-13): 40/40 verdict 'correct' -- the first fully clean batch since batch 1 (2026-09-20). Hand-read all 40 against the raw text, including a close check of one genuinely novel signature (row 46565: a chapter citation immediately followed by its own parenthetical article range, \"70-bobi (1158 -- 1167-moddalari)\") -- confirmed the extractor's behavior of emitting both the chapter edge and the individual article edges is consistent with how every other multi-granularity window in this corpus is already handled, not a double-count bug. See DAILY_REVIEW.md 2026-10-13 log entry. Batch 11 (gold_id 420-459, seed 20261015, signature-stratified via build_gold_sample_novel.py, built 2026-10-15): 39/40 verdict 'correct', 1/40 'known_gap' -- gold_id 451 (row 26159) is the identical failure class already documented at gold_id 194-196 (a bare article number swallowed by an interposed different code's name before any unit word), one of the 5 occurrences / 3 rows that class's own 2026-09-28 corpus-wide measurement already counted (26159, 37948 x3, 53186) but had never been formalized as its own gold record. Formalizing it surfaced a real gold-set inconsistency: gold_id 295 (row 53186, also named in that same count) had been recorded 'correct' with expected=[act] -- it predates the 2026-09-28 discovery of the class and nobody had revisited it since. Re-verified against the raw text and citation_extractor.py's actual output: same failure, not a different case. Corrected gold_id 295 to 'known_gap' with expected=[article 38], so all 3 rows named in gold_id 194's own count (26159, 37948, 53186) are now consistently represented. See DAILY_REVIEW.md 2026-10-15 log entry. Batch 12 (gold_id 460-499, seed 20261018, signature-stratified via build_gold_sample_novel.py, built 2026-10-18): 40/40 verdict 'correct' -- but 3 of the 40 (gold_id 471/11, 483/23, 492/32 in this batch's own local numbering) only score correct because a real, live qism-grain bug found while hand-reading this batch was fixed at the source before merging: a single modda carrying TWO OR MORE qism/band ordinals at once (\"497-moddasi birinchi, ikkinchi qismlari\", \"377-moddasining oltinchi va yettinchi qismlarida\") was silently collapsed to at most the one ordinal immediately adjacent to the unit word, or to nothing at all when a comma intervened (the existing RE_QISM_BLOCK list-vs-this-citation gate, tuned correctly for the different-article case \"185-moddasi, 186-moddasi toʻqqizinchi qismi\", fired on the same shape for the wrong reason). Measured corpus-wide against the actual extract() output (not just a regex-shape upper bound): 63 real in-scope article citations carry 2+ qism/band ordinals this way. Fixed in citation_extractor.py by RE_QISM_MULTI/_qism_list, which only engages when an unbroken ordinal-or-non-citation-digit list sits immediately before qism/band (so the different-article shape still falls through to the old single-match/gate logic, unchanged) and 2+ tokens are found; emits one Citation per qism/band, same article/kind/listing. 62/63 locations now resolve completely; the 63rd (row 46795's own \"564-moddasi birinchi, ikkinchi qismlari\") still reads qism=None, same before and after this fix -- its tail falls past the anchor's WINDOW=260 cutoff, a separate, pre-existing truncation limit this fix doesn't touch. Re-running score_gold.py against the fix surfaced 9 PRE-EXISTING gold records (gold_id 6, 131, 224, 242, 244, 259, 329, 348, 349) whose 'correct' verdict had the same under-measurement baked in -- each hand-annotated before today only checked the article number, not that every qism/band was present. Corrected their 'expected' to the true multi-entry output rather than leaving them as new, spurious false positives. This is the exact gap the 'Qism-level (article-part) grain' backlog item measured on 2026-09-25 and deliberately left unfixed pending qism becoming load-bearing downstream; re-checked that precondition today and found it already false -- app_hierarchy.py's own article-detail panel (line ~308) has displayed dst_qism to users since before this session, and build_links.py has materialized it into link_edge.dst_qism (689 edges) since 2026-09-04 -- so the deferral's stated condition no longer holds. Re-ran build_links.py (not a full corpus.duckdb rebuild) to regenerate link_edge/src_provision/repeal_clause/article_amendment against the fixed extractor: 9620 edges (was 9535, +85 from the qism-expansion), dst_qism populated on 755 edges (was 660, +95); re-ran build_llc.py too since it joins link_edge (llc_norm/llc_stage output unchanged, as expected -- the fix only affects which qism string attaches to an edge, not which edges exist at the article-number grain that script keys on). Confirmed live in app_hierarchy.py's own v_realization query: Article 377 now shows both 'oltinchi qism' and 'yettinchi qism' self-reference edges instead of only the latter. See DAILY_REVIEW.md 2026-10-18 log entry and Backlog. Batch 13 (gold_id 500-539, seed 20261024, signature-stratified via build_gold_sample_novel.py, built 2026-10-24): 40/40 verdict 'correct' -- the first fully clean batch since batch 10 (2026-10-13). Drawn from the 12 distinct never-covered signatures remaining as of 2026-10-21 (115/3251 candidate windows). Hand-verified two shapes specifically, both confirmed correct against existing precedent/behavior rather than assumed: (1) 12 of the 40 are bare 'act'-level citations where a Oliy sudi/Oliy xo'jalik sudi Plenum resolution's own title happens to contain the substring 'Fuqarolik kodeksi' (e.g. \"...gi 110-son qarorining 9-bandi\") -- RE_STOP's 'qarori'/'qarorining' branch correctly stops the scan before any modda/bob/paragraf clause is reached, so extract() falls back to a bare act citation; this is not a new judgment call, it is the identical signature already recorded correct at gold_id 1 and 21 in batch 1/2, just never independently re-confirmed since; (2) the other 28 are comma/dash mixed-list expansions of varying complexity (up to a 6-segment, 41-article list at gold_id 526: \"14, 87, 186, 236 -- 258, 324 -- 330, 332 -- 339\"), each independently re-expanded by hand (and cross-checked with a from-scratch regex re-implementation of the comma/dash list grammar, run separately from citation_extractor.py itself) against the raw window text; all 28 matched exactly, including every case where a list correctly stopped short of a different code's own clause in the same sentence (Fuqarolik protsessual kodeksi, Ma'muriy sud ishlarini yuritish toʻgʻrisidagi kodeks). No new bug found this batch. Signature coverage after merging: all 12 of the 2026-10-21 novel signatures are now covered by at least one gold record (recomputed post-merge: 463/451 corpus-wide distinct signatures are now 'covered' by the terms gold_signatures() uses -- see DAILY_REVIEW.md 2026-10-24 log entry for why this count can exceed the corpus-wide distinct-signature count, a pre-existing property of the two measurement methods, not new today). See DAILY_REVIEW.md 2026-10-24 log entry. Batch 14 (gold_id 540-564, seed 1, signature-stratified via build_gold_sample_novel.py, built 2026-10-24): drawn AFTER fixing a real bug in build_gold_sample_novel.py itself found while merging batch 13 (see DAILY_REVIEW.md 2026-10-24 log entry) -- the sampler's own 'novel signature' computation used a next-anchor-bounded window while its 'already covered' check (gold_signatures()) always recomputes a flat a_end..a_end+WINDOW span, so the two were never measuring the same thing; fixed by making build_candidates() use the identical flat span. Post-fix, corpus-wide distinct signatures rose from 451 to 483 (the flat span surfaces real shape variation the old next-anchor-bounded span had been truncating away) and the apparent 456-covered-exceeds-451-corpus-wide anomaly flagged (but left unexplained) in the 2026-10-18 log entry is now fully resolved: covered (459) is properly <= corpus-wide (483) for the first time since the sampler was introduced. Only 25 windows across 24 signatures remained genuinely uncovered after batch 13 merged; sampled and hand-verified all 25. 24/25 verdict 'correct', 1/25 'known_gap' (gold_id 548, row 29093): a chapter-list with a parenthetical quoted title after each chapter number ('43 (“Bank omonati”) va 44 (“Bank hisobvaragʻi”) boblari') breaks RE_CLAUSE's contiguous-digit requirement and drops both chapters to a bare act citation; measured exactly 1 occurrence corpus-wide, not fixed given the single-occurrence scope (same precedent as gold_id 148 and others). See DAILY_REVIEW.md 2026-10-24 log entry and Backlog. Batch 15 (gold_id 565-604, seed 20261027, built 2026-10-27): drawn from a WIDENED signature (build_gold_sample_novel.py's 22-boolean signature had exhausted its own novel pool -- 483/483 covered, re-confirmed today -- so this session added 6 more features per the Backlog's 'post-exhaustion strategy' option 2: a section-mark (§), semicolon and 'yoki' separator feature each, plus bucketed separator-count, anchor-to-clause distance and digit-group-count features; corpus-wide distinct signatures rose 483 -> 728, reopening 671 windows across 235 never-covered signatures). 38/40 'verdict: correct' (including 2 only correct because a real, live bug found while hand-reading this batch was fixed at the source first, same pattern as batches 6/7/12 -- see gold_id 3/568 and gold_id 548's updated record), 2/40 'verdict: known_gap' (gold_id 587/22, a 'Kodeksning'-collateral-loss gap in the RE_STOP design when the citing document's own doc_type isn't 'code'; gold_id 597/32, a NEW false-positive class where an amending/omnibus law's own next sequential article heading gets misattributed to the Civil Code). The real bug (gold_id 3/568, row 3635): a comma/va list where each item carries its own parenthetical title ('738 (...) va 739-moddalari (...)') broke RE_CLAUSE's contiguous-nums requirement, dropping the first item -- the SAME root cause as the pre-existing known_gap at gold_id 548 (recorded 2026-10-24, chapters not articles). Re-measuring 548's own footprint with a regex that also allows the paren on the SECOND list item (not just the first, which is all the original measurement checked) found the TRUE corpus-wide in-scope count is 5, not 1 -- crossing this project's single-occurrence deferral threshold -- so this time it was fixed rather than deferred: RE_CLAUSE's nums group now accepts an optional short parenthetical after each listed number, and _expand() strips parenthetical text before splitting on comma/va. 65/65 self-tests still pass; gold_id 548 itself now also scores correct (its record updated in place, same precedent as the 2026-10-18 qism-grain correction). Re-ran build_links.py and build_llc.py against the fixed extractor (not a full corpus.duckdb rebuild) -- see DAILY_REVIEW.md 2026-10-27 log entry for the edge-count delta. Batch 16 (gold_id 605-644, seed 20261030, signature-stratified via build_gold_sample_novel.py, built 2026-10-30): drawn from the 631-window post-widening novel pool (195 distinct never-covered signatures remained after batch 15). 38/40 verdict 'correct' (including gold_id 621 [local gid 16], which only scores correct because a real, live recall bug found while hand-reading this batch was fixed at the source first -- see below), 2/40 'known_gap' (gold_id 618 [local gid 13]: a digit-form \"boʻlim\" meaning chapter rather than the roman-numeral structural Part; gold_id 623 [local gid 18]: a 4th, previously unmeasured occurrence of the already-documented interposed-act-name known_gap class in row 37948, correcting that class's corpus-wide count from 6/4 to 7/4 rows). The real bug (gold_id 621/local gid 16, row 34219): \"Fuqarolik kodeksining202 va 203-moddalari\" has no space between the anchor's genitive suffix and the first listed number -- RE_ANCHOR_CC's own `i\\w*` suffix alternative is greedy over ALL word characters, digits included, so it consumed \"202\" as part of the anchor match itself, before RE_CLAUSE ever saw it, dropping article 202 from this field's entire extract() output (not just this anchor's bucket -- confirmed via score_gold.py-style whole-field recall). A second occurrence (row 38589, article 190) hit the exact same anchor-regex bug but was coincidentally recovered by an unrelated second mention of article 190 later in the same field, so it was invisible in any headline recall number -- found only by checking every RE_ANCHOR_CC/RE_ANCHOR_SELF match corpus-wide for whether its own matched text ends on a digit. Fixed in citation_extractor.py by narrowing RE_ANCHOR_CC's (and, defensively, RE_ANCHOR_SELF's) `\\w*` suffix class to `[^\\W0-9]*` (all Unicode word characters except ASCII digits) -- every real Uzbek genitive suffix is letters/okina marks only, never digits, so this changes nothing about legitimate suffix matching. 65/65 extractor self-tests still pass; score_gold.py unchanged at 2608/2623 precision, 2608/2645 recall on the pre-existing 605 records (this fix only changes behavior for the exact glued-digit shape, which no pre-existing gold record exercised). gold_id 621's own anchor_end shifted from 94 to 91 and its per-anchor citation set from [203] to [202, 203] (listing corrected from 'single' to 'list') to match the fixed extractor's real output -- recomputed, not left stale, so score_gold.py doesn't flag it as DRIFT. See DAILY_REVIEW.md 2026-10-30 for the full trace. Batch 17 (gold_id 645-684, seed 20261102, signature-stratified via build_gold_sample_novel.py, built 2026-11-02): drawn from the 591-window post-batch-16 novel pool (155 distinct never-covered signatures). 40/40 verdict 'correct' -- but 1 of the 40 (gold_id 670 [local gid 25], row 46605) only scores correct because a real, live recall bug found while hand-reading this batch was fixed at the source first. LexUZ spells the section-mark word \"paragrifi\" (not the usual \"paragrafi\") in this row's own two occurrences (\"65-bobining 1-paragrifi\", \"65-bobi 1-paragrifi\") -- a genuine spelling variant, not a one-off typo unique to one occurrence (both of this row's own mentions use it). The bob-branch's section lookahead (citation_extractor.py) was hardcoded to the literal \"paragraf\" stem, so both occurrences silently downgraded from \"chapter 65, section 1\" to a bare \"chapter 65\", losing the paragraph. Fixed by widening the lookahead to paragr[ai]f. Measured corpus-wide: the only other \"paragrif\" occurrence anywhere in the corpus (row 25664) cites a Nizom, not the Code or itself, so it never reaches any anchor's scan window and is unaffected either way -- this row's own 2 occurrences are the fix's entire footprint. 67/67 extractor self-tests pass (2 new, covering both spellings of the row's own real text). The rest of the batch covered familiar shapes at the widened signature's finer grain (parenthetical chapter lists, mixed comma/dash multi-segment lists, multi-qism single-article citations, and several vague self-references correctly extracting nothing) with no further discrepancies -- including one window (gold_id 684 [local gid 39]) whose own sampled anchor occurrence correctly extracts nothing because it is a vague, unspecific self-reference, while a LATER, different self-reference anchor in the same field (not this window) correctly extracts a 119-article range -- confirmed by running extract() on the row's full field text, not just the sampled window, so the two anchors' independent behavior is not conflated. Re-ran build_links.py/build_llc.py against the fixed extractor (not a full corpus.duckdb rebuild). See DAILY_REVIEW.md 2026-11-02 log entry. Batch 18 (gold_id 685-724, seed 20261105, signature-stratified via build_gold_sample_novel.py, built 2026-11-05): drawn from the 551-window post-batch-17 novel pool (115 distinct never-covered signatures, down from 155 -- batch 17's paragrif fix reclassified a handful of windows into already-covered signatures). 40/40 verdict 'correct' -- the first fully clean batch (no new bug, no known_gap) since batch 10 (2026-10-13). Hand-read all 40 against the raw Uzbek text and citation_extractor.py's documented stop-word/qism-gating rules rather than trusting 'extracted' at face value, with particular attention to shapes that looked likely to hide a leak: gold_id 693 [local gid 8, row 8856] lists three different codes' own terminology for the same legal concept side by side ('mazkur Kodeks 197-moddasida \"qonunchilik\", Uy-joy kodeksining 11-moddasining beshinchi va oltinchi qismlarida') -- confirmed the Housing Code's own 'beshinchi va oltinchi qism' correctly does NOT attach to the Code's article 197 (qism stays null), because RE_QISM_BLOCK's comma check already fires on the comma immediately after \"qonunchilik\" before the qism word is ever reached, the identical mechanism the existing '185-moddasi, 186-moddasi toʻqqizinchi qismi' self-test already covers, just with three list items instead of two. gold_id 701 [local gid 16, row 29841] confirmed a 'birinchi qismi'/'ikkinchi qismi' adoption-clause phrasing ('Fuqarolik kodeksining birinchi qismi tasdiqlansin') correctly falls through to a bare act citation: queried struct_node directly and confirmed its 6 real 'part' nodes (PI..PVI, General Provisions through Private International Law) are subject-matter divisions wholly distinct from this enactment-era 'Part One/Part Two' split of the Code's own 1996/1999 adoption, so there is no target_kind this phrase could resolve to today -- 'act' is the correct fallback, not a gap. gold_id 710 [local gid 25, row 35811] and gold_id 731's-sibling gid 24 (36-article mixed list/range, '915, 917 — 920, 927, 929 — 955, 957 — 959-moddalari') and gid 36's 11-article mixed list ('162, 260 — 263, 325 — 326, 330, 436, 454-moddalari, 720-moddasi birinchi qismi') both independently re-expanded by hand against the raw text, confirming each range's endpoints and the list/range boundary, plus (gid 36) that the trailing 'Mehnat kodeksi 160-modda, 159-moddasi' (the Labor Code's own articles, named right after a comma) is correctly excluded by RE_STOP's bare 'kodeksi' substring match. No new bug, no new known_gap. Signature coverage after merging: corpus-wide distinct signatures 727 (up from 727 before this batch -- unchanged, since no extractor fix ran this session), 551 novel windows across 115 distinct novel signatures before the merge; all 40 of this batch's own signatures are now covered. See DAILY_REVIEW.md 2026-11-05 log entry. Batch 19 (gold_id 725-764, seed 20261109, built 2026-11-09, drawn by build_gold_sample_novel.py from the widened-signature novel pool): 39/40 'verdict: correct' (one of them, row 41009, is a real chapter+paragraf-list bug this batch found and fixed at the source, see below), 1/40 'verdict: known_gap' (a self-naming-clause/chained-publication-parenthetical recall loss, gold_id 763, row 30003 -- a spurious second anchor formed by the literal phrase 'Fuqarolik kodeksi' recurring inside its own '(... deb yuritiladi)' naming clause, whose truncated window then runs into a SECOND, chained Axborotnoma publication parenthetical that RE_LEADING_PUB_PAREN's single-leading-paren design doesn't reach; measured at exactly 1 in-scope occurrence corpus-wide out of 8 rows sharing the naming clause, so deferred per this project's standing precedent). The real fix: row 41009 ('Fuqarolik kodeksi 29-bobining 1 (“Oldi-sotdi toʻgʻrisida umumiy qoidalar”), 7-paragraflari (“Koʻchmas mulkni sotish”), 30 (“Ayirboshlash”) va 31-boblari (“Hadya”)') was losing BOTH paragraf numbers of chapter 29 entirely -- not even downgraded to one bare chapter-29 citation per paragraf, a single bare chapter-29 total -- because the chapter+section lookahead only ever tried a single bare digit immediately before 'paragraf', and a parenthetical chapter/section title interposed before the list's 'va' separator broke it. Fixed by widening the lookahead (RE_SECTION_LIST) to accept the same nums-list-with-parenthetical grammar RE_CLAUSE's own top-level 'nums' group already uses, reusing _expand() rather than a new parsing path. Measured corpus-wide before fixing: diffed the old 30-char/single-digit lookahead against the new one across every 'bob' RE_CLAUSE match in the whole corpus -- exactly 4 rows change (41009; 41010 and 41012, the same 'chapter 34' citation duplicated verbatim across two articles' own LexUZ commentary; and 25634, the pre-existing gold_id 148 known_gap from 2026-09-10/2026-09-28, now corrected to 'correct' in place), zero collateral change anywhere else -- purely additive, not a new false-positive source. Also fixed in the same pass: each produced section's 'listing' now reflects the paragraf LIST's own shape (list/range), not the chapter's -- the chapter is usually a single number even when its paragrafs are a list, and gold_id 148 expects 'list' for both of its sections, not 'single'. 68/68 self-tests pass (one new case added for the parenthetical-interposed paragraf-list shape). score_gold.py: precision 3026/3041 (99.5%, up from 3024/3040), recall 3026/3062 (98.8%, unchanged -- the known_gap's own FN doesn't move the headline number since gold_id 763 is new, not a regression). See DAILY_REVIEW.md 2026-11-09 log entry for the full trace.\n\nGold-set maintenance, 2026-11-23 (Cleanup rotation): closed the score_gold.py\nprecision-denominator gap documented above by giving score_gold.py (and\ngold_sampling.py, and measure_extractor_recall.py) a shared\ncitation_extractor.scan_anchors() entry point instead of each independently\ncalling the private _anchors() on raw text -- see citation_extractor.py's\nown docstring on scan_anchors() and DAILY_REVIEW.md's 2026-11-23 log entry\nfor the full mechanism and corpus-wide measurement. Two direct consequences\nfor this gold set: (1) gold_id 731/773 -- previously silently contributing\nto neither tp nor fp in the precision bucket -- and gold_id 754 -- re-\npointed from the spurious anchor it was recorded against (8266-8283, inside\nits own self-naming parenthetical) to the real one (8224-8245) -- all three\nnow score correctly (window text re-sliced to match the corrected, longer\nboundary each one's real anchor opens). (2) Retired four gold records --\n126 (row 18091), 571 (row 5291), 611 (row 30762), 762 (row 25971) -- that\nhad been pinned to the exact spurious, self-naming-parenthetical anchor\noccurrence _blank_naming_parens() blanks out of the scan entirely (the same\nanchor class gold_id 754 was pinned to, and the same 4 of the \"8 rows, 9 raw\noccurrences\" gold_id 754's own notes already named). Unlike 754, each of\nthese four already had its own real-citation information fully covered by\na sibling real-anchor record on the SAME row (731 for 571's article 549,\n773 for 762's article 327) or carried no information extract() doesn't\nalready produce correctly via that row's real anchor today (611's article\n1128, 126's bare-act verdict -- confirmed by direct extract() re-run on\nboth full rows). Re-pointing them the way 754 was re-pointed would just\ncreate a near-duplicate of their own sibling record testing the identical\ninformation twice; retiring them instead avoids a gold record that would\notherwise DRIFT (\"anchor no longer found\") every day going forward -- not\nbecause the corpus changed, but because the extractor's own 2026-11-18 fix\npermanently and correctly eliminated the anchor they were pinned to. Net:\n805 -> 801 records, 0 drift (down from the same 0 pre-fix, by coincidence --\nprecision 3270/3279 (99.66%) -> 3269/3278 (99.66%), recall 3273/3301\n(99.15%) -> 3269/3297 (99.15%) -- the headline ratios are flat because the\nfour retired records' own expected citations had been double-counted\nagainst their real-anchor sibling's identical expected citation on both the\nprecision and recall side ever since the 2026-11-18 fix shipped, not because\nnothing changed. See DAILY_REVIEW.md, Cleanup, 2026-11-23, for the full\nper-record before/after accounting.",
+    "description": "Hand-verified ground truth for citation_extractor.py, scored by score_gold.py. 'expected' is what extract() SHOULD produce for this exact anchor occurrence; qism is recorded for documentation but is NOT part of score_gold.py's headline precision/recall (qism isn't consumed by any downstream table/view yet -- see DAILY_REVIEW.md backlog 'Qism-level (article-part) grain'). Batch 1 (gold_id 0-49, seed 20260920, built 2026-09-20): read window-by-window against the raw Uzbek text and citation_extractor.py's own stop-word/anchor rules (see DAILY_REVIEW.md 2026-09-20 log entry for the reasoning behind each verdict, especially the self_reference-without-article-number 'correctly empty' cases and the gazette-locator 'correctly bare act' cases). Every record is 'verdict: correct' -- this batch found no new extractor bug (the first sample in this project's 9-session sampling history not to). Batch 2 (gold_id 50-99, seed 20260922, built 2026-09-22, disjoint from batch 1): same read-by-hand method. 49/50 records are 'verdict: correct'; one (gold_id 52, row 46605) is 'verdict: known_gap' -- a documented, unfixed extractor limitation (a LexUZ 'paragrafi'->'paragrifi' misspelling isn't recognized as the paragraf unit word) recorded with its true expected output so it scores as an honest recall miss rather than being silently marked correct. See DAILY_REVIEW.md 2026-09-22 log entry and Backlog. Batch 3 (gold_id 100-139, built 2026-09-25, drawn by build_gold_sample_novel.py's signature-stratified sampler instead of a fourth uniform-random batch -- see DAILY_REVIEW.md 2026-09-25 for why): 38/40 'verdict: correct' (including one real bug this batch found and fixed at the source, gold_id 108), 2/40 'verdict: known_gap' (a Roman-numeral chapter+paragraf section-grain loss, gold_id 123; the pre-existing qism-grain limitation now also measured in comma-list form, not just the previously-known dash-range form, gold_id 131). Batch 4 (gold_id 140-179, seed 20260928, built 2026-09-28): second signature-stratified round. 38/40 verdict: correct, 2/40 known_gap -- both reconfirmations of already-documented backlog gaps rather than new bugs (the “hamda” list-separator gap, row 24219; the chapter+paragraph-list-with-parenthetical gap, row 25634), each formalized here for the first time as a permanent regression record. One more window (gold_id 170) also re-hit the already-known “boʻlim”-not-a-recognized-unit gap but is scored ’correct’, not ’known_gap’, since the schema has no field at all to record an honest mismatch against (same treatment as qism). Batch 5 (gold_id 180-219, seed 20260928002, built 2026-09-28): a second, disjoint draw the same day after batch 4 found nothing new, to give the “no new bug” result a second, independent check. 37/40 correct, 3/40 known_gap: one NEW gap found and formalized (gold_id 194-196, row 37948 -- a bare article number immediately followed by a different code’s own name loses its unit word to that other code’s clause, silently dropping Civil Code Article 38; measured corpus-wide at exactly 5 raw occurrences across 3 rows, all the same target article -- see Backlog), plus two more ’correct’ boʻlim re-hits (gold_id 186 and 200, same schema-cannot-express reasoning as batch 4’s). Batch 6 (gold_id 220-259, seed 20260929, built 2026-09-29): third signature-stratified round. 40/40 verdict: correct -- but 2 of the 40 (row 43534, row 44469) only score correct because a real, live recall bug found while hand-reading this batch was fixed at the source before merging: RE_STOP's 'axborotnoma' (gazette publication-record) branch is a whole-window `break`, and when the Code's OWN bibliographic parenthetical -- e.g. 'Fuqarolik kodeksi (Oʻzbekiston Respublikasi Oliy Majlisining Axborotnomasi, 1996-yil, ...) 775-moddasining ikkinchi qismidagi ...' -- sits between the anchor and the real target article, the parenthetical's own internal gazette-item locators ('56-modda') are themselves RE_CLAUSE matches whose gap contains 'Axborotnomasi', so the break fires on the very first candidate and discards the real citation that follows the closing paren too. Fixed in citation_extractor.py by blanking a leading, balanced, signal-bearing parenthetical before the clause scan starts (RE_LEADING_PUB_PAREN), scoped to only the parenthetical immediately after the anchor. Measured corpus-wide: 9 rows recovered (articles 15, 38, 43, 48, 53, 292, 775, 788, 1015), 0 regressions (score_gold.py unchanged at 693/700 precision, 693/703 recall on the pre-existing 220 records). See DAILY_REVIEW.md 2026-09-29 for the full measurement. Batch 7 (gold_id 260-299, seed 20261002, signature-stratified via build_gold_sample_novel.py, built 2026-10-02): all 40 verdict 'correct' against the CURRENT (fixed) extractor -- the batch's own reading surfaced the 'boʻlim' part-level gap at 2 of its 40 windows (rows 46656, 48850), which this same session fixed (RE_ROMAN_PART in citation_extractor.py), so both score as correct against the new behavior rather than as known_gap. See DAILY_REVIEW.md 2026-10-02 log entry. Batch 8 (gold_id 300-339, seed 20261004, signature-stratified via build_gold_sample_novel.py, built 2026-10-04): 39/40 verdict 'correct', 1/40 'known_gap' -- a new surface-form gap found by hand-reading this batch (gold_id 324, row 41858): LexUZ's \"9-bobi § 2\" uses the \"§ N\" section-mark notation instead of the word \"paragraf\" the chapter+section lookahead requires literally, so the citation resolves as a bare chapter-9 citation instead of section 9/2. Measured corpus-wide: exactly 1 in-scope occurrence (a second raw match, row 35993, is a different document's own internal Rules, not the Civil Code). Not fixed given the single-occurrence scope, same precedent as the existing 'paragrif' and Roman-chapter-lookahead known_gap records. See DAILY_REVIEW.md 2026-10-04 log entry and Backlog. Batch 9 (gold_id 340-379, seed 20261010, signature-stratified via build_gold_sample_novel.py, built 2026-10-10): 37/40 verdict 'correct', 3/40 'known_gap'. Two new bugs found by hand-reading this batch: (1) gold_id 370 (row 38339), a LexUZ typo \"43-moddsi\" (missing the 'a' in \"moddasi\") drops Civil Code Article 43 entirely -- exactly 1 in-scope occurrence corpus-wide; (2) gold_id 379 (row 42229), a 21-article list (\"14, 15, 324—339, 985, 989 va 990\") loses its unit word entirely to a different Qonun's own clause that follows -- the same failure class as the existing gold_id 194-196 known_gap, but a variant the 2026-09-28 measurement's kodeks-only regex missed; corrected corpus-wide count for that failure class from 5/3 to 6/4 rows (Backlog updated). One more (gold_id 341, row 42566) formalizes an already-documented-but-never-recorded 2026-09-15 backlog item (chapter+paragraph space-separator gap) as a permanent regression record. None of the three fixed given single-occurrence/cross-clause-inference precedent already applied to near-identical gaps. See DAILY_REVIEW.md 2026-10-10 log entry and Backlog. Batch 10 (gold_id 380-419, seed 20261013, signature-stratified via build_gold_sample_novel.py, built 2026-10-13): 40/40 verdict 'correct' -- the first fully clean batch since batch 1 (2026-09-20). Hand-read all 40 against the raw text, including a close check of one genuinely novel signature (row 46565: a chapter citation immediately followed by its own parenthetical article range, \"70-bobi (1158 -- 1167-moddalari)\") -- confirmed the extractor's behavior of emitting both the chapter edge and the individual article edges is consistent with how every other multi-granularity window in this corpus is already handled, not a double-count bug. See DAILY_REVIEW.md 2026-10-13 log entry. Batch 11 (gold_id 420-459, seed 20261015, signature-stratified via build_gold_sample_novel.py, built 2026-10-15): 39/40 verdict 'correct', 1/40 'known_gap' -- gold_id 451 (row 26159) is the identical failure class already documented at gold_id 194-196 (a bare article number swallowed by an interposed different code's name before any unit word), one of the 5 occurrences / 3 rows that class's own 2026-09-28 corpus-wide measurement already counted (26159, 37948 x3, 53186) but had never been formalized as its own gold record. Formalizing it surfaced a real gold-set inconsistency: gold_id 295 (row 53186, also named in that same count) had been recorded 'correct' with expected=[act] -- it predates the 2026-09-28 discovery of the class and nobody had revisited it since. Re-verified against the raw text and citation_extractor.py's actual output: same failure, not a different case. Corrected gold_id 295 to 'known_gap' with expected=[article 38], so all 3 rows named in gold_id 194's own count (26159, 37948, 53186) are now consistently represented. See DAILY_REVIEW.md 2026-10-15 log entry. Batch 12 (gold_id 460-499, seed 20261018, signature-stratified via build_gold_sample_novel.py, built 2026-10-18): 40/40 verdict 'correct' -- but 3 of the 40 (gold_id 471/11, 483/23, 492/32 in this batch's own local numbering) only score correct because a real, live qism-grain bug found while hand-reading this batch was fixed at the source before merging: a single modda carrying TWO OR MORE qism/band ordinals at once (\"497-moddasi birinchi, ikkinchi qismlari\", \"377-moddasining oltinchi va yettinchi qismlarida\") was silently collapsed to at most the one ordinal immediately adjacent to the unit word, or to nothing at all when a comma intervened (the existing RE_QISM_BLOCK list-vs-this-citation gate, tuned correctly for the different-article case \"185-moddasi, 186-moddasi toʻqqizinchi qismi\", fired on the same shape for the wrong reason). Measured corpus-wide against the actual extract() output (not just a regex-shape upper bound): 63 real in-scope article citations carry 2+ qism/band ordinals this way. Fixed in citation_extractor.py by RE_QISM_MULTI/_qism_list, which only engages when an unbroken ordinal-or-non-citation-digit list sits immediately before qism/band (so the different-article shape still falls through to the old single-match/gate logic, unchanged) and 2+ tokens are found; emits one Citation per qism/band, same article/kind/listing. 62/63 locations now resolve completely; the 63rd (row 46795's own \"564-moddasi birinchi, ikkinchi qismlari\") still reads qism=None, same before and after this fix -- its tail falls past the anchor's WINDOW=260 cutoff, a separate, pre-existing truncation limit this fix doesn't touch. Re-running score_gold.py against the fix surfaced 9 PRE-EXISTING gold records (gold_id 6, 131, 224, 242, 244, 259, 329, 348, 349) whose 'correct' verdict had the same under-measurement baked in -- each hand-annotated before today only checked the article number, not that every qism/band was present. Corrected their 'expected' to the true multi-entry output rather than leaving them as new, spurious false positives. This is the exact gap the 'Qism-level (article-part) grain' backlog item measured on 2026-09-25 and deliberately left unfixed pending qism becoming load-bearing downstream; re-checked that precondition today and found it already false -- app_hierarchy.py's own article-detail panel (line ~308) has displayed dst_qism to users since before this session, and build_links.py has materialized it into link_edge.dst_qism (689 edges) since 2026-09-04 -- so the deferral's stated condition no longer holds. Re-ran build_links.py (not a full corpus.duckdb rebuild) to regenerate link_edge/src_provision/repeal_clause/article_amendment against the fixed extractor: 9620 edges (was 9535, +85 from the qism-expansion), dst_qism populated on 755 edges (was 660, +95); re-ran build_llc.py too since it joins link_edge (llc_norm/llc_stage output unchanged, as expected -- the fix only affects which qism string attaches to an edge, not which edges exist at the article-number grain that script keys on). Confirmed live in app_hierarchy.py's own v_realization query: Article 377 now shows both 'oltinchi qism' and 'yettinchi qism' self-reference edges instead of only the latter. See DAILY_REVIEW.md 2026-10-18 log entry and Backlog. Batch 13 (gold_id 500-539, seed 20261024, signature-stratified via build_gold_sample_novel.py, built 2026-10-24): 40/40 verdict 'correct' -- the first fully clean batch since batch 10 (2026-10-13). Drawn from the 12 distinct never-covered signatures remaining as of 2026-10-21 (115/3251 candidate windows). Hand-verified two shapes specifically, both confirmed correct against existing precedent/behavior rather than assumed: (1) 12 of the 40 are bare 'act'-level citations where a Oliy sudi/Oliy xo'jalik sudi Plenum resolution's own title happens to contain the substring 'Fuqarolik kodeksi' (e.g. \"...gi 110-son qarorining 9-bandi\") -- RE_STOP's 'qarori'/'qarorining' branch correctly stops the scan before any modda/bob/paragraf clause is reached, so extract() falls back to a bare act citation; this is not a new judgment call, it is the identical signature already recorded correct at gold_id 1 and 21 in batch 1/2, just never independently re-confirmed since; (2) the other 28 are comma/dash mixed-list expansions of varying complexity (up to a 6-segment, 41-article list at gold_id 526: \"14, 87, 186, 236 -- 258, 324 -- 330, 332 -- 339\"), each independently re-expanded by hand (and cross-checked with a from-scratch regex re-implementation of the comma/dash list grammar, run separately from citation_extractor.py itself) against the raw window text; all 28 matched exactly, including every case where a list correctly stopped short of a different code's own clause in the same sentence (Fuqarolik protsessual kodeksi, Ma'muriy sud ishlarini yuritish toʻgʻrisidagi kodeks). No new bug found this batch. Signature coverage after merging: all 12 of the 2026-10-21 novel signatures are now covered by at least one gold record (recomputed post-merge: 463/451 corpus-wide distinct signatures are now 'covered' by the terms gold_signatures() uses -- see DAILY_REVIEW.md 2026-10-24 log entry for why this count can exceed the corpus-wide distinct-signature count, a pre-existing property of the two measurement methods, not new today). See DAILY_REVIEW.md 2026-10-24 log entry. Batch 14 (gold_id 540-564, seed 1, signature-stratified via build_gold_sample_novel.py, built 2026-10-24): drawn AFTER fixing a real bug in build_gold_sample_novel.py itself found while merging batch 13 (see DAILY_REVIEW.md 2026-10-24 log entry) -- the sampler's own 'novel signature' computation used a next-anchor-bounded window while its 'already covered' check (gold_signatures()) always recomputes a flat a_end..a_end+WINDOW span, so the two were never measuring the same thing; fixed by making build_candidates() use the identical flat span. Post-fix, corpus-wide distinct signatures rose from 451 to 483 (the flat span surfaces real shape variation the old next-anchor-bounded span had been truncating away) and the apparent 456-covered-exceeds-451-corpus-wide anomaly flagged (but left unexplained) in the 2026-10-18 log entry is now fully resolved: covered (459) is properly <= corpus-wide (483) for the first time since the sampler was introduced. Only 25 windows across 24 signatures remained genuinely uncovered after batch 13 merged; sampled and hand-verified all 25. 24/25 verdict 'correct', 1/25 'known_gap' (gold_id 548, row 29093): a chapter-list with a parenthetical quoted title after each chapter number ('43 (“Bank omonati”) va 44 (“Bank hisobvaragʻi”) boblari') breaks RE_CLAUSE's contiguous-digit requirement and drops both chapters to a bare act citation; measured exactly 1 occurrence corpus-wide, not fixed given the single-occurrence scope (same precedent as gold_id 148 and others). See DAILY_REVIEW.md 2026-10-24 log entry and Backlog. Batch 15 (gold_id 565-604, seed 20261027, built 2026-10-27): drawn from a WIDENED signature (build_gold_sample_novel.py's 22-boolean signature had exhausted its own novel pool -- 483/483 covered, re-confirmed today -- so this session added 6 more features per the Backlog's 'post-exhaustion strategy' option 2: a section-mark (§), semicolon and 'yoki' separator feature each, plus bucketed separator-count, anchor-to-clause distance and digit-group-count features; corpus-wide distinct signatures rose 483 -> 728, reopening 671 windows across 235 never-covered signatures). 38/40 'verdict: correct' (including 2 only correct because a real, live bug found while hand-reading this batch was fixed at the source first, same pattern as batches 6/7/12 -- see gold_id 3/568 and gold_id 548's updated record), 2/40 'verdict: known_gap' (gold_id 587/22, a 'Kodeksning'-collateral-loss gap in the RE_STOP design when the citing document's own doc_type isn't 'code'; gold_id 597/32, a NEW false-positive class where an amending/omnibus law's own next sequential article heading gets misattributed to the Civil Code). The real bug (gold_id 3/568, row 3635): a comma/va list where each item carries its own parenthetical title ('738 (...) va 739-moddalari (...)') broke RE_CLAUSE's contiguous-nums requirement, dropping the first item -- the SAME root cause as the pre-existing known_gap at gold_id 548 (recorded 2026-10-24, chapters not articles). Re-measuring 548's own footprint with a regex that also allows the paren on the SECOND list item (not just the first, which is all the original measurement checked) found the TRUE corpus-wide in-scope count is 5, not 1 -- crossing this project's single-occurrence deferral threshold -- so this time it was fixed rather than deferred: RE_CLAUSE's nums group now accepts an optional short parenthetical after each listed number, and _expand() strips parenthetical text before splitting on comma/va. 65/65 self-tests still pass; gold_id 548 itself now also scores correct (its record updated in place, same precedent as the 2026-10-18 qism-grain correction). Re-ran build_links.py and build_llc.py against the fixed extractor (not a full corpus.duckdb rebuild) -- see DAILY_REVIEW.md 2026-10-27 log entry for the edge-count delta. Batch 16 (gold_id 605-644, seed 20261030, signature-stratified via build_gold_sample_novel.py, built 2026-10-30): drawn from the 631-window post-widening novel pool (195 distinct never-covered signatures remained after batch 15). 38/40 verdict 'correct' (including gold_id 621 [local gid 16], which only scores correct because a real, live recall bug found while hand-reading this batch was fixed at the source first -- see below), 2/40 'known_gap' (gold_id 618 [local gid 13]: a digit-form \"boʻlim\" meaning chapter rather than the roman-numeral structural Part; gold_id 623 [local gid 18]: a 4th, previously unmeasured occurrence of the already-documented interposed-act-name known_gap class in row 37948, correcting that class's corpus-wide count from 6/4 to 7/4 rows). The real bug (gold_id 621/local gid 16, row 34219): \"Fuqarolik kodeksining202 va 203-moddalari\" has no space between the anchor's genitive suffix and the first listed number -- RE_ANCHOR_CC's own `i\\w*` suffix alternative is greedy over ALL word characters, digits included, so it consumed \"202\" as part of the anchor match itself, before RE_CLAUSE ever saw it, dropping article 202 from this field's entire extract() output (not just this anchor's bucket -- confirmed via score_gold.py-style whole-field recall). A second occurrence (row 38589, article 190) hit the exact same anchor-regex bug but was coincidentally recovered by an unrelated second mention of article 190 later in the same field, so it was invisible in any headline recall number -- found only by checking every RE_ANCHOR_CC/RE_ANCHOR_SELF match corpus-wide for whether its own matched text ends on a digit. Fixed in citation_extractor.py by narrowing RE_ANCHOR_CC's (and, defensively, RE_ANCHOR_SELF's) `\\w*` suffix class to `[^\\W0-9]*` (all Unicode word characters except ASCII digits) -- every real Uzbek genitive suffix is letters/okina marks only, never digits, so this changes nothing about legitimate suffix matching. 65/65 extractor self-tests still pass; score_gold.py unchanged at 2608/2623 precision, 2608/2645 recall on the pre-existing 605 records (this fix only changes behavior for the exact glued-digit shape, which no pre-existing gold record exercised). gold_id 621's own anchor_end shifted from 94 to 91 and its per-anchor citation set from [203] to [202, 203] (listing corrected from 'single' to 'list') to match the fixed extractor's real output -- recomputed, not left stale, so score_gold.py doesn't flag it as DRIFT. See DAILY_REVIEW.md 2026-10-30 for the full trace. Batch 17 (gold_id 645-684, seed 20261102, signature-stratified via build_gold_sample_novel.py, built 2026-11-02): drawn from the 591-window post-batch-16 novel pool (155 distinct never-covered signatures). 40/40 verdict 'correct' -- but 1 of the 40 (gold_id 670 [local gid 25], row 46605) only scores correct because a real, live recall bug found while hand-reading this batch was fixed at the source first. LexUZ spells the section-mark word \"paragrifi\" (not the usual \"paragrafi\") in this row's own two occurrences (\"65-bobining 1-paragrifi\", \"65-bobi 1-paragrifi\") -- a genuine spelling variant, not a one-off typo unique to one occurrence (both of this row's own mentions use it). The bob-branch's section lookahead (citation_extractor.py) was hardcoded to the literal \"paragraf\" stem, so both occurrences silently downgraded from \"chapter 65, section 1\" to a bare \"chapter 65\", losing the paragraph. Fixed by widening the lookahead to paragr[ai]f. Measured corpus-wide: the only other \"paragrif\" occurrence anywhere in the corpus (row 25664) cites a Nizom, not the Code or itself, so it never reaches any anchor's scan window and is unaffected either way -- this row's own 2 occurrences are the fix's entire footprint. 67/67 extractor self-tests pass (2 new, covering both spellings of the row's own real text). The rest of the batch covered familiar shapes at the widened signature's finer grain (parenthetical chapter lists, mixed comma/dash multi-segment lists, multi-qism single-article citations, and several vague self-references correctly extracting nothing) with no further discrepancies -- including one window (gold_id 684 [local gid 39]) whose own sampled anchor occurrence correctly extracts nothing because it is a vague, unspecific self-reference, while a LATER, different self-reference anchor in the same field (not this window) correctly extracts a 119-article range -- confirmed by running extract() on the row's full field text, not just the sampled window, so the two anchors' independent behavior is not conflated. Re-ran build_links.py/build_llc.py against the fixed extractor (not a full corpus.duckdb rebuild). See DAILY_REVIEW.md 2026-11-02 log entry. Batch 18 (gold_id 685-724, seed 20261105, signature-stratified via build_gold_sample_novel.py, built 2026-11-05): drawn from the 551-window post-batch-17 novel pool (115 distinct never-covered signatures, down from 155 -- batch 17's paragrif fix reclassified a handful of windows into already-covered signatures). 40/40 verdict 'correct' -- the first fully clean batch (no new bug, no known_gap) since batch 10 (2026-10-13). Hand-read all 40 against the raw Uzbek text and citation_extractor.py's documented stop-word/qism-gating rules rather than trusting 'extracted' at face value, with particular attention to shapes that looked likely to hide a leak: gold_id 693 [local gid 8, row 8856] lists three different codes' own terminology for the same legal concept side by side ('mazkur Kodeks 197-moddasida \"qonunchilik\", Uy-joy kodeksining 11-moddasining beshinchi va oltinchi qismlarida') -- confirmed the Housing Code's own 'beshinchi va oltinchi qism' correctly does NOT attach to the Code's article 197 (qism stays null), because RE_QISM_BLOCK's comma check already fires on the comma immediately after \"qonunchilik\" before the qism word is ever reached, the identical mechanism the existing '185-moddasi, 186-moddasi toʻqqizinchi qismi' self-test already covers, just with three list items instead of two. gold_id 701 [local gid 16, row 29841] confirmed a 'birinchi qismi'/'ikkinchi qismi' adoption-clause phrasing ('Fuqarolik kodeksining birinchi qismi tasdiqlansin') correctly falls through to a bare act citation: queried struct_node directly and confirmed its 6 real 'part' nodes (PI..PVI, General Provisions through Private International Law) are subject-matter divisions wholly distinct from this enactment-era 'Part One/Part Two' split of the Code's own 1996/1999 adoption, so there is no target_kind this phrase could resolve to today -- 'act' is the correct fallback, not a gap. gold_id 710 [local gid 25, row 35811] and gold_id 731's-sibling gid 24 (36-article mixed list/range, '915, 917 — 920, 927, 929 — 955, 957 — 959-moddalari') and gid 36's 11-article mixed list ('162, 260 — 263, 325 — 326, 330, 436, 454-moddalari, 720-moddasi birinchi qismi') both independently re-expanded by hand against the raw text, confirming each range's endpoints and the list/range boundary, plus (gid 36) that the trailing 'Mehnat kodeksi 160-modda, 159-moddasi' (the Labor Code's own articles, named right after a comma) is correctly excluded by RE_STOP's bare 'kodeksi' substring match. No new bug, no new known_gap. Signature coverage after merging: corpus-wide distinct signatures 727 (up from 727 before this batch -- unchanged, since no extractor fix ran this session), 551 novel windows across 115 distinct novel signatures before the merge; all 40 of this batch's own signatures are now covered. See DAILY_REVIEW.md 2026-11-05 log entry. Batch 19 (gold_id 725-764, seed 20261109, built 2026-11-09, drawn by build_gold_sample_novel.py from the widened-signature novel pool): 39/40 'verdict: correct' (one of them, row 41009, is a real chapter+paragraf-list bug this batch found and fixed at the source, see below), 1/40 'verdict: known_gap' (a self-naming-clause/chained-publication-parenthetical recall loss, gold_id 763, row 30003 -- a spurious second anchor formed by the literal phrase 'Fuqarolik kodeksi' recurring inside its own '(... deb yuritiladi)' naming clause, whose truncated window then runs into a SECOND, chained Axborotnoma publication parenthetical that RE_LEADING_PUB_PAREN's single-leading-paren design doesn't reach; measured at exactly 1 in-scope occurrence corpus-wide out of 8 rows sharing the naming clause, so deferred per this project's standing precedent). The real fix: row 41009 ('Fuqarolik kodeksi 29-bobining 1 (“Oldi-sotdi toʻgʻrisida umumiy qoidalar”), 7-paragraflari (“Koʻchmas mulkni sotish”), 30 (“Ayirboshlash”) va 31-boblari (“Hadya”)') was losing BOTH paragraf numbers of chapter 29 entirely -- not even downgraded to one bare chapter-29 citation per paragraf, a single bare chapter-29 total -- because the chapter+section lookahead only ever tried a single bare digit immediately before 'paragraf', and a parenthetical chapter/section title interposed before the list's 'va' separator broke it. Fixed by widening the lookahead (RE_SECTION_LIST) to accept the same nums-list-with-parenthetical grammar RE_CLAUSE's own top-level 'nums' group already uses, reusing _expand() rather than a new parsing path. Measured corpus-wide before fixing: diffed the old 30-char/single-digit lookahead against the new one across every 'bob' RE_CLAUSE match in the whole corpus -- exactly 4 rows change (41009; 41010 and 41012, the same 'chapter 34' citation duplicated verbatim across two articles' own LexUZ commentary; and 25634, the pre-existing gold_id 148 known_gap from 2026-09-10/2026-09-28, now corrected to 'correct' in place), zero collateral change anywhere else -- purely additive, not a new false-positive source. Also fixed in the same pass: each produced section's 'listing' now reflects the paragraf LIST's own shape (list/range), not the chapter's -- the chapter is usually a single number even when its paragrafs are a list, and gold_id 148 expects 'list' for both of its sections, not 'single'. 68/68 self-tests pass (one new case added for the parenthetical-interposed paragraf-list shape). score_gold.py: precision 3026/3041 (99.5%, up from 3024/3040), recall 3026/3062 (98.8%, unchanged -- the known_gap's own FN doesn't move the headline number since gold_id 763 is new, not a regression). See DAILY_REVIEW.md 2026-11-09 log entry for the full trace.\n\nGold-set maintenance, 2026-11-23 (Cleanup rotation): closed the score_gold.py\nprecision-denominator gap documented above by giving score_gold.py (and\ngold_sampling.py, and measure_extractor_recall.py) a shared\ncitation_extractor.scan_anchors() entry point instead of each independently\ncalling the private _anchors() on raw text -- see citation_extractor.py's\nown docstring on scan_anchors() and DAILY_REVIEW.md's 2026-11-23 log entry\nfor the full mechanism and corpus-wide measurement. Two direct consequences\nfor this gold set: (1) gold_id 731/773 -- previously silently contributing\nto neither tp nor fp in the precision bucket -- and gold_id 754 -- re-\npointed from the spurious anchor it was recorded against (8266-8283, inside\nits own self-naming parenthetical) to the real one (8224-8245) -- all three\nnow score correctly (window text re-sliced to match the corrected, longer\nboundary each one's real anchor opens). (2) Retired four gold records --\n126 (row 18091), 571 (row 5291), 611 (row 30762), 762 (row 25971) -- that\nhad been pinned to the exact spurious, self-naming-parenthetical anchor\noccurrence _blank_naming_parens() blanks out of the scan entirely (the same\nanchor class gold_id 754 was pinned to, and the same 4 of the \"8 rows, 9 raw\noccurrences\" gold_id 754's own notes already named). Unlike 754, each of\nthese four already had its own real-citation information fully covered by\na sibling real-anchor record on the SAME row (731 for 571's article 549,\n773 for 762's article 327) or carried no information extract() doesn't\nalready produce correctly via that row's real anchor today (611's article\n1128, 126's bare-act verdict -- confirmed by direct extract() re-run on\nboth full rows). Re-pointing them the way 754 was re-pointed would just\ncreate a near-duplicate of their own sibling record testing the identical\ninformation twice; retiring them instead avoids a gold record that would\notherwise DRIFT (\"anchor no longer found\") every day going forward -- not\nbecause the corpus changed, but because the extractor's own 2026-11-18 fix\npermanently and correctly eliminated the anchor they were pinned to. Net:\n805 -> 801 records, 0 drift (down from the same 0 pre-fix, by coincidence --\nprecision 3270/3279 (99.66%) -> 3269/3278 (99.66%), recall 3273/3301\n(99.15%) -> 3269/3297 (99.15%) -- the headline ratios are flat because the\nfour retired records' own expected citations had been double-counted\nagainst their real-anchor sibling's identical expected citation on both the\nprecision and recall side ever since the 2026-11-18 fix shipped, not because\nnothing changed. See DAILY_REVIEW.md, Cleanup, 2026-11-23, for the full\nper-record before/after accounting. Batch 21 (gold_id 805-844, 2026-11-24, Extractor rotation): also fixed the _meta.batches bookkeeping itself here -- batches for gold batch 19 (725-764, seed 20261109) and batch 20 (765-804, seed 20261112) were missing from this list entirely (both Log-documented but never added to _meta.batches), backfilled before adding today's own entry. Batch 21 itself is the first UNIFORM-random draw (build_gold_sample.py) since batch 2 (2026-09-22) -- deliberate, not an oversight: every batch 3-20 used the signature-stratified novel sampler, which by construction never redraws a signature it already covered, so it structurally cannot catch a regression introduced into an already-covered shape by a later fix. Hand-verified all 40 uniformly-sampled windows against the raw Uzbek text (including re-deriving why 3 self_reference windows with no provision number correctly produce zero citations rather than a bare act -- a self-reference inside the Code's own text always maps to a self-loop edge in build_links.py regardless, so a provision-less one would just be corpus-wide noise; now documented directly in citation_extractor.py's own comment, where it previously had none): 40/40 correct, 0 new bugs, exactly the same 9 known-gap FP/FN pairs as before (gold_id 194/195/196/295/370/379) and nothing else -- a clean regression result. 801 -> 841 records; precision 3269/3278 (99.66%) -> 3373/3382 (99.73%), recall 3269/3297 (99.15%) -> 3373/3401 (99.18%).",
     "batches": [
       {
         "gold_id_range": [
@@ -179,6 +179,36 @@
         "n": 40,
         "built": "2026-11-05",
         "method": "signature-stratified (build_gold_sample_novel.py) over the widened (28-feature) signature introduced 2026-10-27"
+      },
+      {
+        "gold_id_range": [
+          725,
+          764
+        ],
+        "seed": 20261109,
+        "n": 40,
+        "built": "2026-11-09",
+        "method": "signature-stratified (build_gold_sample_novel.py) over the widened (28-feature) signature introduced 2026-10-27; gold_id 762 in this range later RETIRED 2026-11-23 (see description)"
+      },
+      {
+        "gold_id_range": [
+          765,
+          804
+        ],
+        "seed": 20261112,
+        "n": 40,
+        "built": "2026-11-12",
+        "method": "signature-stratified (build_gold_sample_novel.py) over the widened (28-feature) signature introduced 2026-10-27; this batch's own post-merge recompute found the widened novel pool TRULY exhausted (0/0)"
+      },
+      {
+        "gold_id_range": [
+          805,
+          844
+        ],
+        "seed": 20261124,
+        "n": 40,
+        "built": "2026-11-24",
+        "method": "UNIFORM RANDOM (build_gold_sample.py, not the signature-stratified novel sampler) -- the first uniform batch since batch 2 (2026-09-22). Drawn deliberately as a regression check once the novel-signature sampler's own widened pool hit 0/0 novel (see Active threads 2026-11-21/11-12): the stratified sampler, by construction, never re-draws a signature it has already covered, so it structurally cannot catch a regression in common, already-covered shapes introduced by a later fix. A uniform draw can land anywhere, covered or not."
       }
     ]
   },
@@ -38545,6 +38575,1435 @@
         {
           "target_kind": "article",
           "article": "204",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 805,
+      "row_id": 28124,
+      "doc_id": -2165134,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 56522,
+      "anchor_end": 56539,
+      "is_the_code": false,
+      "window": "on Respublikasining Fuqarolik kodeksi (Oʻzbekiston Respublikasi Oliy Majlisining Axborotnomasi, 1996-y., 2-songa ilova; 1997-y., 2-son, 56-modda) va boshqa qonunchilik hujjatlari talablariga muvofiq amalga oshiriladi. TH maʼmuriyati THda saqlanayotgan shaxslarning fuqarolik huquqiy bitimlarda qon",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 806,
+      "row_id": 26655,
+      "doc_id": -2535141,
+      "field": "article_text",
+      "anchor_kind": "fk_alias",
+      "anchor_start": 13245,
+      "anchor_end": 13247,
+      "is_the_code": false,
+      "window": "tutishlari lozimki, FK 123-moddasining qoidalari jismoniy shaxslar tomonidan ham, yuridik shaxslar tomonidan ham tuzilgan bitimlarga nisbatan tatbiq etiladi. ",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "123",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 807,
+      "row_id": 30057,
+      "doc_id": -1741499,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 63163,
+      "anchor_end": 63182,
+      "is_the_code": false,
+      "window": "r chiqaradi. Konsul Fuqarolik kodeksiga koʻra mol-mulkni ishonchli boshqarish muassisi sifatida ishtirok etib, ishonchli boshqaruvchi bilan mol-mulkni ishonchli boshqarish shartnomasini tuzadi. 103. Konsul meros mol-mulki saqlash uchun topshirilgan shaxslarni, vasiy va homiylarni hamda meros boshqa",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 808,
+      "row_id": 10480,
+      "doc_id": -5633835,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 18949,
+      "anchor_end": 18968,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksida toʻliq aks ettirish boʻyicha takliflar ishlab chiqish. Qonun loyihasi 2021-yil 1-dekabr Adliya vazirligi (Davletov), Bosh prokuratura (Yoʻldoshev), Oliy sud (Komilov), Qishloq xoʻjaligi vazirligi (Xodjayev), Savdo-sanoat palatasi (Jasimov) J. Qoʻchqorov, D. X",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 809,
+      "row_id": 34194,
+      "doc_id": -1063359,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 1158,
+      "anchor_end": 1177,
+      "is_the_code": false,
+      "window": "on Respublikasining Fuqarolik kodeksida va “Garov toʻgʻrisida”gi Oʻzbekiston Respublikasi Qonunidagi garov haqidagi umumiy qoidalar qoʻllaniladi.",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 810,
+      "row_id": 46882,
+      "doc_id": -111189,
+      "field": "cross_references",
+      "anchor_kind": "self_reference",
+      "anchor_start": 80,
+      "anchor_end": 97,
+      "is_the_code": true,
+      "window": "LexUZ sharhiQarang: mazkur Kodeksning 14, 236 — 258, 325 — 339-moddalari. LexUZ sharhiQoʻshimcha maʼlumot uchun qarang: Oliy xoʻjalik sudi Plenumining 28.02.2003-yildagi “Oʻzbekiston Respublikasi ",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "14",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "236",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "237",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "238",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "239",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "240",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "241",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "242",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "243",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "244",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "245",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "246",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "247",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "248",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "249",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "250",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "251",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "252",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "253",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "254",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "255",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "256",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "257",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "258",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "325",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "326",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "327",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "328",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "329",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "330",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "331",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "332",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "333",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "334",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "335",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "336",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "337",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "338",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "339",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 811,
+      "row_id": 46885,
+      "doc_id": -111189,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 240,
+      "anchor_end": 259,
+      "is_the_code": true,
+      "window": "24.09.1999-yildagi “Fuqarolik kodeksini tatbiq qilishda sud amaliyotida vujudga keladigan ayrim masalalar toʻgʻrisida”gi 16-son qarorining 22-bandi, Oʻzbekiston Respublikasi Oliy xoʻjalik sudi Plenumining 15.06.2007-yil 15-iyundagi “Majburiyatlarni bajarmaganlik yoki lozim darajada bajarmaganlik uc",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 812,
+      "row_id": 30789,
+      "doc_id": -1605525,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 179306,
+      "anchor_end": 179327,
+      "is_the_code": false,
+      "window": "h olib boradi. 181. Fuqarolik kodeksining 129-moddasiga asosan oʻz xususiyatiga koʻra faqat shaxsan tuzilishi mumkin boʻlgan bitimni, shuningdek qonun hujjatlarida nazarda tutilgan boshqa bitimlarni vakil orqali tuzishga yoʻl qoʻyilmaydi. 182. Yuridik shaxs nomidan, shuningdek yuridik shaxsga ham ish",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "129",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 813,
+      "row_id": 46613,
+      "doc_id": -111189,
+      "field": "article_text",
+      "anchor_kind": "self_reference",
+      "anchor_start": 572,
+      "anchor_end": 586,
+      "is_the_code": true,
+      "window": "tayinlaydilar hamda ushbu Kodeksga muvofiq tugatish tartibi va muddatini belgilaydilar. Yuridik shaxsni tugatish toʻgʻrisidagi qaror sud tomonidan qabul qilingan taqdirda, tugatuvchi yuridik shaxslarni davlat roʻyxatidan oʻtkazuvchi organ bilan kelishilgan holda tayinlanadi. Tugatuvchi tayinla",
+      "expected": [],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 814,
+      "row_id": 46665,
+      "doc_id": -111189,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 1047,
+      "anchor_end": 1066,
+      "is_the_code": true,
+      "window": "24.09.1999-yildagi “Fuqarolik kodeksini tatbiq qilishda sud amaliyotida vujudga keladigan ayrim masalalar toʻgʻrisida”gi qarorining 4-bandi ikkinchi xatboshisi. LexUZ sharhiQoʻshimcha maʼlumot uchun qarang: Oʻzbekiston Respublikasi Oliy Xoʻjalik sudi Plenumining 28.11.2014-yildagi 269-sonli “Iqtiso",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 815,
+      "row_id": 30907,
+      "doc_id": -1570435,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 1135,
+      "anchor_end": 1154,
+      "is_the_code": false,
+      "window": "on Respublikasining Fuqarolik kodeksiga, “Davlat tasarrufidan chiqarish va xususiylashtirish toʻgʻrisida”gi Oʻzbekiston Respublikasi Qonuniga va boshqa qonunchilik hujjatlariga muvofiq budjet tashkilotlarining asosiy vositalarini hamda qurilishi tugallanmagan obyektlarini sotish, shuningdek ularni ",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 816,
+      "row_id": 25511,
+      "doc_id": -2876354,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 45,
+      "anchor_end": 66,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 2-bob, 2-paragrafi. Oldingi tahrirga qarang. LexUZ sharhiQarang: Vazirlar Mahkamasining 2024 yil 30 dekabrdagi 916-son “Oʻzbekiston Respublikasi hududida chiqindilar, ayrim turdagi xavfli mahsulot va kimyoviy moddalar muomalasi bilan bogʻliq nazoratni yanada ",
+      "expected": [
+        {
+          "target_kind": "section",
+          "article": null,
+          "struct_number": 2,
+          "section_number": 2,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 817,
+      "row_id": 26228,
+      "doc_id": -2662539,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 846,
+      "anchor_end": 867,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 52-bobi (“Sugʻurta”). LexUZ sharhiQoʻshimcha maʼlumot uchun qarang: “Aksiyalar egalari reyestri va korporativ obligatsiyalar egalari reyestri toʻgʻrisida”gi nizomning (roʻyxat raqami 1911, 25.02.2009-y.) IV bobi (“Reyestrni shakllantirish tartibi”). Oldingi t",
+      "expected": [
+        {
+          "target_kind": "chapter",
+          "article": null,
+          "struct_number": 52,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 818,
+      "row_id": 25029,
+      "doc_id": -2931253,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 96,
+      "anchor_end": 117,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 42–46-moddalari, 74-moddasi, Oʻzbekiston Respublikasi “Oʻzbekiston Respublikasida jamoat birlashmalari toʻgʻrisida”gi Qonunining 2-bobi (“Jamoat birlashmalarining tuzilishi va ular faoliyatining toʻxtatilishi”) va Oʻzbekiston Respublikasi “Nodavlat notijorat ",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "42",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "43",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "44",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "45",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "46",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "74",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 819,
+      "row_id": 36476,
+      "doc_id": -846925,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 2631,
+      "anchor_end": 2648,
+      "is_the_code": false,
+      "window": " undiruvni qaratish Fuqarolik kodeksi va “Garov toʻgʻrisida”gi Qonunga muvofiq amalga oshiriladi. Lombard tomonidan qabul qilingan mol-mulk, lombardga tegishli boʻlgan barcha toʻlovlar qoplanganidan soʻng egasiga qaytarilishi mumkin. 6. Lombarddan ashyolarni olish huquqini boshqa shaxslarga topsh",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 820,
+      "row_id": 45152,
+      "doc_id": -180552,
+      "field": "article_text",
+      "anchor_kind": "self_reference",
+      "anchor_start": 491,
+      "anchor_end": 503,
+      "is_the_code": true,
+      "window": " berish shartnomasi ushbu Kodeks 110-moddasining qoidalariga rioya etgan holda yozma shaklda tuzilishi va notarial tasdiqlanishi lozim.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "110",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 821,
+      "row_id": 45007,
+      "doc_id": -180552,
+      "field": "article_text",
+      "anchor_kind": "self_reference",
+      "anchor_start": 455,
+      "anchor_end": 469,
+      "is_the_code": true,
+      "window": "oidalar qoʻllanadi. Ushbu Kodeksda yoki boshqa qonunda nazarda tutilgan hollarda ayrim turdagi tovarlarni olish-sotishning oʻziga xos jihatlari qonunchilik bilan belgilanadi. Qonunchilikda belgilangan tartibda davlat roʻyxatidan oʻtkazilishi lozim boʻlgan avtomototransport vositalarining oldi-",
+      "expected": [],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 822,
+      "row_id": 46744,
+      "doc_id": -111189,
+      "field": "cross_references",
+      "anchor_kind": "self_reference",
+      "anchor_start": 268,
+      "anchor_end": 285,
+      "is_the_code": true,
+      "window": "LexUZ sharhiQarang: mazkur Kodeksning 84-moddasi. LexUZ sharhiQarang: ",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "84",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 823,
+      "row_id": 45547,
+      "doc_id": -180552,
+      "field": "article_text",
+      "anchor_kind": "self_reference",
+      "anchor_start": 1226,
+      "anchor_end": 1242,
+      "is_the_code": true,
+      "window": "iy hisoblanmaydi va ushbu Kodeksning 924-moddasida nazarda tutilgan oqibatlarni keltirib chiqarmaydi.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "924",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 824,
+      "row_id": 874,
+      "doc_id": -7901164,
+      "field": "article_text",
+      "anchor_kind": "fk_alias",
+      "anchor_start": 21069,
+      "anchor_end": 21071,
+      "is_the_code": false,
+      "window": ". Tushuntirilsinki, FK 100-moddasining birinchi qismiga muvofiq, shaxsning shaʼni, qadr-qimmati yoki ishchanlik obroʻsiga putur yetkazuvchi maʼlumotlar tarqatilgan deb hisoblash uchun bunday maʼlumotlarni birgina uchinchi shaxsga yetkazish yoki undan foydalanish imkonini yaratish y",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "100",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": "birinchi qism"
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 825,
+      "row_id": 32097,
+      "doc_id": -1389324,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 985,
+      "anchor_end": 1002,
+      "is_the_code": false,
+      "window": "on Respublikasining Fuqarolik kodeksi (Oʻzbekiston Respublikasi Oliy Majlisining Axborotnomasi, 1996-yil, 2-songa ilova), “Oʻzbekiston Respublikasining Markaziy banki toʻgʻrisida” (Oʻzbekiston Respublikasi Oliy Majlisining Axborotnomasi, 1995-yil, 12-son, 247-modda), “Banklar va bank faoliyati to",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 826,
+      "row_id": 22223,
+      "doc_id": -3505789,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 125235,
+      "anchor_end": 125252,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksi, “Energiyadan oqilona foydalanish toʻgʻrisida”, “Xoʻjalik yurituvchi subyektlar faoliyatining shartnomaviy-huquqiy bazasi toʻgʻrisida”, “Tabiiy monopoliyalar toʻgʻrisida”, “Isteʼmolchilar huquqlarini himoya qilish toʻgʻrisida” Oʻzbekiston Respublikasi qonunla",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 827,
+      "row_id": 30344,
+      "doc_id": -1691832,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 4933,
+      "anchor_end": 4950,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksi (bundan keyingi oʻrinlarda Fuqarolik kodeksi deb yuritiladi)” degan soʻzlar “",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 828,
+      "row_id": 35672,
+      "doc_id": -1455965,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 20815,
+      "anchor_end": 20834,
+      "is_the_code": false,
+      "window": "rda qabul qilingan “Fuqarolik kodeksini tatbiq qilishda sud amaliyotida vujudga keladigan ayrim masalalar toʻgʻrisida”gi qarorining (Oliy sud Plenumining 2003-yil 19-dekabrdagi qarori asosida kiritilgan oʻzgartirishlar bilan) 9 va 10-bandlari oʻz kuchini yoʻqotgan deb topilsin.",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 829,
+      "row_id": 9669,
+      "doc_id": -5852612,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 5144,
+      "anchor_end": 5161,
+      "is_the_code": false,
+      "window": "on Respublikasining Fuqarolik kodeksi (Oʻzbekiston Respublikasi Oliy Majlisining Axborotnomasi, 1996-yil, 2-songa ilova, № 11-12; 1997-yil, № 2, 56-modda, № 9, 241-modda; 1998-yil, № 5-6, 102-modda; 1999-yil, № 1, 20-modda, № 9, 229-modda; 2001-yil, № 1-2, 23-modda, № 9-10, 182-modda; 2002-yil, №",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 830,
+      "row_id": 46715,
+      "doc_id": -111189,
+      "field": "cross_references",
+      "anchor_kind": "self_reference",
+      "anchor_start": 20,
+      "anchor_end": 37,
+      "is_the_code": true,
+      "window": "LexUZ sharhiQarang: mazkur Kodeksning 145 — 148, 150 — 160, 259-moddalari. LexUZ sharhiQoʻshimcha maʼlumot uchun qarang: Oʻzbekiston Respublikasi Oliy Xoʻjalik sudi Plenumining 19.06.2015-yildagi “Iqtisodiy sudlar tomonidan fuqarolik qonun hujjatlarining daʼvo muddatiga oid normalarini qoʻllashni",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "145",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "146",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "147",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "148",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "150",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "151",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "152",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "153",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "154",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "155",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "156",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "157",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "158",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "159",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "160",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "259",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 831,
+      "row_id": 15441,
+      "doc_id": -4664142,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 45,
+      "anchor_end": 62,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksi IV bobining 2 paragrafi.",
+      "expected": [
+        {
+          "target_kind": "section",
+          "article": null,
+          "struct_number": 4,
+          "section_number": 2,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 832,
+      "row_id": 29841,
+      "doc_id": -1809655,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 1235,
+      "anchor_end": 1252,
+      "is_the_code": false,
+      "window": "on Respublikasining Fuqarolik kodeksi, “Notariat toʻgʻrisida”gi Oʻzbekiston Respublikasining Qonuni (keyingi oʻrinlarda Qonun deb yuritiladi) hamda boshqa normativ-huquqiy hujjatlarga muvofiq notarial tasdiqlangan hujjatlarga tenglashtiriladigan vasiyatnomalar, ishonchnomalar va arizalarni tasdiq",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 833,
+      "row_id": 46810,
+      "doc_id": -111189,
+      "field": "cross_references",
+      "anchor_kind": "self_reference",
+      "anchor_start": 20,
+      "anchor_end": 37,
+      "is_the_code": true,
+      "window": "LexUZ sharhiQarang: mazkur Kodeksning 94, 95, 234, 235, 252, 254, 255-moddalari.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "94",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "95",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "234",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "235",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "252",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "254",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "255",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "list",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 834,
+      "row_id": 47760,
+      "doc_id": -124764,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 80,
+      "anchor_end": 101,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining birinchi qismi tasdiqlansin. 2. ",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 835,
+      "row_id": 10100,
+      "doc_id": -5739117,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 125,
+      "anchor_end": 146,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 959-moddasi.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "959",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 836,
+      "row_id": 53449,
+      "doc_id": -112328,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 70,
+      "anchor_end": 91,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 382-moddasi, Oʻzbekiston Respublikasi Oliy sudi Plenumining 1997-yil 2-maydagi “Xususiylashtirilgan turar joylarga egalik qilish, ulardan foydalanish va ularni tasarruf qilish bilan bogʻliq ishlar boʻyicha sud amaliyoti haqida”gi 3-son qarorining 9-bandi, Old",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "382",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 837,
+      "row_id": 30452,
+      "doc_id": -1678022,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 578,
+      "anchor_end": 597,
+      "is_the_code": false,
+      "window": "on Respublikasining Fuqarolik kodeksiga (Oʻzbekiston Respublikasi Oliy Majlisining Axborotnomasi, 1996-yil, 2-songa ilova, № 11-12; 1997-yil, № 2, 56-modda, № 9, 241-modda; 1998-yil, № 5-6, 102-modda; 1999-yil, № 1, 20-modda, № 9, 229-modda; 2001-yil, № 1-2, 23-modda, № 9-10, 182-modda; 2002-yil, №",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 838,
+      "row_id": 42203,
+      "doc_id": -31613,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 63,
+      "anchor_end": 84,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 53—56-moddalariga qarang.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "53",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "54",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "55",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        },
+        {
+          "target_kind": "article",
+          "article": "56",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "range",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 839,
+      "row_id": 8856,
+      "doc_id": -6072951,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 3456,
+      "anchor_end": 3473,
+      "is_the_code": false,
+      "window": "ini qanoatlantirish Fuqarolik kodeksi 206-moddasi va Uy-joy kodeksi 27-moddasi qoʻllanilib rad etilgan. Toshkent shahar sudi fuqarolik ishlari boʻyicha sudlov hayʼatining 2021-yil 19-noyabrdagi ajrimiga koʻra, Fuqarolik ishlari boʻyicha Mirzo Ulugʻbek tumanlararo sudining 2020-yil 30-sentabrdagi ",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "206",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 840,
+      "row_id": 45042,
+      "doc_id": -180552,
+      "field": "article_text",
+      "anchor_kind": "self_reference",
+      "anchor_start": 956,
+      "anchor_end": 972,
+      "is_the_code": true,
+      "window": "ʻlangan summa uchun ushbu Kodeksning 327-moddasiga muvofiq shartnomaga binoan tovar haqi toʻlanishi lozim boʻlgan kundan boshlab sotib oluvchi tovar haqini toʻlagan kungacha foizlar toʻlanishi lozim. Oldi-sotdi shartnomasida sotib oluvchining sotuvchi tomonidan tovar topshirilgan kundan boshlab ",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "327",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 841,
+      "row_id": 874,
+      "doc_id": -7901164,
+      "field": "article_text",
+      "anchor_kind": "fk_alias",
+      "anchor_start": 36993,
+      "anchor_end": 36999,
+      "is_the_code": false,
+      "window": "latishi mumkin. 37. FKning 100-moddasi tartibidagi nizo koʻrib chiqilayotgan vaqtda haqiqatga toʻgʻri kelmaydigan, shaxsni obroʻsizlantiruvchi maʼlumotlarni tarqatgan ommaviy axborot vositasining faoliyati toʻxtatilgan yoxud tugatilgan boʻlsa, sud javobgar ommaviy axborot vositasi tahr",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "100",
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 842,
+      "row_id": 2766,
+      "doc_id": -7307435,
+      "field": "article_text",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 142368,
+      "anchor_end": 142385,
+      "is_the_code": false,
+      "window": "ng Konstitutsiyasi, Fuqarolik kodeksi, Mehnat kodeksi, Oʻzbekiston Respublikasining “Fuqarolarning davlat pensiya taʼminoti toʻgʻrisida”gi Qonuni (bundan buyon matnda Qonun deb yuritiladi), Oʻzbekiston Respublikasi Vazirlar Mahkamasining “Davlat pensiyalarini tayinlash va toʻlash tartibi toʻgʻris",
+      "expected": [
+        {
+          "target_kind": "act",
+          "article": null,
+          "struct_number": null,
+          "section_number": null,
+          "listing": "single",
+          "qism": null
+        }
+      ],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 843,
+      "row_id": 46707,
+      "doc_id": -111189,
+      "field": "article_text",
+      "anchor_kind": "self_reference",
+      "anchor_start": 131,
+      "anchor_end": 143,
+      "is_the_code": true,
+      "window": "qoidadan istisnolar ushbu Kodeks va boshqa qonunlar bilan belgilanadi. Muayyan ijro muddatiga ega boʻlgan majburiyatlar boʻyicha daʼvo muddati ijro muddati tamom boʻlganidan keyin oʻta boshlaydi. Ijro etish muddati belgilanmagan yoki talab qilish payti ijro etish muddati bilan belgilangan ma",
+      "expected": [],
+      "verdict": "correct",
+      "notes": ""
+    },
+    {
+      "gold_id": 844,
+      "row_id": 43358,
+      "doc_id": -185986,
+      "field": "cross_references",
+      "anchor_kind": "fuqarolik_kodeksi",
+      "anchor_start": 45,
+      "anchor_end": 66,
+      "is_the_code": false,
+      "window": "kiston Respublikasi Fuqarolik kodeksining 14-moddasi.",
+      "expected": [
+        {
+          "target_kind": "article",
+          "article": "14",
           "struct_number": null,
           "section_number": null,
           "listing": "single",

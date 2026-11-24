@@ -46,28 +46,40 @@ thread closes, fold its outcome into Backlog (if a residual remains) or
 just let the Log entry be the permanent record — don't also keep growing a
 paragraph here.
 
-- **Extractor rotation — current state: gold set still 805 records (batch
-  20), precision 3270/3279 (99.7%), recall 3273/3301 (99.2%) — the bare
-  "Kodeksning" self-reference known_gap (`gold_id` 587) FIXED today, plus 2
-  bonus non-gold-set recall fixes from the same change. Last touched
-  2026-11-21.** Threaded `doc_type` through `extract()` (already in scope,
-  unchanged, at all 3 real call sites) and split bare "kodeksning" out of
-  `RE_STOP` into its own doc_type-gated `RE_STOP_KODEKSNING`, plus a new
-  `RE_ACT_QUALIFIER` guard a corpus-wide diff showed was also needed (a
-  doc_type-only first attempt would have regressed row 29029 — see Backlog
-  for the full mechanism). `link_edge` 9640→9642; `llc_implementing_act`'s
-  `cites_cc_foundation` tier 3 gains 1 act (63→64) as a side effect. 79/79
-  self-tests pass; `verify_transfer.py` green; both apps' own live queries
-  re-run directly against the rebuilt DB, resolve cleanly, surface the new
-  rows sensibly. See Log, 2026-11-21, for the full trace. **Next Extractor
-  rotation**: 2 known_gap items remain open: `gold_id` 597 (amending law's
-  own next heading misattributed — a false positive needing a
-  word-substitution-phrase heuristic), `gold_id` 370 ("moddsi" typo —
-  explicitly flagged as not worth the over-matching risk at 1 occurrence).
-  The novel-signature sampler is still genuinely empty (727/727) and known
-  not to move from a pure extractor-logic change — only draw a fresh batch
-  after a real corpus update, or pursue option 1 (uniform regression
-  resampling) or option 3 (another known_gap sweep) instead.
+- **Extractor rotation — current state: ran the first UNIFORM-random gold
+  batch (21, gold_id 805-844) since batch 2, as a deliberate regression
+  check now that the signature-stratified sampler is structurally blind to
+  regressions in already-covered shapes. 40/40 correct, 0 new bugs — gold
+  set 801→841, precision 3269/3278 (99.66%)→3373/3382 (99.73%), recall
+  3269/3297 (99.15%)→3373/3401 (99.18%), same 9 known-gap FP/FN pairs as
+  before and nothing else. Also fixed a real `_meta.batches` bookkeeping
+  gap (batches 19/20 were never recorded) found while preparing this
+  batch's own entry. Last touched 2026-11-24.** The signature-stratified
+  novel sampler had exhausted its widened pool at 0/0 as of batch 20
+  (2026-11-12) — rather than widening the signature a third time with no
+  corpus change to justify it, drew a fresh **uniform** sample instead
+  (`build_gold_sample.py --n 40 --seed 20261124`, half hit/half empty
+  windows). Hand-verified all 40 against the raw Uzbek text, including
+  3 `self_reference` windows with no provision number (gold_id 8/16/38 in
+  the raw sample) that correctly produce zero citations rather than a bare
+  `act` — confirmed this is deliberate, not a gap: `build_links.py` always
+  maps a `self_reference` anchor to a self-loop edge (`rel='internal'`,
+  `hrel='self'`) regardless of target, so a provision-less one would just
+  be corpus-wide noise (measured: 107 such windows corpus-wide, 0 for
+  `fk_alias` — the same gate is moot for that anchor kind today). This
+  reasoning previously lived nowhere — `citation_extractor.py`'s own
+  `if not produced and kind == "fuqarolik_kodeksi":` gate had zero comment
+  explaining why self_reference/fk_alias are excluded; added one. 79/79
+  self-tests pass; `verify_transfer.py` green; `corpus.duckdb` untouched
+  (gold-set/comment-only change, no pipeline code touched). See Log,
+  2026-11-24, for the full trace. **Next Extractor rotation**: 2 known_gap
+  items remain open at their own documented single-occurrence scope:
+  `gold_id` 597 (amending law's own next heading misattributed — a false
+  positive needing a word-substitution-phrase heuristic), `gold_id` 370
+  ("moddsi" typo). The uniform sampler can be redrawn with a fresh `--seed`
+  as a repeatable regression check going forward (same role the eleven
+  Cleanup checks play for code quality); the novel sampler is still
+  genuinely empty (0/0) and won't move without a real corpus update.
 
 - **Data currency rotation — current state: followed up the 2026-11-19
   repeal_clause list-locator fix's own "worth a look" pointer onto the
@@ -229,13 +241,18 @@ paragraph here.
   via batch 17 2026-11-02, to 725 via batch 18 2026-11-05, to 765 via batch
   19 2026-11-09, to 805 via batch 20 2026-11-12 (the widened-signature novel
   pool is now fully exhausted — 0/0 — as of this batch's post-merge
-  recompute; see Active threads)** — see Active threads and Log for the
-  full detail. `gold_citations.json` (805 hand-verified anchor occurrences,
-  twenty batches — two uniform-random, eighteen signature-stratified) +
-  `score_gold.py` (the scorer) + `build_gold_sample.py`/
+  recompute; see Active threads), to 801 after 2026-11-23's Cleanup
+  rotation retired 4 records pinned to a since-fixed spurious anchor (see
+  Active threads), to 841 via batch 21 (2026-11-24, UNIFORM random, not
+  signature-stratified — the first since batch 2 — drawn specifically as a
+  regression check the novel sampler can't perform; 40/40 correct, 0 new
+  bugs, see Active threads and Log)** — see Active threads and Log for the
+  full detail. `gold_citations.json` (841 hand-verified anchor occurrences,
+  twenty-one batches — three uniform-random, eighteen signature-stratified)
+  + `score_gold.py` (the scorer) + `build_gold_sample.py`/
   `build_gold_sample_novel.py` (the two samplers) now exist; current score
-  (post-2026-11-21 bare-"Kodeksning" fix, see Active threads and Log)
-  **precision 3270/3279 (99.7%), recall 3273/3301 (99.2%)**. Updating this
+  (post-2026-11-24 uniform batch 21, see Active threads and Log)
+  **precision 3373/3382 (99.73%), recall 3373/3401 (99.18%)**. Updating this
   paragraph's own stale drift while here (several named gaps below had
   already been fixed on their own dated entries without this summary ever
   being revised — same drift class the 2026-11-15 "paragrifi" bookkeeping
@@ -1632,6 +1649,124 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-24 — Extractor rotation: drew the first UNIFORM-random gold batch since batch 2 as a deliberate regression check, 40/40 correct (0 new bugs), fixed a real `_meta.batches` bookkeeping gap and documented a previously-unexplained design gate
+
+Rotation: Extractor last touched 2026-11-21, Data currency 2026-11-22, Cleanup
+2026-11-23 — Extractor was the oldest-touched of the three, so it's next.
+
+**Cold start.** Fresh container, nothing installed. `pip install -r
+requirements.txt` (no `python3 -m`) silently installed into
+`/usr/local/lib/python3.13/site-packages` while `python`/`python3` resolve to
+3.11 — `pip3 show duckdb` reported it installed, but `import duckdb` under
+`python3` still failed with `ModuleNotFoundError` until re-run as `python3 -m
+pip install -r requirements.txt`. This is the same 3.11-vs-3.13 split a prior
+session already hit and noted (2026-11-09 Log), but today it bit even with
+`requirements.txt` already in place and `pip`/`pip3` both present and
+"working" — the failure mode is specifically that `pip`/`pip3` as bare
+commands can resolve to a *different* interpreter than `python`/`python3`,
+not just "pip is missing". Not re-fixing today (Extractor rotation, not
+Cleanup's turn) but flagging for Cleanup: `requirements.txt`'s own header
+comment says `python3 -m pip install -r requirements.txt`, which is already
+correct — the gap is that `pip install -r requirements.txt` (no `-m python3`)
+looks like it should be equivalent and silently isn't on this image. `git lfs
+pull` needed too (parquet was a 134-byte stub). Baseline after both:
+`verify_transfer.py` green; `score_gold.py` 801 records, precision 3269/3278
+(99.66%), recall 3269/3297 (99.15%) — matches Active threads exactly, no
+drift since 2026-11-23.
+
+**Picking today's angle.** The Active threads entry left two concrete options
+for when the (now fully exhausted, 0/0) novel-signature sampler can't be
+redrawn productively: (1) uniform regression resampling, (3) another
+known_gap sweep. Known_gap sweep wasn't promising today — the two open items
+(`gold_id` 597, `gold_id` 370) are both already-measured single-occurrence
+cases explicitly deferred on cost/risk grounds, and the corpus hasn't
+changed, so re-measuring them would just reproduce the same counts. Went with
+option 1 instead: `build_gold_sample.py --n 40 --seed 20261124` (uniform
+random, not signature-stratified) — the first uniform batch since batch 2
+(2026-09-22). Deliberate choice, not a fallback: the signature-stratified
+sampler used for batches 3-20 never redraws a signature it has already
+covered, by construction — a real regression introduced into an
+*already-covered* shape by one of the dozen-plus fixes shipped since batch 2
+would be structurally invisible to it. A uniform draw has no such blind spot.
+
+**Hand-verification, all 40 windows.** Read each against the raw parquet text
+directly (`duckdb` on `articles/train-00000-of-00001.parquet`), not just the
+sampler's own per-anchor `extracted` field, and checked against
+`citation_extractor.py`'s documented rules (gazette/publication parentheticals
+correctly blanked; `RE_STOP`'s break-on-different-act behavior correctly
+stopping before a resolution's own "N-bandi" clause or a different code's
+article number; range/list expansion arithmetic; chapter+section lookahead).
+37/40 were single-citation or bare-act windows, straightforwardly correct on
+inspection. 3 needed real investigation, not just a glance:
+
+- Three `self_reference` windows ("ushbu/mazkur Kodeksga", rows 46613, 45007,
+  46707) produce **zero** citations each, not even a bare `act` — at first
+  glance this looked like the same "weaker signal" bare-act fallback every
+  other anchor kind gets when no provision is pinned (see line ~964's
+  existing comment, which only ever talks about `fuqarolik_kodeksi`).
+  Checked `extract()` directly: the bare-act fallback is gated to
+  `kind == "fuqarolik_kodeksi"` specifically, excluding `self_reference` and
+  `fk_alias` — and this gate had **zero comment** explaining why, unlike
+  every other branch in the function. Traced the reasoning instead of
+  assuming either "it's a bug" or "it's fine": `build_links.py` line 332
+  always maps `c.anchor == "self_reference"` to `rel="internal"`,
+  `hrel="self"` regardless of `dst_doc` — i.e. every self-reference edge is
+  already treated as the Code referring to itself. A self-reference with no
+  provision number would therefore only ever produce a meaningless
+  self-loop (`doc_id == dst_doc`, no target article) if emitted. Measured
+  corpus-wide via `gold_sampling.build_candidate_windows()`: 107 self_reference
+  windows produce no citation today (all genuine "ushbu Kodeksda ... nazarda
+  tutilgan" style sentences with no article attached, confirmed by sampling
+  several full windows, not just the 3 in this batch) — emitting a bare-act
+  fallback for all of them would add 107 self-loop `link_edge` rows with zero
+  informational content. `fk_alias` has **zero** such empty windows
+  corpus-wide (every `fk_alias` anchor in the corpus always finds a
+  provision) — so the same gate is moot for it today, though the self-loop
+  reasoning wouldn't even apply there (an aliased "FK" with no provision
+  would sit inside a genuinely *different* citing act, same as a bare
+  `fuqarolik_kodeksi` act-level citation, which IS emitted). Conclusion: this
+  is correct, deliberate behavior, not a gap — scored all 3 as `verdict:
+  correct`, `expected: []`. Added the explanation as a comment at the gate
+  itself (`citation_extractor.py` line ~964) so the next person (human or
+  session) doesn't have to re-derive it from scratch the way this one did.
+
+**Result: 40/40 correct, 0 new bugs.** Merged as gold_id 805-844 (batch 21).
+`score_gold.py`: 801→841 records, 0 drift; precision 3269/3278 (99.66%) →
+3373/3382 (99.73%); recall 3269/3297 (99.15%) → 3373/3401 (99.18%); exactly
+the same 9 known-gap FP/FN pairs as before (gold_id 194/195/196/295/370/379)
+and nothing else — confirms this is a clean regression result, not a
+measurement artifact (the ratios moved because 104 new true-positive
+citations were added to both numerator and denominator on each side, not
+because any mismatch count changed). 79/79 extractor self-tests pass;
+`verify_transfer.py` green throughout; `corpus.duckdb` untouched (gold-set
+JSON + one explanatory comment only, no pipeline code changed).
+
+**Bonus bookkeeping fix, found while preparing today's own `_meta.batches`
+entry.** `gold_citations.json`'s `_meta.batches` list was missing entries for
+batch 19 (gold_id 725-764, seed 20261109, built 2026-11-09) and batch 20
+(gold_id 765-804, seed 20261112, built 2026-11-12) entirely — both batches
+are fully documented in their own dated Log entries and their records exist
+in `gold_citations.json`, but neither ever got appended to `_meta.batches`
+itself, so that list silently stopped at batch 18 (2026-11-05) despite the
+file's own record count being accurate. Backfilled both entries (matching
+the existing batches' schema exactly: `gold_id_range`/`seed`/`n`/`built`/
+`method`) before appending batch 21's own entry, so `_meta.batches` now
+correctly has 21 entries end to end. Zero effect on `score_gold.py`'s output
+(this list is pure bookkeeping, not read by the scorer) — confirmed via a
+before/after run.
+
+**Decided against:** re-measuring `gold_id` 597/370 (same reasoning as
+above — no corpus change, same answer); widening the novel-signature's
+feature set a third time (no new corpus data to justify it, and today's
+uniform draw already demonstrated a cheaper way to get a regression signal
+without inventing new signature features). **Next Extractor rotation**: the
+uniform sampler (`build_gold_sample.py`) is now a standing regression-check
+tool alongside the novel sampler, not a one-off — redraw it with a fresh
+`--seed` periodically (no fixed cadence needed; cheap enough to run whenever
+Extractor rotation comes up and the novel pool is dry) the same way Cleanup
+re-runs its eleven checks every rotation. known_gap items 597/370 remain the
+only standing residuals, both at their own documented deferral reasoning.
 
 ### 2026-11-23 — Cleanup rotation: closed the 2026-11-18/19-deferred `score_gold.py` unblanked-window gap with a shared `citation_extractor.scan_anchors()`, found the identical staleness in 2 more call sites, retired 4 gold records a mechanical fix would have left permanently drifting
 
