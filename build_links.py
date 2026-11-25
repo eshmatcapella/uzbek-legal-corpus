@@ -1348,6 +1348,31 @@ def main() -> int:
     # `v_en_amendment_staleness` previously used for `uz_latest_amend_date`
     # is safe to leave act-number-only — that value genuinely doesn't vary by
     # target article — but the same shape of join would be wrong here).
+    # `amend_act_number` carries two historically-sequential formats (see its
+    # own generation above): modern "OʻRQ-<N>" (587/612 rows) and the legacy
+    # pre-2013 "<N>-I-son"/"<N>-II-son" session-numbered form (25/612 rows,
+    # dates 1997-2004 only — Uzbekistan retired that scheme before OʻRQ
+    # numbering began). Found 2026-11-25 (Data currency rotation): anchoring
+    # the digit-extraction regex to the END of the string (`(\d+)$`) matches
+    # "OʻRQ-1109" fine but NEVER matches a legacy value, since those end in
+    # the literal word "son", not a digit — all 25 legacy-numbered events
+    # were silently dropped from `uz_by_norm_id`/`uz_by_article_number`
+    # entirely (`if not m: continue`), with no error. Live impact today is
+    # exactly zero: measured corpus-wide, the 17 distinct (norm_id or
+    # article_number) keys any legacy event touches at all either (a) also
+    # carry a later OʻRQ event (5 General-Part norm_ids — a38/a40/a46/a75/
+    # a77 — where the legacy date is always earlier, so it was never the
+    # `max()` anyway), or (b) belong to the Second Part (doc_id -180552),
+    # which this signal already scopes to General-Part-only by construction
+    # (`norm_id` stays NULL there) — re-running the full `en_amendment_
+    # staleness` build with the fix below byte-for-byte reproduces all 39
+    # existing rows, zero changed, zero added, zero removed (see
+    # DAILY_REVIEW.md). Fixed anyway rather than left latent, same
+    # precedent as the 2026-11-16/2026-11-22 guards: the END-anchor was
+    # never load-bearing (every format's digit run is the FIRST one in the
+    # string, whether "OʻRQ-1109" or "832-I-son"), so matching the first
+    # digit run unconditionally is strictly more correct and costs nothing
+    # today while closing the gap for good.
     uz_by_norm_id: dict[str, set[int]] = {}
     uz_by_article_number: dict[str, set[int]] = {}
     uz_types_by_norm_id: dict[str, dict[int, set[str]]] = {}
@@ -1356,7 +1381,7 @@ def main() -> int:
         SELECT norm_id, target_article_number, amend_act_number, change_type
         FROM article_amendment WHERE amend_act_number IS NOT NULL
     """).fetchall():
-        m = re.search(r"(\d+)$", amend_act_number)
+        m = re.search(r"(\d+)", amend_act_number)
         if not m:
             continue
         n = int(m.group(1))
@@ -1416,7 +1441,7 @@ def main() -> int:
         JOIN norm_unit n ON n.norm_id = s.norm_id
         LEFT JOIN (
             SELECT DISTINCT amend_act_number, amend_date FROM article_amendment
-        ) ea ON regexp_extract(ea.amend_act_number, '(\\d+)$') =
+        ) ea ON regexp_extract(ea.amend_act_number, '(\\d+)') =
                 CAST(s.uz_latest_act_number AS VARCHAR)
     """)
     con.commit()

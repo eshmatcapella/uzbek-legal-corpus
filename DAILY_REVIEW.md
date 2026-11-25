@@ -81,70 +81,46 @@ paragraph here.
   Cleanup checks play for code quality); the novel sampler is still
   genuinely empty (0/0) and won't move without a real corpus update.
 
-- **Data currency rotation — current state: followed up the 2026-11-19
-  repeal_clause list-locator fix's own "worth a look" pointer onto the
-  amending side (`article_amendment.locator`) — the same list-locator gap
-  CLASS is real there too (an exact-string chronology partition that a
-  later list-form qism restatement can't resolve against an earlier
-  single-qism void recorded under different wording), but corpus-wide
-  measurement found zero live occurrences today. Shipped a permanent
-  `verify_transfer.py` AC7 guard (proved with a mutation test) instead of
-  leaving the latent failure mode only documented — same precedent as the
-  2026-11-16 ambiguous-key guard. Zero residual. Last touched 2026-11-22.**
-  See Log, 2026-11-22, for the full trace (including a second pairing
-  re-checked and re-confirmed clean: `repeal_clause` still never targets
-  the Civil Code's own doc_id after the Nov-19 fix, 0/0 overlap).
+- **Data currency rotation — current state: `v_en_amendment_staleness`'s
+  act-number extraction was silently dropping all 25 legacy pre-OʻRQ-
+  numbered amendment events (an end-anchored regex that can never match a
+  value ending in the word "son") — fixed both extraction sites in
+  `build_links.py`, measured zero live change (confirmed via a standalone
+  before/after rebuild script, byte-identical 39/39 rows), shipped a
+  permanent `verify_transfer.py` AC7 guard. Zero residual. Last touched
+  2026-11-25.** Found via a new sub-angle of the standing cross-signal
+  technique — auditing an existing signal's own extraction/join
+  correctness, not a fresh value pairing — after the last two straight
+  value-pairings (2026-11-22) came back clean. See Log, 2026-11-25, for
+  the full trace.
 
-  Prior state (2026-11-19, now superseded by the bullet above — kept as a
-  one-line pointer, full detail in that date's Log entry): fixed a real
-  list-locator gap in `build_links.py`'s `repeal_clause.target_locator`
-  regex — 21 acts were misclassified whole-act-superseded, 19 flip to 'no
-  repeal found' (234→214 corpus-wide), 7 of them live `llc_implementing_act`
-  rows the LLC dossier hides by default today. Found via
-  the standing cross-signal technique on a pairing never tried before:
-  `article_amendment.amending_doc_id` × `v_act_currency.derived_status` — does
-  an act that amended the Civil Code later show up itself as superseded?
-  345/612 events hit, an implausibly large and oddly-titled set (Election-Code/
-  Telecommunications-Law *adoption* acts "superseding" a general cross-code
-  amendments law) to wave off as expected legislative housekeeping without
-  checking the mechanism. Root cause: `re_target_locator` only ever recognized
-  a SINGLE trailing locator ("N-moddasi"); a repeal-list item naming several
-  articles ("12 va 110-moddalari") couldn't match at all, defaulting to `NULL`
-  → read as "whole act repealed" by `v_act_currency`'s `whole_repeal` CTE —
-  same gap *class* as the 2026-10-20 Roman-numeral fix (a missing alternative
-  in the same regex), different grammar (list, not numeral system). Measured
-  corpus-wide before shipping (full before/after diff, all 885 repeal-list
-  items): 31 items recover a list locator from `NULL`, 1 more (already
-  non-null) gets corrected from a silently-truncated single member to its
-  full list, zero regressions either direction. Of 21 distinct `dst_doc_id`
-  affected, 19 fully flip to 'no repeal found' (confirmed by a full
-  before/after set-diff of every superseded doc_id, not just hand-traced
-  ones — 20 left the superseded set net, one beyond the 19 hand-traced, from
-  a dst_doc_id a manual grouping step mis-assigned; the automated diff found
-  zero false flips in either direction); 2 correctly keep a second,
-  independent whole-act repeal row and stay superseded. 7 of the 19 are
-  `llc_implementing_act` rows (`route='names_llc_law'`, tier 3) that
-  `app_llc.py::page_acts()`'s "Hide superseded" toggle (defaults on) was
-  hiding from users — re-ran the page's own live query post-fix to confirm
-  they now surface. One of the 21, `-5388561` (OʻRQ-683, 2021-04-21), is also
-  the single biggest `article_amendment.amending_doc_id` corpus-wide (375/612
-  events, including the acts behind the already-documented Article 1 EN-
-  staleness case) — removes a standing blemish from that signal's own data,
-  though neither app currently displays `derived_status` for an *amending*
-  act directly, so there was no live mis-display from that specific angle.
-  Re-ran `build_links.py`/`build_llc.py` only (no `corpus.duckdb` rebuild);
-  `verify_transfer.py` green throughout. See Log, 2026-11-19, for the full
-  trace, including the two cheap pairings tried first and ruled out clean
-  (`llc_norm.cc_norm_id` × `has_removed_or_voided_part`: 0/29 overlap;
-  `effective_date` < `amend_date` self-consistency: 2/65 hits, both verified
-  as genuine statutory retroactivity clauses, not bugs).
+  Prior state (2026-11-22, now superseded by the bullet above — kept as a
+  one-line pointer, full detail in that date's Log entry): closed the
+  amending-side `article_amendment.locator` list-locator residual (zero
+  live occurrences, permanent guard shipped) and re-confirmed
+  `repeal_clause` still never targets the Civil Code's own doc_id post the
+  2026-11-19 fix (0/0 overlap). The 2026-11-19 entry itself (list-locator
+  fix in `repeal_clause.target_locator`, 21 acts flip from false
+  whole-act-superseded) is further back — see that date's Log entry for
+  the full trace, not repeated here.
 
-  **Next Data currency rotation**: no residual from this thread (the
-  amending-side list-locator follow-up above closed the one pointer this
-  entry had left open). Fall back to the standing cross-signal technique —
-  still a strong hit rate (9 real findings across roughly a dozen pairings
-  tried before today's 10th/11th checks both came back clean); keep pulling
-  from the growing signal set (see Backlog) for pairs not yet tried.
+  **Next Data currency rotation**: no residual from this thread. The
+  standing cross-signal technique now has two flavors — a fresh value
+  pairing (10 real findings across roughly 13 pairings tried, the last two
+  clean), and auditing an existing signal's own extraction/join logic (2
+  real findings: 2026-11-16's conflated-norm_id key, today's). When a
+  fresh value pairing comes back clean, reach for the extraction-audit
+  angle on another signal before assuming the technique is exhausted —
+  `repeal_clause.cited_date`/`cited_number` vs. the resolved act's own
+  `doc_date`/`doc_number` was considered today and ruled out as *already
+  guaranteed* by construction (both tiers key by parsed ISO date, not a
+  fuzzy one — confirmed by reading `build_links.py`'s matching code
+  closely, not just measuring), so skip that specific one; a good
+  candidate not yet looked at this way is `article_amendment`'s own
+  `target_articles()` list/range expansion (reuses `citation_extractor`'s
+  grammar, see Backlog note on exactly 10 multi-member clauses) — has
+  anyone checked whether *that* reuse is still exercising the same code
+  path after Extractor rotation's more recent `RE_CLAUSE` changes?
 
 - **Cleanup rotation — current state: closed the long-deferred
   `score_gold.py` unblanked-window precision gap (open since 2026-11-18)
@@ -1017,7 +993,24 @@ paragraph here.
   fix changed `target_locator` resolution broadly, worth confirming the
   "zero overlap" conclusion still holds, not just assuming it) — still
   0/0 after the fix. See Active threads and Log, 2026-11-22, for the full
-  trace.
+  trace. **2026-11-25: twelfth hit, a new sub-angle — auditing an existing
+  signal's own extraction correctness, not a fresh value pairing**, after
+  the 10th/11th straight misses suggested fresh pairings alone were
+  running dry. `v_en_amendment_staleness`'s act-number extraction
+  (`re.search(r"(\d+)$", amend_act_number)`) is anchored to the END of the
+  string — matches the modern `"OʻRQ-<N>"` format but can never match the
+  legacy pre-2013 `"<N>-I-son"`/`"<N>-II-son"` format (ends in the word
+  "son", not a digit), silently dropping all 25 legacy-numbered events
+  from the signal with no error. Zero live impact today (the legacy-only
+  keys are all out-of-scope Second Part articles; every General-Part key
+  touched also has a later, correctly-matched OʻRQ event) — fixed anyway
+  (unanchored first-digit-run extraction, both the Python- and SQL-side
+  copies) and shipped a permanent `verify_transfer.py` guard. See Active
+  threads and Log, 2026-11-25, for the full trace. This is the technique's
+  second extraction/join-audit-shaped find (the first being 2026-11-16's
+  conflated-norm_id key) — worth reaching for specifically the next time a
+  fresh value pairing comes back clean, rather than concluding the
+  technique itself is exhausted.
 - ~~**Does `v_article_currency.has_removed_or_voided_part` (drives the ⚠️
   "part of this article has been removed/voided" badge in both apps'
   Legislative history caption) under-warn for a fully `restated`
@@ -1649,6 +1642,20 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-25 — Data currency rotation: `v_en_amendment_staleness` silently dropped all 25 legacy pre-OʻRQ-numbered amendment events from its act-number extraction — fixed the root cause, measured zero live change, shipped a permanent `verify_transfer.py` guard
+
+Normalized git state per this file's own step 0 (worked correctly again — `git status` showed detached HEAD one commit behind `origin/main` at session start, fast-forwarded clean). Baseline `python3 -m pip install -r requirements.txt` + `git lfs pull` + `python3 verify_transfer.py` green before touching anything.
+
+**The angle, continuing the standing cross-signal technique** (two clean misses in a row as of 2026-11-22 — see Active threads): rather than another value-pairing, re-examined the EXTRACTION itself behind an existing signal, the same shape of find as the 2026-11-16 join-key audit. `v_en_amendment_staleness` (built 2026-10-31/2026-11-06) compares the English markdown's own "last amended by Law No. ZRU-N" footnote against the Uzbek-mined `article_amendment.amend_act_number`, via each side's bare decree number. `amend_act_number` carries two historically-sequential formats (see its own generation comment in `build_links.py`): modern `"OʻRQ-<N>"` (587/612 rows) and the legacy pre-2013 session-numbered form `"<N>-I-son"`/`"<N>-II-son"` (25/612 rows, dates 1997-2004 only — Uzbekistan retired that scheme before OʻRQ numbering began). The extraction regex, `re.search(r"(\d+)$", amend_act_number)`, is anchored to the END of the string — which matches `"OʻRQ-1109"` fine (ends in a digit) but can NEVER match a legacy value, since those end in the literal word "son", not a digit. Measured directly: 0/25 legacy-format rows matched this regex at all; every one was silently dropped from `uz_by_norm_id`/`uz_by_article_number` via the `if not m: continue` branch, with no error, no log line, nothing — the exact "silent, no error" failure shape this project has repeatedly flagged as worth a permanent guard rather than just a documented risk.
+
+**Live impact today: exactly zero**, confirmed by two independent measurements before touching any code. (1) Of the 17 distinct (norm_id or article_number) keys any legacy event touches at all, the 12 with a `norm_id` of `NULL` all belong to the Second Part (`doc_id -180552`), which this signal already scopes to General-Part-only by construction (`norm_id` stays `NULL` for any non-`DOC_GENERAL` host, per `build_links.py`'s own `if doc_id != cx.DOC_GENERAL: norm_id = None` — confirmed directly, all 8 of these article numbers have zero `norm_unit` row under the General Part doc_id, i.e. they were never in scope regardless). The remaining 5 General-Part norm_ids (`a38`/`a40`/`a46`/`a75`/`a77`) each ALSO carry a later OʻRQ-numbered event — and the legacy event's date is always earlier (1998-2004 vs. 2021-2025), so dropping it from the `max()` candidate set never changed which event actually won. (2) Wrote a standalone before/after script (`/tmp/.../measure_legacy_actnum.py`, scratchpad) that rebuilds `en_amendment_staleness`'s full 39-row output twice, once with the old end-anchored regex and once with the fix, directly against the live corpus data: identical row count (39), zero rows changed, zero added, zero removed, same 17/39 stale count both ways.
+
+**Fixed anyway, not just documented** — same precedent as 2026-11-16's ambiguous-key guard and 2026-11-22's amending-side list-locator guard: a latent, silently-wrong extraction with zero live cost today is still a real gap, and this one was cheap and unambiguous to close correctly. The end-anchor was never load-bearing — every format's digit run is the FIRST (and only) one in the string, whether `"OʻRQ-1109"` or `"832-I-son"` — so switching both extraction sites (`build_links.py`'s Python-side `re.search` building `uz_by_norm_id`/`uz_by_article_number`, and the view's own SQL-side `regexp_extract` joining back to `amend_date`) to an unanchored first-digit-run match is strictly more correct and changes nothing live. Shipped a permanent `verify_transfer.py` AC7 guard (`every article_amendment.amend_act_number yields a parseable act number`) rather than leaving the fix unprotected against a future third numbering format — mutation-tested the detection query directly (in-memory DuckDB table, one legitimate OʻRQ value, one legitimate legacy value, one synthetic all-letters value): correctly passes the first two, flags only the third.
+
+Re-ran `build_links.py` only (the hard constraint's own guidance — this touches nothing `build_okoz.py`/`build_corpus_db.py` depend on); confirmed `build_llc.py` has no dependency on `en_amendment_staleness`/`amend_act_number` (grepped — it never references either) so it did not need a re-run. `python3 verify_transfer.py` green throughout, including the new guard. Grepped both Streamlit apps for `en_amendment_staleness`/`amend_act_number`/the touched table and column names — no schema change (only value population inside two unchanged tables), so no app-side risk; confirmed by inspection rather than a live Streamlit run, since no query shape changed.
+
+**Next Data currency rotation**: no residual from this thread. The standing cross-signal technique (Backlog) now has a second successful instance of the "audit an existing signal's own extraction/join correctness" sub-angle (the first being 2026-11-16's conflated-norm_id join-key check) — worth treating as its own repeatable sub-technique going forward, alongside straightforward value-pairing, when a fresh value-pairing comes back clean (as the last two did). A reasonable next candidate in that vein, not yet tried: `repeal_clause`'s own `cited_date`/`cited_number` fields (the raw text as parsed) against the `act` row they resolved to, now that the full matching logic has been read closely enough in today's session to know those are guaranteed-equal by construction (both tiers key by the parsed ISO date, not a fuzzy one) — so that specific pairing would be a confirm-only exercise, not a fresh angle; skip it unless a new matching tier is ever added that could break the guarantee.
 
 ### 2026-11-24 — Extractor rotation: drew the first UNIFORM-random gold batch since batch 2 as a deliberate regression check, 40/40 correct (0 new bugs), fixed a real `_meta.batches` bookkeeping gap and documented a previously-unexplained design gate
 

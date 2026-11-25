@@ -550,6 +550,34 @@ def main() -> int:
               "later list-form restatement of the same qism",
               f"{len(missed_resolutions)} missed: {missed_resolutions}" if missed_resolutions else "")
 
+        # `article_amendment.amend_act_number` carries two historically-
+        # sequential formats: modern "OʻRQ-<N>" and the legacy pre-2013
+        # "<N>-I-son"/"<N>-II-son" session-numbered form (25/612 rows,
+        # 1997-2004). Found 2026-11-25 (Data currency rotation): build_links.py's
+        # `v_en_amendment_staleness` used to extract this signal's act number
+        # via a regex anchored to the END of the string (`(\d+)$`), which
+        # matches "OʻRQ-1109" but never a legacy value (those end in the word
+        # "son", not a digit) — all 25 legacy events were silently dropped
+        # from the staleness comparison, with no error. Fixed in build_links.py
+        # (unanchored first-digit-run extraction, correct for both formats);
+        # re-measured corpus-wide before shipping, zero live rows changed (the
+        # legacy-touched keys either already had a later OʻRQ event winning
+        # the `max()`, or belong to the Second Part, already out of this
+        # signal's scope — see DAILY_REVIEW.md). Guards the extraction itself
+        # rather than leaving it only documented: every non-null
+        # `amend_act_number` must yield a digit run, so any FUTURE act-number
+        # format this regex can't parse fails loudly here instead of being
+        # silently dropped from the staleness signal again.
+        unparseable_act_numbers = con.execute("""
+            SELECT amend_act_number FROM article_amendment
+            WHERE amend_act_number IS NOT NULL
+              AND regexp_extract(amend_act_number, '(\\d+)') = ''
+        """).fetchall()
+        check(len(unparseable_act_numbers) == 0,
+              "every article_amendment.amend_act_number yields a parseable act number",
+              f"{len(unparseable_act_numbers)} unparseable: {unparseable_act_numbers}"
+              if unparseable_act_numbers else "")
+
         sup = con.execute(
             "SELECT count(DISTINCT doc_id) FROM v_act_currency WHERE derived_status='superseded'"
         ).fetchone()[0]
