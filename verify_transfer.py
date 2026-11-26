@@ -257,9 +257,9 @@ def main() -> int:
                   "SELECT count(*) FROM link_edge WHERE evidence IS NULL OR trim(evidence) = ''"
               ).fetchone()[0] == 0,
               f"all {n_edges} edges carry evidence text")
-        check(con.execute("""
+        check(con.execute(f"""
                   SELECT count(*) FROM link_edge
-                  WHERE dst_kind = 'article' AND dst_doc_id = -111189
+                  WHERE dst_kind = 'article' AND dst_doc_id = {CC_GENERAL_PART}
                     AND dst_norm_id IS NULL AND NOT dst_dangling
               """).fetchone()[0] == 0,
               "every General Part article edge either resolves or is flagged dangling")

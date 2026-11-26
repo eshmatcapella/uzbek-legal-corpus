@@ -122,61 +122,30 @@ paragraph here.
   anyone checked whether *that* reuse is still exercising the same code
   path after Extractor rotation's more recent `RE_CLAUSE` changes?
 
-- **Cleanup rotation — current state: closed the long-deferred
-  `score_gold.py` unblanked-window precision gap (open since 2026-11-18)
-  by giving `citation_extractor.py` a public `scan_anchors()` entry point
-  and routing `score_gold.py`/`gold_sampling.py`/`measure_extractor_recall.py`
-  through it instead of each independently calling the private `_anchors()`
-  on raw text — found two MORE call sites with the identical staleness
-  while fixing the documented one, plus 4 gold records (not just the 1
-  originally scoped) that needed a real decision, not just a mechanical
-  fix. Re-ran all eleven repeatable Cleanup checks as baseline: all
-  clean/unchanged. Last touched 2026-11-23.** `gold_sampling.py` (feeds
-  ALL future gold sampling, not just today's fix) and
-  `measure_extractor_recall.py` (the corpus-wide recall safety net) turned
-  out to share the exact same bug class `score_gold.py` had — each called
-  `cx._anchors(text, ...)` directly on unblanked text instead of the
-  naming-paren-blanked copy `extract()` itself has scanned since
-  2026-11-18, so each could silently disagree with `extract()`'s own
-  window boundary. Unified all three (plus `extract()`'s own internal
-  anchor-finding, unchanged) behind one function instead of patching
-  `score_gold.py` alone and leaving the other two to rediscover the same
-  gap later. Measured corpus-wide before/after on `measure_extractor_recall.py`
-  (only live, user-facing recall signal of the three): windows 2335→2329,
-  naive numbers 2683→2677, extracted 8604→8598 — fewer only because the
-  spurious anchors themselves are gone, not because anything was missed;
-  the exact 20+6 pre-existing misses are byte-identical before/after
-  (set-diffed, not eyeballed). On the gold set itself: of the "8 rows, 9
-  raw occurrences" gold_id 754's own 2026-11-18 notes already named as
-  carrying this spurious-anchor class, 4 had their own gold record pinned
-  directly to the spurious anchor (126/571/611/762, beyond the 1 the
-  Backlog item scoped). `gold_id` 754 re-pointed to its real anchor
-  (8224-8245, not the spurious 8266-8283) as the Backlog item specified;
-  `gold_id` 731/773's stored window re-sliced to the corrected, longer
-  boundary (no longer silently empty); `gold_id` 126/571/611/762 RETIRED
-  rather than re-pointed — each already had a sibling real-anchor record
-  on the same row carrying the identical information (or no information
-  `extract()` doesn't already produce correctly today), so re-pointing
-  would have tested the same thing twice and, left pinned to a now-
-  nonexistent anchor, would DRIFT every single day going forward for a
-  reason that isn't drift (corpus unchanged) but a since-fixed extractor
-  behavior — see `gold_citations.json`'s own `_meta.description` addendum
-  for the full per-record reasoning. Net: 805→801 records, 0 drift (same
-  as before, not a regression — see note), precision 3270/3279 (99.66%)
-  →3269/3278 (99.66%), recall 3273/3301 (99.15%)→3269/3297 (99.15%) — flat
-  at 3dp because the 4 retired records' own expected citations had been
-  double-counted against their sibling's identical expected citation on
-  both sides ever since 2026-11-18, not because nothing changed underneath.
-  `citation_extractor.py` 79/79 self-tests pass; `verify_transfer.py`
-  green; `corpus.duckdb` untouched (nothing in the build pipeline itself
-  changed — this was gold-set/scorer/measurement tooling only). See Log,
-  2026-11-23, for the full trace. **Next Cleanup rotation**: no residual
-  from this thread; re-run all eleven checks as usual. One new, small
-  follow-on worth a look next time Extractor work touches
-  `_blank_naming_parens()` or the naming-paren clause itself: confirm no
-  OTHER call site outside `extract()` still reaches for `cx._anchors()`
-  directly (today's fix covered the three that existed; a future new
-  script should reach for `cx.scan_anchors()` from the start).
+- **Cleanup rotation — current state: re-ran all eleven repeatable checks as
+  baseline (zero new findings, zero regressions), confirmed the
+  `cx._anchors()` residual from 2026-11-23 is fully closed, and added a
+  twelfth check, `check_constant_literals.py` (a file defines a named
+  constant for a large int and separately re-hardcodes that same literal
+  value elsewhere in the same file) — found and fixed one real instance,
+  `verify_transfer.py:260` hardcoding `-111189` instead of its own
+  `CC_GENERAL_PART`. Proved the check generalizes via a scratchpad mutation
+  test; now 0 findings project-wide. Last touched 2026-11-26.** See Log,
+  2026-11-26, for the full trace, including the two false-positive classes
+  (docstring mentions, a composite-string substring match) the check was
+  refined to exclude before it was trustworthy enough to report. **Next
+  Cleanup rotation**: re-run all twelve checks; no residual from this
+  thread.
+
+  Prior state (2026-11-23, now superseded by the bullet above — kept as a
+  one-line pointer, full detail in that date's Log entry): closed the
+  long-deferred `score_gold.py` unblanked-window precision gap by giving
+  `citation_extractor.py` a public `scan_anchors()` entry point and routing
+  `score_gold.py`/`gold_sampling.py`/`measure_extractor_recall.py` through
+  it instead of each independently calling the private `_anchors()` on raw
+  text; 4 gold records retired as a result (805→801). The 2026-11-23 entry
+  itself is further back — see that date's Log entry for the full trace,
+  not repeated here.
 
   Prior state (2026-11-20, now superseded by the bullet above — kept as a
   one-line pointer, full detail in that date's Log entry): forensically
@@ -1610,6 +1579,25 @@ paragraph here.
   the shared `ast_scope.py` module along the way (see Active threads/Log for
   the full trace). Now an eleventh repeatable Cleanup check; next rotation
   should re-run all eleven.
+- ~~**A twelfth check: something that validates *value* consistency, not
+  just shape — a file defines a named constant and separately re-hardcodes
+  that same literal value elsewhere in the same file.**~~ **Added
+  2026-11-26**: `check_constant_literals.py` — AST-collects every
+  module-level `NAME = <int literal>` with `abs(value) >= 1000`, then scans
+  every string/f-string literal elsewhere in the *same file* for that value
+  appearing as a standalone number (excluding docstrings, and excluding a
+  match that's really a substring of a longer composite-id string). Found
+  and fixed 1 real instance: `verify_transfer.py:260` hardcoded `-111189`
+  directly instead of the file's own `CC_GENERAL_PART` (defined line 40,
+  already used via f-string interpolation two other places in the same
+  file). Deliberately file-local, not cross-file — `test_transfer_e2e.py`/
+  `measure_extractor_recall.py` legitimately re-declare the same doc-id
+  literals independently, by design (deliberately independent
+  reimplementations with no local constant to begin with), so this check
+  correctly leaves those alone. Proved it generalizes with a scratchpad
+  mutation test. See Active threads and Log, 2026-11-26, for the full
+  trace. Now a twelfth repeatable Cleanup check; next rotation should
+  re-run all twelve.
 - **Fixed, 2026-11-17: the fresh-container cold-start gap (`ModuleNotFoundError`
   for `duckdb`/`streamlit`/the Cleanup tools) that the 2026-11-14/15/16
   entries each independently re-hit and hand-fixed for their own session
@@ -1642,6 +1630,117 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-26 — Cleanup rotation: full eleven-check baseline re-run (zero new findings), confirmed the `scan_anchors()` residual fully closed, and added a twelfth check — `check_constant_literals.py` — which found and fixed one real file-local duplicated-constant bug
+
+Rotation: Cleanup last touched 2026-11-23, Extractor 2026-11-24, Data currency
+2026-11-25 — Cleanup was the oldest-touched of the three, so it's next.
+`git lfs pull` + `python3 -m pip install -r requirements.txt` + baseline
+`python3 verify_transfer.py` green before touching anything.
+
+**Baseline re-run, all eleven repeatable Cleanup checks.** `pyflakes *.py`
+clean; `vulture *.py --min-confidence 60` clean; `bandit -r . -x
+./articles,./documents,./okoz,./structure` — 57 `B608`/3 `B311`/1 `B110`,
+identical to the documented, pre-reviewed baseline; `check_sql_bindings.py`
+117/117; `check_fstring_interp.py` 55/55; `check_param_arity.py` 201/201;
+`check_dead_views.py` 11/11 (2 view-on-view edges); `check_dead_columns.py`
+176 columns checked, 13 flagged — same set as the established baseline;
+`check_code_clones.py` 131 functions across 23 files, same 6 cross-file pairs
+as the standing baseline (`highlight()`, `snapshot_age_note()`,
+`sha256_file()` identical; `excerpt()` 0.930; `citation_dict`/
+`citation_to_dict()` 0.795; `check_dead_columns.py::base_table_columns()`/
+`check_dead_views.py::view_sql()` 0.614). Zero new findings, zero
+regressions. Also re-checked the one open residual from 2026-11-23's Active
+threads note (confirm no call site outside `extract()` still reaches for
+`cx._anchors()` directly): grepped every `_anchors(` call site codebase-wide
+— the only two real calls left are `citation_extractor.py`'s own
+`extract()`/`scan_anchors()` internals; every other hit is prose in a
+comment or docstring. Residual fully closed, nothing to fix.
+
+**New angle: a twelfth check, in the spirit of `check_dead_columns.py`/
+`check_param_arity.py` — something none of the existing eleven catch.**
+All eleven validate *shape* (unused symbols, dead code, SQL syntax/schema/
+arity, query-level duplication) but none validate *value consistency*: a
+file defines a named constant for a large, distinctive integer (a `doc_id`,
+an article-count boundary) and then separately re-hardcodes that same
+literal value elsewhere in the same file instead of using the name it
+already gave it — exactly the kind of silent copy-paste residue that
+wouldn't survive the constant's next edit, and invisible to every tool this
+project already runs (pyflakes/vulture see unused *names*, not re-duplicated
+*values*; `check_sql_bindings.py`/`check_param_arity.py` validate a literal
+query's schema/arity, not whether one of its literals duplicates a constant
+the same file defines; `check_code_clones.py` diffs whole function bodies,
+not a single re-hardcoded scalar inside an otherwise-unique query).
+
+Wrote `check_constant_literals.py`: AST-collects every module-level `NAME =
+<int literal>` assignment with `abs(value) >= 1000` (large enough to be a
+distinctive id/boundary, not a generic small magic number — batch sizes,
+sample counts, etc. are deliberately out of scope, to avoid noise), then
+scans every string/f-string literal elsewhere in the *same file* for that
+value appearing as a standalone number. Deliberately file-local, not
+cross-file: `-111189`/`-180552`/`-8151376`/`-22525` are legitimately
+re-declared as independent literals in `test_transfer_e2e.py` and
+`measure_extractor_recall.py` — both are, by design (2026-09-07/2026-??
+entries), deliberately independent reimplementations that must NOT import
+the pipeline's own constants, so cross-file duplication there is correct,
+not a bug this check should flag.
+
+First pass (AST `Constant`/`JoinedStr` string nodes, no exclusions) found 8
+hits across 6 files. Hand-verified every one: 6 were false positives from
+comments/docstrings quoting the value for a human reader (`build_corpus_db.py`
+module docstring, `structure_parser.py`'s boundary comment,
+`citation_extractor.py`'s own explanatory comment, this script's own
+docstring) and one was a substring match inside an unrelated composite
+string (`build_corpus_db.py`'s `"-111189-a261#1"` dict key, not the integer
+`-111189`). Refined the check twice to kill both false-positive classes
+structurally rather than special-casing them: (1) excludes module/function/
+class docstring nodes outright (comments are already invisible to AST, so
+this was the only free-text class left to exclude), (2) tightened the
+match's boundary to also exclude a digit run immediately followed or
+preceded by `-`/`#` (the composite-id shape), not just `\w`. Re-ran: exactly
+**1 real finding** — `verify_transfer.py:260` builds its General-Part-edge
+check as a *plain* (non-f) triple-quoted string hardcoding `-111189`
+directly in the `WHERE` clause, even though the same file defines
+`CC_GENERAL_PART = -111189` at line 40 and already uses it via f-string
+interpolation at lines 203 and 321 two other places in the identical file —
+a plain copy-paste slip, not a deliberate independent-verification choice
+(unlike the test-file/measure-script literals, which never had a local
+named constant to begin with). Fixed: changed the string to an f-string and
+substituted `{CC_GENERAL_PART}` for the literal; `check_constant_literals.py`
+now reports 0 findings project-wide.
+
+**Proved the checker generalizes, not just confirms this one bug**, with a
+mutation test in the scratchpad (not the repo): a scratch file declaring
+`MY_DOC_ID = -654321` and separately hardcoding `-654321` inside an
+`f"SELECT ..."` string, plus a docstring mentioning `-111189` as a decoy —
+correctly flagged the real duplication once (after deduping a cosmetic
+double-count caused by Python's AST nesting a single-part f-string's
+`JoinedStr` around one `Constant` child, both matching the same span) and
+correctly left the docstring-only mention alone. Also hand-checked that the
+fix itself didn't change anything load-bearing: `python3 verify_transfer.py`
+still **VERIFICATION PASSED — all checks green**, `python -m unittest
+test_transfer_e2e.py` 14/14, `pyflakes`/`vulture` still clean on the new
+file. Re-ran the other ten checks after the fix to catch any second-order
+effect of turning a plain string into an f-string: `check_sql_bindings.py`
+117→116 literal queries (expected — one moved from the "literal" bucket to
+the "f-string" bucket, still validated, just by the other script now);
+`check_fstring_interp.py` 55→56 (the mirror of that same move, resolves
+cleanly to a hardcoded constant); `bandit` 57→58 `B608` (the newly-f-string
+query now matches the same already-audited "hardcoded-constant-interpolated-
+into-SQL" pattern as the other 57, not a new risk class); `check_code_clones.py`
+131→135 functions across 24 files (the new script's own functions added to
+the population) but the same 6 pairs, nothing new; `check_dead_views.py`/
+`check_dead_columns.py`/`check_param_arity.py` all unchanged in substance.
+`corpus.duckdb` untouched throughout (this was tooling/verification-script
+only, no pipeline code touched).
+
+**Next Cleanup rotation**: re-run all twelve checks. No residual from this
+thread — `check_constant_literals.py` is clean project-wide as of today.
+One thing worth a glance next time any script adds a new large module-level
+int constant (a new `doc_id`, a new article boundary): check whether it
+should be interpolated via `{NAME}` everywhere in that file from the start,
+the same discipline `CC_GENERAL_PART` itself now actually follows end to
+end.
 
 ### 2026-11-25 — Data currency rotation: `v_en_amendment_staleness` silently dropped all 25 legacy pre-OʻRQ-numbered amendment events from its act-number extraction — fixed the root cause, measured zero live change, shipped a permanent `verify_transfer.py` guard
 
