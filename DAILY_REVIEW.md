@@ -46,40 +46,57 @@ thread closes, fold its outcome into Backlog (if a residual remains) or
 just let the Log entry be the permanent record — don't also keep growing a
 paragraph here.
 
-- **Extractor rotation — current state: ran the first UNIFORM-random gold
-  batch (21, gold_id 805-844) since batch 2, as a deliberate regression
-  check now that the signature-stratified sampler is structurally blind to
-  regressions in already-covered shapes. 40/40 correct, 0 new bugs — gold
-  set 801→841, precision 3269/3278 (99.66%)→3373/3382 (99.73%), recall
-  3269/3297 (99.15%)→3373/3401 (99.18%), same 9 known-gap FP/FN pairs as
-  before and nothing else. Also fixed a real `_meta.batches` bookkeeping
-  gap (batches 19/20 were never recorded) found while preparing this
-  batch's own entry. Last touched 2026-11-24.** The signature-stratified
-  novel sampler had exhausted its widened pool at 0/0 as of batch 20
-  (2026-11-12) — rather than widening the signature a third time with no
-  corpus change to justify it, drew a fresh **uniform** sample instead
-  (`build_gold_sample.py --n 40 --seed 20261124`, half hit/half empty
-  windows). Hand-verified all 40 against the raw Uzbek text, including
-  3 `self_reference` windows with no provision number (gold_id 8/16/38 in
-  the raw sample) that correctly produce zero citations rather than a bare
-  `act` — confirmed this is deliberate, not a gap: `build_links.py` always
-  maps a `self_reference` anchor to a self-loop edge (`rel='internal'`,
-  `hrel='self'`) regardless of target, so a provision-less one would just
-  be corpus-wide noise (measured: 107 such windows corpus-wide, 0 for
-  `fk_alias` — the same gate is moot for that anchor kind today). This
-  reasoning previously lived nowhere — `citation_extractor.py`'s own
-  `if not produced and kind == "fuqarolik_kodeksi":` gate had zero comment
-  explaining why self_reference/fk_alias are excluded; added one. 79/79
-  self-tests pass; `verify_transfer.py` green; `corpus.duckdb` untouched
-  (gold-set/comment-only change, no pipeline code touched). See Log,
-  2026-11-24, for the full trace. **Next Extractor rotation**: 2 known_gap
-  items remain open at their own documented single-occurrence scope:
-  `gold_id` 597 (amending law's own next heading misattributed — a false
-  positive needing a word-substitution-phrase heuristic), `gold_id` 370
-  ("moddsi" typo). The uniform sampler can be redrawn with a fresh `--seed`
-  as a repeatable regression check going forward (same role the eleven
-  Cleanup checks play for code quality); the novel sampler is still
-  genuinely empty (0/0) and won't move without a real corpus update.
+- **Extractor rotation — current state: ran uniform gold batch 22 (gold_id
+  845-884, seed 20261127), the second uniform regression batch since the
+  novel sampler's pool hit 0/0. 39/40 correct, 1 new known_gap — a real,
+  single-occurrence qism-recall gap (`gold_id` 863, row 46840, Article
+  274): a second, non-adjacent `hamda <ordinal> qism` naming a second part
+  of the SAME article is never looked for once the first qism match
+  succeeds. Gold set 841→881, precision 3373/3382 (99.73%)→3495/3504
+  (99.7%), recall 3373/3401 (99.18%)→3495/3524 (99.2%) — the drop from
+  99.73%/99.18% to 99.7%/99.2% is entirely this one new known_gap record
+  (3 prior-known-gap pairs unchanged), not regression noise; same 9 prior
+  known-gap FP/FN pairs as batch 21, plus this one. Last touched
+  2026-11-27.** Drew via `build_gold_sample.py --n 40 --seed 20261127`
+  (uniform, not `build_gold_sample_novel.py` — the widened-signature novel
+  pool is still 0/0, no corpus update to reopen it). Hand-verified all 40
+  against the raw Uzbek text (3 against the full un-truncated row text,
+  not just the sampled window, where the truncated preview looked
+  ambiguous — the gazette-publication-history parenthetical shape, rows
+  4262/31201, and the `hamda`-qism row itself, 46840). The one real find:
+  `"...ushbu Kodeks 274-moddasi birinchi qismining 1 va 2-bandlarida hamda
+  ikkinchi qismida nazarda tutilgan burchlarni bajarmasa..."` cites Article
+  274 Part One (further qualified to items 1-2, a band-within-qism grain
+  this project already defers elsewhere — see Data currency's
+  `article_amendment.locator` paragraph-within-qism item) AND, via "hamda"
+  ("and also"), Part Two as a whole — `citation_extractor.py` only ever
+  resolves the FIRST qism match in a modda's tail (`_qism_list()`/
+  `_qism_range()`, then a bare `RE_QISM.search()` fallback), so the second,
+  non-adjacent "hamda ikkinchi qismida" is silently dropped. This is a
+  genuinely different shape from the already-fixed RE_QISM_MULTI/
+  RE_QISM_RANGE adjacent list/range forms (`"...ikkinchi, toʻrtinchi
+  qismlari"` / `"...ikkinchi — toʻrtinchi qismlarida"`), which require the
+  ordinals to sit directly together before ONE shared qism/band word, not
+  two full qism phrases joined by "hamda" at the sentence level. Measured
+  corpus-wide with a dedicated script (`measure_hamda_qism.py`, scratchpad
+  — not committed, same precedent as `gold_sample.json`): of 778
+  single-article citations that already have some qism/band attached,
+  exactly 1 has a later `hamda <ordinal> qism/band` in the same tail (no
+  intervening modda/bob number) naming a qism not already captured. Not
+  fixed given the single-occurrence scope — same precedent as the 5 other
+  known_gap records on this list (see Backlog); recorded as a new
+  `gold_citations.json` known_gap record (`gold_id` 863) and a new Backlog
+  bullet with the fix sketch instead. 79/79 self-tests pass;
+  `verify_transfer.py` green; `corpus.duckdb` untouched (gold-set-only
+  change, no pipeline code touched). See Log, 2026-11-27, for the full
+  trace. **Next Extractor rotation**: 3 known_gap items remain open at
+  their own documented single-occurrence scope: `gold_id` 597 (amending
+  law's own next heading misattributed), `gold_id` 370 ("moddsi" typo),
+  `gold_id` 863 (today's `hamda`-second-qism gap). The uniform sampler can
+  be redrawn with a fresh `--seed` as a repeatable regression check going
+  forward (same role the twelve Cleanup checks play for code quality); the
+  novel sampler is still genuinely empty (0/0) and won't move without a
+  real corpus update.
 
 - **Data currency rotation — current state: `v_en_amendment_staleness`'s
   act-number extraction was silently dropping all 25 legacy pre-OʻRQ-
@@ -191,13 +208,15 @@ paragraph here.
   Active threads), to 841 via batch 21 (2026-11-24, UNIFORM random, not
   signature-stratified — the first since batch 2 — drawn specifically as a
   regression check the novel sampler can't perform; 40/40 correct, 0 new
-  bugs, see Active threads and Log)** — see Active threads and Log for the
-  full detail. `gold_citations.json` (841 hand-verified anchor occurrences,
-  twenty-one batches — three uniform-random, eighteen signature-stratified)
-  + `score_gold.py` (the scorer) + `build_gold_sample.py`/
+  bugs, see Active threads and Log), to 881 via batch 22 (2026-11-27,
+  UNIFORM random again, same regression-check role; 39/40 correct, 1 new
+  known_gap — see Active threads and Log)** — see Active threads and Log
+  for the full detail. `gold_citations.json` (881 hand-verified anchor
+  occurrences, twenty-two batches — four uniform-random, eighteen
+  signature-stratified) + `score_gold.py` (the scorer) + `build_gold_sample.py`/
   `build_gold_sample_novel.py` (the two samplers) now exist; current score
-  (post-2026-11-24 uniform batch 21, see Active threads and Log)
-  **precision 3373/3382 (99.73%), recall 3373/3401 (99.18%)**. Updating this
+  (post-2026-11-27 uniform batch 22, see Active threads and Log)
+  **precision 3495/3504 (99.7%), recall 3495/3524 (99.2%)**. Updating this
   paragraph's own stale drift while here (several named gaps below had
   already been fixed on their own dated entries without this summary ever
   being revised — same drift class the 2026-11-15 "paragrifi" bookkeeping
@@ -208,8 +227,10 @@ paragraph here.
   fixed, see Backlog), the 2026-10-10 "moddsi" typo (`gold_id` 370, a single
   source-data typo, deliberately not generalized), and the 2026-10-27
   "amending law's own next heading misattributed" false positive (`gold_id`
-  597) — all three left open at their own documented single-occurrence or
-  architecture-cost reasoning, see Backlog for each. The 2026-10-27 "bare
+  597), and the 2026-11-27 "hamda"-joined second-qism gap (`gold_id` 863,
+  1 occurrence) — all four left open at their own documented
+  single-occurrence or architecture-cost reasoning, see Backlog for each.
+  The 2026-10-27 "bare
   Kodeksning self-reference" gap (`gold_id` 587) was FIXED 2026-11-21 —
   removed from this list accordingly; see Active threads and Log. The 2026-11-09
   self-naming-parenthetical chain (`gold_id` 754, not 763 — that gold_id was
@@ -506,6 +527,41 @@ paragraph here.
   "[Code citation A] ... [other act mention] ... [Code citation B, still
   clearly the Code's]" — worth re-checking this same way after any large
   corpus update, rather than assuming it still holds.
+- **A second, non-adjacent "hamda `<ordinal>` qism/band" naming a second
+  part of the SAME already-cited article is never looked for.** Found
+  2026-11-27 via uniform gold batch 22 (`gold_id` 863, row 46840, the Civil
+  Code's own text): "ushbu Kodeks 274-moddasi birinchi qismining 1 va
+  2-bandlarida hamda ikkinchi qismida nazarda tutilgan burchlarni
+  bajarmasa" cites Article 274 twice — part one (further qualified to
+  items 1-2, a band-within-qism grain this project already defers
+  elsewhere, see the Data currency backlog's `article_amendment.locator`
+  paragraph-within-qism item) AND, via "hamda" ("and also"), part two as a
+  whole. `citation_extractor.py`'s qism attachment (`_qism_list()`/
+  `_qism_range()`, then a bare `RE_QISM.search()` fallback) only ever
+  resolves the FIRST qism/band match in a modda's own tail, so the second,
+  non-adjacent "hamda ikkinchi qismida" is silently dropped — a genuinely
+  different shape from the already-fixed `RE_QISM_MULTI`/`RE_QISM_RANGE`
+  adjacent list/range forms (e.g. "...ikkinchi, toʻrtinchi qismlari" /
+  "...ikkinchi — toʻrtinchi qismlarida"), which require the ordinals to sit
+  directly together before ONE shared qism/band word, not two full qism
+  phrases joined by "hamda" at the sentence level. Measured corpus-wide
+  with a dedicated script (not a blind grep — checked every single-article
+  citation that already has a qism/band attached, via `extract()` itself):
+  778 such citations corpus-wide, exactly 1 with a later "hamda `<ordinal>`
+  qism/band" in the same tail (no intervening modda/bob number) naming a
+  qism not already captured. Not fixed given the single-occurrence scope,
+  same precedent as the other known_gap items on this list; recorded as a
+  permanent `gold_citations.json` known_gap record (`gold_id` 863). If ever
+  picked up: after resolving the first qism/band match as today, scan the
+  REST of the same tail (up to `hard_limit`, not just the first 60 chars —
+  see the qism/band tail-window-truncation fix below for why `hard_limit`
+  not `WINDOW`) for `hamda\s+<ordinal>\s*-?\s*(qism|band)` not itself
+  preceded by a new modda/bob number, and append a second `Citation` with
+  that qism — mirroring how `_qism_list()`/`_qism_range()` already append
+  multiple citations for one modda today. The nested band-level detail
+  within qism one (items 1, 2) would still be out of the schema's reach
+  even then, same as the single documented paragraph-within-qism case in
+  `article_amendment.locator`.
 - **Range citation spanning a superscript boundary loses its middle articles.**
   Found 2026-09-08 while fixing the `doc_id` bug (see Active threads): a
   range like "173 – 1737-moddalari" means "article 173 through its
@@ -1630,6 +1686,100 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-27 — Extractor rotation: uniform gold batch 22, 39/40 correct, 1 new known_gap (a second "hamda"-joined qism reference to the same article is never looked for)
+
+Rotation: Extractor last touched 2026-11-24, Data currency 2026-11-25,
+Cleanup 2026-11-26 — Extractor was the oldest-touched of the three, so it's
+next.
+
+**Session-start git state note.** `git status` on arrival showed HEAD
+detached 3 commits ahead of local `main` (the 2026-11-24/-25/-26 rotations'
+own commits), reproducing exactly the pattern 2026-11-20's Cleanup rotation
+already root-caused and fixed procedurally (DAILY_REVIEW.md step 0): a
+stale local `main`/`origin/main` tracking ref, not lost work. Ran `git fetch
+origin main` explicitly first (not relying on a possibly-cached
+remote-tracking ref) and confirmed `origin/main` already had all 3 commits,
+then `git checkout main && git merge --ff-only origin/main` per step 0.
+Zero lost work, same as every prior occurrence — not re-litigated further.
+
+**Cold start.** `git lfs pull` + `python3 -m pip install -r requirements.txt`
++ baseline `python3 verify_transfer.py` green before touching anything.
+
+**Drew uniform gold batch 22.** The widened-signature novel sampler
+(`build_gold_sample_novel.py`) is still exhausted at 0/0 as of batch 20
+(2026-11-12) with no corpus update to reopen it, so — same choice as batch
+21 (2026-11-24) — drew a fresh **uniform** sample instead:
+`build_gold_sample.py --n 40 --seed 20261127` (20 hit-windows, 20
+empty-windows, stratified across all three source fields and all three
+anchor kinds). Hand-verified all 40 against the raw Uzbek text; for 3 of
+them (rows 4262, 31201, 46840) the sampled window alone was too truncated
+to judge confidently, so pulled the full, un-truncated `article_text` for
+those rows directly from the parquet before deciding.
+
+**39/40 confirmed correct**, including several shapes worth noting as
+negative/confirmatory results (no bug, but worth recording why): rows
+4262/31201 each open with "Fuqarolik kodeksiga" followed immediately by a
+long parenthetical of the Code's own OFFICIAL GAZETTE publication history
+("Axborotnomasi, 1996-yil, ... № 2, 56-modda, № 9, 241-modda; ..." —
+dozens of "`<N>`-modda" tokens that are the *gazette's own* item numbers,
+not Civil Code articles) — `extract()` correctly resolves a bare `act`
+citation and does NOT misparse any of those gazette locators as article
+citations, confirming `RE_LEADING_PUB_PAREN`'s 2026-09-29 fix still holds
+for this shape. Rows 46561/46602/45331/46898/45747/45365 (six
+`self_reference` windows) correctly produce zero citations — each is a
+structural/definitional sentence naming "this Code" as a whole (ablative
+"-dan", dative "-ga muvofiq", or locative "-da") with no specific provision
+number anywhere in the window, the same deliberate zero-citation shape the
+2026-11-24 batch's own self_reference findings already confirmed is
+correct, not a gap. Row 46656/46813's own comma-lists (one mixing a
+list+range of bare article numbers with several individually-qism-tagged
+articles under a single "mazkur Kodeksning..." self-reference) resolved
+exactly right, article-by-article and qism-by-qism — a good live check that
+the list/range/qism-attachment machinery (several Extractor-rotation fixes,
+2026-10-18 through 2026-11-15) still composes correctly on a real,
+previously-unseen corpus row.
+
+**The one real finding** (`gold_id` 863, row 46840, the Civil Code's own
+text — see Backlog "A second, non-adjacent hamda qism/band..." for the
+full writeup and fix sketch): "ushbu Kodeks 274-moddasi birinchi qismining
+1 va 2-bandlarida hamda ikkinchi qismida nazarda tutilgan burchlarni
+bajarmasa" cites Article 274 TWICE — part one (further qualified to items
+1-2) and, via "hamda" ("and also"), part two as a whole — but
+`citation_extractor.py` only ever resolves the FIRST qism/band match in a
+modda's own tail, so "ikkinchi qism" is silently dropped. Wrote a dedicated
+measurement script (`measure_hamda_qism.py`, scratchpad, not committed —
+same precedent as `gold_sample.json`) that runs `extract()` over the whole
+corpus and, for every single-article citation that already has a qism/band
+attached (778 of them), checks whether a LATER "hamda `<ordinal>` qism/band"
+in the same tail (with no intervening modda/bob number, ruling out a
+different article) names a qism not already captured: exactly 1 hit,
+this row. Not fixed given the single-occurrence scope and because even a
+fix for the "hamda" shape alone wouldn't recover the band-level grain
+within part one (a schema limitation this project already defers
+elsewhere, in `article_amendment.locator`'s own documented
+paragraph-within-qism gap) — same precedent as the 5 other known_gap
+records already on this backlog. Recorded as a new `gold_citations.json`
+known_gap record and a new Backlog bullet with the fix sketch instead of
+special-casing the regex for n=1.
+
+**Numbers.** Gold set 841→881 (twenty-two batches: four uniform-random,
+eighteen signature-stratified). Precision 3373/3382 (99.73%)→3495/3504
+(99.7%); recall 3373/3401 (99.18%)→3495/3524 (99.2%) — the small headline
+drop is entirely the one new known_gap record (3 FP+21 FN pairs from the
+pre-existing 9 known_gap records are unchanged); 10 known-gap FP/FN pairs
+total now, not 9. `_meta.batches` updated in the same commit this time
+(no repeat of the 2026-11-24 bookkeeping gap). `citation_extractor.py`
+79/79 self-tests pass (module untouched, ran as a baseline check);
+`pyflakes` clean; `unittest test_transfer_e2e.py` 14/14; `verify_transfer.py`
+green. `corpus.duckdb`/`link_edge` untouched — gold-set-only change, no
+pipeline code touched, no rebuild needed.
+
+**Next Extractor rotation**: 3 known_gap items remain open at their own
+documented single-occurrence scope (`gold_id` 597, 370, 863 — see Backlog
+for each); the uniform sampler can be redrawn with a fresh `--seed` as a
+repeatable regression check (same role the twelve Cleanup checks play for
+code quality) whenever the novel sampler's pool is still exhausted.
 
 ### 2026-11-26 — Cleanup rotation: full eleven-check baseline re-run (zero new findings), confirmed the `scan_anchors()` residual fully closed, and added a twelfth check — `check_constant_literals.py` — which found and fixed one real file-local duplicated-constant bug
 
