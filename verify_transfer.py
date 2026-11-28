@@ -578,6 +578,57 @@ def main() -> int:
               f"{len(unparseable_act_numbers)} unparseable: {unparseable_act_numbers}"
               if unparseable_act_numbers else "")
 
+        # build_links.py's `target_articles()` (the one-row-per-target-article
+        # expansion for a list/range amendment clause, e.g. "65 va 66-moddalar")
+        # reuses citation_extractor's own RE_CLAUSE/_expand grammar rather than a
+        # second, narrower regex — see that function's own docstring. That
+        # grammar keeps changing for the citation-extraction code path proper
+        # (most recently: "hamda" as a third list conjunction, added 2026-09-15,
+        # swept 2026-11-15; the dash-range/parenthetical-skip tolerances are
+        # older). Found 2026-11-28 (Data currency rotation): nothing had ever
+        # re-checked, after any of those changes, whether `target_articles()`'s
+        # reuse was still reachable and still agreed with what's actually stored
+        # — a silent regression there would under- or over-expand a multi-member
+        # amendment clause into the wrong set of target_article_number rows with
+        # no error. Independently re-derived every amendment clause's raw
+        # locator+verb scope from `evidence` (the clause's own stored full text)
+        # using the same re_amend_event grammar build_links.py uses, re-ran the
+        # real `cx_.RE_CLAUSE`/`cx_._expand` on it, and compared the resulting
+        # target-article set against what's actually stored, corpus-wide: of 594
+        # amendment clauses, exactly 10 are multi-member lists/ranges, and all 10
+        # match the stored rows exactly (same count confirmed via a standalone
+        # scratchpad script, see DAILY_REVIEW.md) — zero drift, zero regression.
+        # Guards the latent failure mode going forward rather than leaving it a
+        # one-time diagnostic.
+        re_amend_event_ = re.compile(
+            r"(?P<locator>.*?)"
+            r"O\wzbekiston\s+Respublikasi\w*\s+"
+            r"\d{4}-yil\s+\d{1,2}-[a-z]+\w*\s+"
+            r"(?:O\wRQ-\d+-sonli|\d+[-–](?:[IVX]+-)?son(?:li)?)\s+"
+            r"Qonun\w*\s+"
+            r"(?P<verb>.*?)"
+            r"(?:\s*—\s*.*?)?"
+            r"\)$", re.IGNORECASE | re.DOTALL)
+        drifted = []
+        for doc_id, host_art, ev, tgts in con.execute("""
+            SELECT doc_id, host_article_number, evidence, list(target_article_number)
+            FROM article_amendment GROUP BY doc_id, host_article_number, evidence
+        """).fetchall():
+            em = re_amend_event_.match(ev)
+            if em is None:
+                drifted.append((doc_id, host_art, ev, tgts, "re_amend_event didn't match"))
+                continue
+            scope = (em.group("locator") or "") + " " + (em.group("verb") or "")
+            cm = cx_.RE_CLAUSE.search(scope)
+            recomputed = (cx_._expand(cm.group("nums"))[0]
+                          if cm is not None and cm.group("unit").lower() == "modda" else [])
+            if set(recomputed) != set(t for t in tgts if t is not None):
+                drifted.append((doc_id, host_art, ev, tgts, recomputed))
+        check(len(drifted) == 0,
+              "build_links.py's target_articles() reuse of RE_CLAUSE/_expand still "
+              "agrees with what's stored, for every amendment clause",
+              f"{len(drifted)} drifted: {drifted}" if drifted else "")
+
         sup = con.execute(
             "SELECT count(DISTINCT doc_id) FROM v_act_currency WHERE derived_status='superseded'"
         ).fetchone()[0]

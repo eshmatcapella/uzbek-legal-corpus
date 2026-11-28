@@ -98,46 +98,61 @@ paragraph here.
   novel sampler is still genuinely empty (0/0) and won't move without a
   real corpus update.
 
-- **Data currency rotation — current state: `v_en_amendment_staleness`'s
-  act-number extraction was silently dropping all 25 legacy pre-OʻRQ-
-  numbered amendment events (an end-anchored regex that can never match a
-  value ending in the word "son") — fixed both extraction sites in
-  `build_links.py`, measured zero live change (confirmed via a standalone
-  before/after rebuild script, byte-identical 39/39 rows), shipped a
-  permanent `verify_transfer.py` AC7 guard. Zero residual. Last touched
-  2026-11-25.** Found via a new sub-angle of the standing cross-signal
-  technique — auditing an existing signal's own extraction/join
-  correctness, not a fresh value pairing — after the last two straight
-  value-pairings (2026-11-22) came back clean. See Log, 2026-11-25, for
-  the full trace.
+- **Data currency rotation — current state: checked whether `build_links.py`'s
+  two independent hand-ported copies of `citation_extractor`'s list/range
+  grammar had drifted from `RE_CLAUSE`/`_expand`'s own more recent changes
+  (the exact question the 2026-11-25 entry below left open). `target_articles()`
+  (used by `article_amendment`) had NOT drifted — re-derived all 594 amendment
+  clauses fresh from the raw parquet, recomputed via the real `cx.RE_CLAUSE`/
+  `cx._expand`, and diffed against what's actually stored: 10/594 multi-member,
+  0 mismatches, 0 regressions; shipped a permanent `verify_transfer.py` AC7
+  guard (mutation-tested: catches both a truncated multi-member event and a
+  corrupted single-article one). `repeal_clause`'s own separate `target_locator`
+  regex HAD drifted, though: it was "ported" from `RE_CLAUSE`'s list grammar on
+  2026-10-20/2026-11-19 (comma/"va" conjunctions) but never picked up "hamda"
+  as a third conjunction, which `RE_CLAUSE` itself gained 2026-09-15. Measured
+  corpus-wide before fixing: 0/885 repeal items actually use "hamda" to join a
+  modda/qism list today (every live "hamda" near a `repeal_clause` row sits
+  inside the cited act's own title text) — zero live impact, same precedent as
+  several other known_gap-shaped fixes on this list — fixed anyway since it's
+  one more alternative in an existing regex. Rebuilt via `build_links.py` +
+  `build_llc.py` only (not `build_okoz.py` — it never reads `link_edge`/
+  `repeal_clause`, confirmed by grep same as the 2026-10-21 precedent;
+  `okoz_assignment.validated_by`/`validated_at` untouched); `[INFO] 214 acts
+  provably superseded` unchanged, confirming zero live change. Last touched
+  2026-11-28.** See Log, 2026-11-28, for the full trace, including a near-miss
+  (accidentally ran `build_okoz.py` too on the first pass, caught before
+  committing, reverted and redone correctly) now folded into a new Backlog
+  item about `build_okoz.py`'s own `CREATE OR REPLACE TABLE okoz_assignment`
+  always hardcoding `validated_by`/`validated_at` to NULL.
 
-  Prior state (2026-11-22, now superseded by the bullet above — kept as a
-  one-line pointer, full detail in that date's Log entry): closed the
-  amending-side `article_amendment.locator` list-locator residual (zero
-  live occurrences, permanent guard shipped) and re-confirmed
+  Prior state (2026-11-25, now superseded by the bullet above — kept as a
+  one-line pointer, full detail in that date's Log entry): `v_en_amendment_
+  staleness`'s act-number extraction was silently dropping all 25 legacy
+  pre-OʻRQ-numbered amendment events — fixed both extraction sites in
+  `build_links.py`, measured zero live change, shipped a permanent
+  `verify_transfer.py` AC7 guard.
+
+  Prior state (2026-11-22, further back — full detail in that date's Log
+  entry): closed the amending-side `article_amendment.locator` list-locator
+  residual (zero live occurrences, permanent guard shipped) and re-confirmed
   `repeal_clause` still never targets the Civil Code's own doc_id post the
-  2026-11-19 fix (0/0 overlap). The 2026-11-19 entry itself (list-locator
-  fix in `repeal_clause.target_locator`, 21 acts flip from false
-  whole-act-superseded) is further back — see that date's Log entry for
-  the full trace, not repeated here.
+  2026-11-19 fix (0/0 overlap).
 
-  **Next Data currency rotation**: no residual from this thread. The
-  standing cross-signal technique now has two flavors — a fresh value
-  pairing (10 real findings across roughly 13 pairings tried, the last two
-  clean), and auditing an existing signal's own extraction/join logic (2
-  real findings: 2026-11-16's conflated-norm_id key, today's). When a
-  fresh value pairing comes back clean, reach for the extraction-audit
-  angle on another signal before assuming the technique is exhausted —
-  `repeal_clause.cited_date`/`cited_number` vs. the resolved act's own
-  `doc_date`/`doc_number` was considered today and ruled out as *already
-  guaranteed* by construction (both tiers key by parsed ISO date, not a
-  fuzzy one — confirmed by reading `build_links.py`'s matching code
-  closely, not just measuring), so skip that specific one; a good
-  candidate not yet looked at this way is `article_amendment`'s own
-  `target_articles()` list/range expansion (reuses `citation_extractor`'s
-  grammar, see Backlog note on exactly 10 multi-member clauses) — has
-  anyone checked whether *that* reuse is still exercising the same code
-  path after Extractor rotation's more recent `RE_CLAUSE` changes?
+  **Next Data currency rotation**: no residual from this thread. The standing
+  cross-signal technique now has three flavors — a fresh value pairing (10
+  real findings across ~13 pairings tried), auditing an existing signal's own
+  extraction/join logic (2 real findings: 2026-11-16, 2026-11-25), and —
+  new today — auditing whether two independently-hand-ported copies of the
+  SAME grammar have drifted apart (1 real finding: today's `repeal_clause`
+  "hamda" gap). When a fresh value pairing comes back clean, reach for one of
+  the other two angles before assuming the technique is exhausted. A good
+  candidate not yet tried: `citation_extractor`'s qism/band ordinal grammar
+  is itself hand-ported into at least 3 places now (`build_links.py`'s
+  `re_qism_locator`, `verify_transfer.py`'s `re_qism_single_`/`re_qism_list_`)
+  — worth checking all three still agree with each other and with
+  `citation_extractor.ORDINALS` after any future ordinal-vocabulary change,
+  the same "two-copies-drift" shape as today's finding.
 
 - **Cleanup rotation — current state: re-ran all eleven repeatable checks as
   baseline (zero new findings, zero regressions), confirmed the
@@ -1349,6 +1364,31 @@ paragraph here.
   just worth a second look if a future session wants to push further.
 
 ### Cleanup
+- **`build_okoz.py`'s `CREATE OR REPLACE TABLE okoz_assignment` always
+  inserts `validated_by`/`validated_at` as a hardcoded `NULL` (see its own
+  `INSERT INTO okoz_assignment VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL)`),
+  with no join-back to whatever the table held before the replace. Found
+  2026-11-28 (Data currency rotation) while confirming a different fix
+  didn't need `build_okoz.py` rerun at all (it doesn't read `link_edge`/
+  `repeal_clause`) — checked what WOULD happen if it ever were rerun after
+  the owner validates a mapping, and found this. Zero live impact today
+  (all 39 proposed mappings are still unvalidated, confirmed via
+  `verify_transfer.py`'s own `[INFO] 39 proposed mapping(s) awaiting the
+  owner's validation`, so there is nothing to lose yet) — but this is a
+  real, standing landmine: the FIRST time the owner validates an OKOZ
+  mapping directly in `corpus.duckdb`, any future *legitimate* reason to
+  rerun `build_okoz.py` (a new struct_node, a MAPPING correction) would
+  silently wipe that validation with no error, violating this project's
+  own hard constraint on owner validation state. Not fixed today (Data
+  currency rotation, and the fix needs care: `CREATE OR REPLACE TABLE`
+  would need to first read back the old table's `(struct_node_id,
+  validated_by, validated_at)` by key and carry them through the new
+  INSERT, keyed on `struct_node_id` since `assignment_id` is reassigned
+  from a fresh `enumerate()` each run). Sketch for whoever picks this up:
+  `old = {r[0]: (r[1], r[2]) for r in con.execute("SELECT struct_node_id,
+  validated_by, validated_at FROM okoz_assignment").fetchall()}` BEFORE the
+  `CREATE OR REPLACE`, then look up `old.get(nid)` per row in the
+  `executemany` instead of the literal `NULL, NULL`.
 - ~~**`score_gold.py` duplicates `citation_extractor.extract()`'s own
   anchor-finding/windowing logic by calling `cx._anchors()` directly on RAW
   text, instead of sharing whatever internal scan-text transform `extract()`
@@ -1686,6 +1726,145 @@ paragraph here.
 ---
 
 ## Log
+
+### 2026-11-28 — Data currency rotation: checked whether two independent hand-ported copies of `citation_extractor`'s list/range grammar had drifted apart — `target_articles()` hadn't (0 drift, new permanent guard), `repeal_clause`'s own locator regex had (missing "hamda", 0 live impact, fixed anyway)
+
+Rotation: Extractor last touched 2026-11-27, Cleanup 2026-11-26, Data
+currency 2026-11-25 — Data currency was the oldest-touched, so it's next.
+
+**Cold start.** Step 0 (`git fetch origin main && git checkout main && git
+merge --ff-only origin/main`) worked exactly as documented: container
+started HEAD-detached at `ed6290d` with local `main` one session behind at
+`dff90ad`; fast-forwarded cleanly, 4 commits, no divergence. `git lfs pull`
++ `pip install -r requirements.txt` hit a NEW cold-start wrinkle, not seen
+in prior sessions' notes: this container's `pip`/`pip3` resolve to
+`/usr/lib/python3/dist-packages/pip` (python 3.13), while `python`/
+`python3` resolve to `/usr/local/bin/python3` -> `/usr/bin/python3.11` —
+two different interpreters. `pip install -r requirements.txt` silently
+"succeeded" (all "Requirement already satisfied", nothing actually
+installed for 3.11) and every script then failed with `ModuleNotFoundError:
+No module named 'duckdb'`. Fixed by running `python3 -m pip install -r
+requirements.txt` instead (resolves pip against the SAME interpreter that
+runs the scripts) rather than bare `pip`/`pip3`. Not promoted to a
+`verify_transfer.py` guard or a `requirements.txt` change today (it's an
+environment-bootstrap issue, not a pipeline-code one, and today's rotation
+is Data currency) — flagging here so a future Cleanup rotation can decide
+whether to harden the documented cold-start recipe (`python3 -m pip
+install ...` instead of bare `pip install ...`) the same way 2026-10-17's
+`requirements.txt` fix hardened the previous cold-start gap.
+
+**The question.** The 2026-11-25 entry's own "Next rotation" note asked
+whether `build_links.py`'s `target_articles()` — which reuses
+`citation_extractor.RE_CLAUSE`/`_expand` rather than a second regex, by
+design (see that function's docstring) — was still exercising the same
+code path after `RE_CLAUSE`'s more recent changes (most notably "hamda" as
+a third list conjunction, added 2026-09-15, swept for the qism-level case
+just yesterday in the Extractor rotation's gold batch 22). Nobody had
+re-checked this specific reuse since it was built 2026-09-13.
+
+**Checked `target_articles()` first — clean.** Wrote a scratchpad script
+(`measure_target_articles.py`/`check_target_articles.py`, not committed,
+same precedent as other one-off measurement scripts on this list) that
+independently re-derives every amendment clause's locator+verb scope from
+the raw parquet (same `re_amend_clause`/`re_amend_event` grammar
+`build_links.py` uses, copied read-only) and calls the REAL `cx.RE_CLAUSE`/
+`cx._expand` on each one, then diffs the result against what's actually
+stored in `article_amendment` today. Result: 594 amendment clauses parsed
+(0 unmatched by `re_amend_event`), exactly 10 are multi-member lists/ranges
+(same count as the 2026-09-13 measurement that built this function — no
+drift in POPULATION either), and all 10 match the stored
+`target_article_number` rows exactly — 0 mismatches, 0 regressions. The
+reuse is still fully correct and fully exercising `RE_CLAUSE`'s current
+grammar (confirmed `_expand`'s own comma/va/hamda split and `RE_CLAUSE`'s
+`nums` group's hamda/dash-range/parenthetical-skip alternatives are all
+consistent with each other, by construction — they're the same two
+functions, just called from a different scope string).
+
+Shipped this as a permanent `verify_transfer.py` AC7 guard rather than
+leaving it a one-time diagnostic (same precedent as 2026-11-22's and
+2026-11-25's 0-occurrence guards): re-implements the same independent
+recomputation inside `verify_transfer.py` itself (duplicating
+`re_amend_event`'s grammar one more time, same "naive detector" rationale
+as the `cx_._selftest()` call and the qism-list check just above it in the
+file), grouping `article_amendment` by `(doc_id, host_article_number,
+evidence)` and comparing the recomputed target-article set against the
+stored one for EVERY event, not just the 10 multi-member ones (so it also
+silently guards the single-member/chapter-level case). Mutation-tested
+before shipping (same requirement as every other guard on this list): fed
+it a copy of the real rows with (a) a multi-member event truncated to one
+member and (b) a single-member event's target corrupted to a fake number —
+both caught (`drifted` count 1 in each case, 0 on the real data).
+
+**Then checked the sibling regex — found a real gap.** `repeal_clause` has
+its OWN separate list/range regex, `re_target_locator` in `build_links.py`
+— not a call into `RE_CLAUSE`, but a hand-ported COPY of its list grammar
+(the function's own comment says so explicitly: "same list grammar
+citation_extractor's own RE_CLAUSE already uses ... just not previously
+ported to this module's separate repeal-locator regex", written when the
+2026-10-20 Roman-numeral fix and the 2026-11-19 comma/"va" list-prefix fix
+landed). A hand-ported copy is exactly the shape of thing that drifts
+silently when the ORIGINAL (`RE_CLAUSE`) gets a new alternative the copy
+never receives — checked, and that's exactly what happened: `RE_CLAUSE`
+gained "hamda" as a third list conjunction 2026-09-15 (before even the
+2026-10-20 port), but `re_target_locator`'s own list-prefix group only ever
+had `(?:,\s*|\s+va\s+)`, never "hamda". Measured the live population before
+fixing: searched all 885 `repeal_clause` rows' `target_locator` and
+`evidence` for "hamda" — 31 rows have it somewhere in `evidence`, but every
+single one sits inside the CITED ACT'S OWN TITLE text (e.g. "Masʼuliyati
+cheklangan hamda qoʻshimcha masʼuliyatli jamiyatlar toʻgʻrisida"), never
+between two modda/qism numbers; `target_locator` itself contains "hamda" in
+exactly 0/885 rows. Zero live impact today — same precedent as the
+2026-11-25 legacy-act-number fix (a real gap, provably harmless on the
+current corpus, fixed anyway rather than left to drift further). Fixed by
+adding `|\s+hamda\s+` to the list-prefix alternation (one line); re-ran
+`build_links.py` to carry it into the actual database (`build_llc.py` too,
+since it joins `link_edge`/`v_act_currency` — NOT `build_okoz.py`, which
+grep confirms never reads `link_edge` or `repeal_clause` at all, same
+precedent as the 2026-10-21 entry's identical reasoning for the same
+question). Verified zero live change the same way that entry did: `[INFO]
+214 acts provably superseded` identical before and after (343/885
+whole-act vs. 542 scoped `repeal_clause` rows also unchanged).
+
+**Process note — a near-miss, corrected before committing.** First pass
+through the rebuild step I ran `build_okoz.py` as well as `build_links.py`/
+`build_llc.py`, out of habit from seeing all three mentioned together in
+the pipeline docstring, without stopping to check whether MY change
+actually touched anything `build_okoz.py` reads. It doesn't (confirmed by
+grep after the fact, not before — the mistake). Luckily `okoz_assignment`
+currently has 0/39 validated mappings, so `build_okoz.py`'s own `CREATE OR
+REPLACE TABLE` (which hardcodes `validated_by`/`validated_at` to `NULL` on
+every run, with no join-back to the previous table — see new Backlog item
+below) wiped nothing that existed. Caught it before committing by noticing
+`corpus.duckdb`'s diff touched more than the two tables my fix should
+affect, reverted `corpus.duckdb` via `git checkout --`, and redid the
+rebuild with only `build_links.py`+`build_llc.py`. No owner validation
+state was ever actually at risk (there is none yet to lose), but the
+process gap is real: ran an unrelated builder against the hard-constraint
+table without first checking its own `main()` for what it reads. Folded
+the underlying landmine (`build_okoz.py` would silently discard REAL
+validation the day it exists) into a new, carefully-scoped Backlog item
+rather than fixing it today, out of scope for a Data currency rotation and
+not urgent given 0 live validations to protect yet.
+
+**Verification.** `python3.11 -m pyflakes build_links.py verify_transfer.py`
+clean; `python3.11 -m vulture build_links.py verify_transfer.py
+--min-confidence 60` clean; `python -m unittest test_transfer_e2e.py`
+14/14; `verify_transfer.py`: **VERIFICATION PASSED — all checks green**
+(new guard included, `[INFO] 214 acts provably superseded` unchanged from
+baseline). Both apps' queries unaffected — no schema change, `grep`-checked
+`target_locator`/`repeal_clause` usage in both `app_hierarchy.py` and
+`app_llc.py` before concluding so, not just assumed from "no columns
+added".
+
+**What changed**: `build_links.py` (`re_target_locator`'s list-prefix
+alternation gains "hamda"), `verify_transfer.py` (new AC7 guard comparing
+`target_articles()`'s stored output against a fresh independent
+recomputation), `corpus.duckdb` (`repeal_clause` regenerated via
+`build_links.py`/`build_llc.py`; byte-identical in substance, confirmed via
+the unchanged `[INFO]` counts — the only reason the bytes differ at all is
+the regex widening itself, which had 0 rows to actually change), this file
+(this entry, Active threads, new Backlog item on `build_okoz.py`'s
+validation-wipe risk).
 
 ### 2026-11-27 — Extractor rotation: uniform gold batch 22, 39/40 correct, 1 new known_gap (a second "hamda"-joined qism reference to the same article is never looked for)
 

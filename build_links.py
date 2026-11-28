@@ -596,9 +596,26 @@ def main() -> int:
     # the Code's own citations, just not previously ported to this module's
     # separate repeal-locator regex (same gap class as the 2026-10-20
     # Roman-numeral fix, a different missing alternative in the same regex).
+    #
+    # "hamda" ("as well as") joins this prefix list too, not just comma/"va" —
+    # found 2026-11-28 (Data currency rotation) while independently checking
+    # whether this hand-ported copy of RE_CLAUSE's list grammar had kept up
+    # with RE_CLAUSE's own later additions: "hamda" was added to RE_CLAUSE's
+    # `nums` group 2026-09-15 (gold_id 140) but never ported here, the exact
+    # same "two independent copies of one grammar, one patched, one not" gap
+    # class as this regex's own 2026-10-20 Roman-numeral fix and its 2026-11-19
+    # list-prefix fix above. Measured corpus-wide before fixing: 0 of 885
+    # repeal-list items' `target_locator`/evidence actually use "hamda" to
+    # join article/qism numbers today (every "hamda" near a repeal_clause row
+    # sits inside the cited act's own TITLE text, e.g. "Masʼuliyati cheklangan
+    # hamda qoʻshimcha masʼuliyatli jamiyatlar toʻgʻrisida", never between two
+    # modda/qism numbers) — zero live impact, same precedent as the 2026-11-25
+    # legacy-act-number fix. Fixed anyway rather than left as a known future
+    # gap, since the fix is one alternative in an existing list and the
+    # verify_transfer.py guard below would otherwise have nothing to check.
     re_target_locator = re.compile(
         r"^[\s\w\-]{0,80}?(?:\([^()]{0,300}\)\s*)?"
-        r"((?:\d+[\d\-]*\s*(?:,\s*|\s+va\s+)\s*){0,6}"
+        r"((?:\d+[\d\-]*\s*(?:,\s*|\s+va\s+|\s+hamda\s+)\s*){0,6}"
         r"\d+[\d\-]*\s*-\s*(?:modda|qism|band|bob|paragraf)\w*"
         r"|[IVXL]{1,6}(?:\s*-\s*|\s+)(?:modda|qism|band|bob|paragraf|bo[ʻʼ']?lim)\w*)",
         re.IGNORECASE,
